@@ -2,7 +2,7 @@ import { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 interface ReadabilityWrapperProps {
-  children: ReactNode;
+  children?: ReactNode;
   className?: string;
   maxWidth?: "sm" | "md" | "lg" | "xl" | "2xl" | "full";
   spacing?: "tight" | "normal" | "relaxed";

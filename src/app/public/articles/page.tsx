@@ -75,10 +75,15 @@ const academicMaterials = [
     date: "2024-01-20",
     course: "Contracts I",
     courseCode: "LAW 101",
+    courseSubject: "Contract Law",
     semester: "Spring 2024",
     keywords: ["Contract Law", "Legal Education", "Case Studies", "Formation", "Breach"],
     downloadCount: 2341,
+    pageCount: 145,
     category: "Contract Law",
+    year: "2024",
+    professor: "Prof. Michael Chen",
+    institution: "Law School",
     type: "academic-material"
   },
   {
@@ -90,10 +95,15 @@ const academicMaterials = [
     date: "2024-01-18",
     course: "Constitutional Law I",
     courseCode: "LAW 201",
+    courseSubject: "Constitutional Law",
     semester: "Spring 2024",
     keywords: ["Constitutional Law", "Separation of Powers", "Federalism", "Supreme Court", "Legal Analysis"],
     downloadCount: 1876,
+    pageCount: 234,
     category: "Constitutional Law",
+    year: "2024",
+    professor: "Prof. Sarah Johnson",
+    institution: "Law School",
     type: "academic-material"
   },
   {
@@ -105,10 +115,15 @@ const academicMaterials = [
     date: "2024-01-15",
     course: "Criminal Procedure",
     courseCode: "LAW 301",
+    courseSubject: "Criminal Law",
     semester: "Spring 2024",
     keywords: ["Criminal Law", "Fourth Amendment", "Search and Seizure", "Warrants", "Criminal Procedure"],
     downloadCount: 1654,
+    pageCount: 189,
     category: "Criminal Law",
+    year: "2024",
+    professor: "Prof. David Kim",
+    institution: "Law School",
     type: "academic-material"
   },
   {
@@ -120,113 +135,16 @@ const academicMaterials = [
     date: "2024-01-12",
     course: "Corporate Law",
     courseCode: "LAW 401",
+    courseSubject: "Corporate Law",
     semester: "Spring 2024",
     keywords: ["Corporate Law", "Fiduciary Duties", "Business Judgment Rule", "Director Liability", "Delaware Law"],
     downloadCount: 1432,
+    pageCount: 267,
     category: "Corporate Law",
+    year: "2024",
+    professor: "Prof. Emily Rodriguez",
+    institution: "Law School",
     type: "academic-material"
-  }
-];
-
-const courseSubjects = [
-  "All Subjects",
-  "Constitutional Law",
-  "Contract Law", 
-  "Corporate Law",
-  "Criminal Law",
-  "Environmental Law",
-  "Immigration Law",
-  "Intellectual Property",
-  "International Law",
-  "Tax Law",
-  "Torts"
-];
-
-// Mock data for academic materials
-const academicMaterials = [
-  {
-    id: 4,
-    title: "Contract Law: Formation and Performance",
-    abstract: "Comprehensive study materials covering the essential elements of contract formation, including offer, acceptance, consideration, and performance obligations. This academic resource includes case studies, practice problems, and theoretical frameworks.",
-    authors: ["Prof. Michael Chen"],
-    affiliation: "Contract Law Department",
-    date: "2024-01-18",
-    courseSubject: "Contract Law",
-    courseCode: "LAW 201",
-    type: "Study Guide",
-    keywords: ["Contract Formation", "Performance", "Breach", "Remedies"],
-    downloadCount: 892,
-    category: "Academic Material"
-  },
-  {
-    id: 5,
-    title: "Constitutional Law Case Brief Collection",
-    abstract: "A curated collection of landmark constitutional law cases with detailed briefs, analysis, and discussion questions. Essential reading for constitutional law students and practitioners seeking to understand key precedents.",
-    authors: ["Prof. Sarah Johnson", "Dr. Lisa Park"],
-    affiliation: "Constitutional Law Institute",
-    date: "2024-01-15",
-    courseSubject: "Constitutional Law",
-    courseCode: "LAW 101",
-    type: "Case Collection",
-    keywords: ["Constitutional Law", "Case Briefs", "Precedents", "Supreme Court"],
-    downloadCount: 1456,
-    category: "Academic Material"
-  },
-  {
-    id: 6,
-    title: "Criminal Procedure: Investigation and Trial",
-    abstract: "Detailed examination of criminal procedure from investigation through trial, including Fourth Amendment protections, Miranda rights, and trial procedures. Includes practical exercises and real-world applications.",
-    authors: ["Prof. David Rodriguez"],
-    affiliation: "Criminal Law Department",
-    date: "2024-01-12",
-    courseSubject: "Criminal Law",
-    courseCode: "LAW 301",
-    type: "Textbook Chapter",
-    keywords: ["Criminal Procedure", "Fourth Amendment", "Miranda Rights", "Trial Procedure"],
-    downloadCount: 743,
-    category: "Academic Material"
-  },
-  {
-    id: 7,
-    title: "Corporate Governance and Ethics",
-    abstract: "Analysis of corporate governance structures, fiduciary duties, and ethical considerations in business law. Covers recent developments in ESG compliance and stakeholder capitalism.",
-    authors: ["Prof. Emily Rodriguez"],
-    affiliation: "Business Law Department",
-    date: "2024-01-10",
-    courseSubject: "Corporate Law",
-    courseCode: "LAW 401",
-    type: "Research Paper",
-    keywords: ["Corporate Governance", "Fiduciary Duty", "ESG", "Business Ethics"],
-    downloadCount: 567,
-    category: "Academic Material"
-  },
-  {
-    id: 8,
-    title: "Environmental Law and Policy Analysis",
-    abstract: "Comprehensive overview of environmental law principles, regulatory frameworks, and policy analysis. Includes current issues in climate change law and environmental justice.",
-    authors: ["Prof. James Wilson"],
-    affiliation: "Environmental Law Center",
-    date: "2024-01-08",
-    courseSubject: "Environmental Law",
-    courseCode: "LAW 501",
-    type: "Policy Analysis",
-    keywords: ["Environmental Law", "Climate Change", "Regulatory Framework", "Environmental Justice"],
-    downloadCount: 934,
-    category: "Academic Material"
-  },
-  {
-    id: 9,
-    title: "International Law: Treaties and Jurisdiction",
-    abstract: "Study of international legal principles, treaty interpretation, and jurisdictional issues in international courts. Essential for understanding global legal frameworks.",
-    authors: ["Prof. Maria Santos"],
-    affiliation: "International Law Institute",
-    date: "2024-01-05",
-    courseSubject: "International Law",
-    courseCode: "LAW 601",
-    type: "Academic Paper",
-    keywords: ["International Law", "Treaties", "Jurisdiction", "International Courts"],
-    downloadCount: 678,
-    category: "Academic Material"
   }
 ];
 
@@ -281,6 +199,7 @@ export default function ArticlesPage() {
             </TabsList>
 
             {/* Law Review Tab */}
+            <TabsContent value="law-review">
               {/* Current Issue Highlight */}
               <div className="mb-12">
                 <div className="bg-gradient-to-r from-blue-50 to-slate-50 rounded-lg p-8 border">
@@ -369,6 +288,76 @@ export default function ArticlesPage() {
               <div className="mb-12">
                 <h2 className="text-2xl font-bold text-slate-900 mb-6">Recent Issues</h2>
                 <div className="grid md:grid-cols-2 gap-6">
+                  {/* Add recent issues content here */}
+                </div>
+              </div>
+            </TabsContent>
+
+            {/* Academic Materials Tab */}
+            <TabsContent value="academic-materials">
+              <div className="mb-6 space-y-4">
+                <div className="flex gap-4 flex-wrap">
+                  <Select value={selectedSubject} onValueChange={setSelectedSubject}>
+                    <SelectTrigger className="w-[200px]">
+                      <SelectValue placeholder="Select subject" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="All Subjects">All Subjects</SelectItem>
+                      <SelectItem value="Constitutional Law">Constitutional Law</SelectItem>
+                      <SelectItem value="Criminal Law">Criminal Law</SelectItem>
+                      <SelectItem value="Tort Law">Tort Law</SelectItem>
+                      <SelectItem value="Contract Law">Contract Law</SelectItem>
+                      <SelectItem value="Environmental Law">Environmental Law</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Input 
+                    placeholder="Search materials..." 
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="max-w-sm"
+                  />
+                </div>
+              </div>
+
+              <div className="grid gap-6">
+                {filteredAcademicMaterials.map((material) => (
+                  <Card key={material.id} className="border-0 shadow-sm hover:shadow-md transition-shadow">
+                    <CardHeader>
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline">{material.courseCode}</Badge>
+                          <Badge variant="secondary">{material.courseSubject}</Badge>
+                        </div>
+                        <span className="text-sm text-slate-500">{material.year}</span>
+                      </div>
+                      <CardTitle className="text-xl">{material.title}</CardTitle>
+                      <CardDescription>
+                        {material.professor} • {material.institution}
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-slate-700 mb-4">{material.abstract}</p>
+                      <div className="flex flex-wrap gap-2 mb-4">
+                        {material.keywords.map((keyword) => (
+                          <Badge key={keyword} variant="outline" className="text-xs">
+                            {keyword}
+                          </Badge>
+                        ))}
+                      </div>
+                      <Separator className="my-4" />
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-slate-600">{material.pageCount} pages</span>
+                        <div className="flex gap-2">
+                          <Button variant="outline" size="sm">Preview</Button>
+                          <Button size="sm">Download PDF</Button>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </TabsContent>
+          </Tabs>
         </ReadabilityWrapper>
       </div>
     </PublicLayout>

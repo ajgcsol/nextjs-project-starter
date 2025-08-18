@@ -4,22 +4,52 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { useAuth, UserRole } from "@/contexts/AuthContext";
+import { useRouter } from "next/navigation";
+import { User, LogOut, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface DashboardLayoutProps {
   children: ReactNode;
 }
 
-const navigation = [
-  { name: "Overview", href: "/dashboard", icon: "📊" },
-  { name: "Video Management", href: "/dashboard/video", icon: "🎥" },
-  { name: "Student Assignments", href: "/dashboard/student-assignments", icon: "📝" },
-  { name: "Advocacy Programs", href: "/dashboard/advocacy", icon: "⚖️" },
-  { name: "Law Review", href: "/dashboard/law-review", icon: "📖" },
+interface NavigationItem {
+  name: string;
+  href: string;
+  icon: string;
+  requiredRoles?: UserRole[];
+}
+
+const navigation: NavigationItem[] = [
+  { name: "Overview", href: "/dashboard", icon: "📊" }, // Available to all authenticated users
+  { name: "Video Management", href: "/dashboard/videos", icon: "🎥", requiredRoles: ["video_editor", "faculty", "admin"] },
+  { name: "Editorial Assignments", href: "/dashboard/student-assignments", icon: "📝", requiredRoles: ["student", "faculty", "admin"] },
+  { name: "Blue Book Citations", href: "/dashboard/bluebook", icon: "📘", requiredRoles: ["student", "editor", "reviewer", "faculty", "admin"] },
+  { name: "Journal Management", href: "/dashboard/journals", icon: "📚", requiredRoles: ["editor_in_chief", "editor", "faculty", "admin"] },
+  { name: "Advocacy Programs", href: "/dashboard/advocacy", icon: "⚖️", requiredRoles: ["faculty", "admin"] },
+  { name: "Law Review", href: "/dashboard/law-review", icon: "📖", requiredRoles: ["editor_in_chief", "editor", "reviewer", "faculty", "admin"] },
+  { name: "Editorial Queue", href: "/dashboard/editorial", icon: "📄", requiredRoles: ["editor_in_chief", "editor", "reviewer", "admin"] },
+  { name: "Reviews", href: "/dashboard/reviews", icon: "✓", requiredRoles: ["reviewer", "editor", "admin"] },
+  { name: "User Management", href: "/dashboard/admin/users", icon: "👥", requiredRoles: ["admin"] },
+  { name: "Analytics", href: "/dashboard/admin/analytics", icon: "📈", requiredRoles: ["admin"] },
 ];
 
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const pathname = usePathname();
+  const { user, hasAnyRole, logout } = useAuth();
+  const router = useRouter();
+
+  const handleLogout = async () => {
+    await logout();
+    router.push("/login");
+  };
+
+  // Filter navigation items based on user roles
+  const availableNavigation = navigation.filter(item => 
+    !item.requiredRoles || hasAnyRole(item.requiredRoles)
+  );
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -43,12 +73,44 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                   Public View
                 </Button>
               </Link>
-              <div className="flex items-center space-x-2">
-                <div className="w-8 h-8 bg-slate-300 rounded-full flex items-center justify-center">
-                  <span className="text-sm font-medium">U</span>
-                </div>
-                <span className="text-sm font-medium text-slate-700">User</span>
-              </div>
+              
+              {user && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" className="relative h-8 w-8 rounded-full">
+                      <Avatar className="h-8 w-8">
+                        <AvatarImage src={user.profilePicture || ""} alt={user.name} />
+                        <AvatarFallback>
+                          {user.name ? user.name.split(' ').map(n => n[0]).join('').toUpperCase() : 'U'}
+                        </AvatarFallback>
+                      </Avatar>
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent className="w-56" align="end" forceMount>
+                    <DropdownMenuLabel className="font-normal">
+                      <div className="flex flex-col space-y-1">
+                        <p className="text-sm font-medium leading-none">{user.name}</p>
+                        <p className="text-xs leading-none text-muted-foreground">
+                          {user.email}
+                        </p>
+                        <p className="text-xs leading-none text-blue-600">
+                          {user.roles.join(', ')}
+                        </p>
+                      </div>
+                    </DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => router.push('/dashboard/profile')}>
+                      <Settings className="mr-2 h-4 w-4" />
+                      Profile Settings
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={handleLogout}>
+                      <LogOut className="mr-2 h-4 w-4" />
+                      Sign Out
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
             </div>
           </div>
         </div>
@@ -59,7 +121,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         <aside className="w-64 bg-white border-r border-slate-200 min-h-[calc(100vh-4rem)] sticky top-16">
           <div className="p-6">
             <nav className="space-y-2">
-              {navigation.map((item) => {
+              {availableNavigation.map((item) => {
                 const isActive = pathname === item.href;
                 return (
                   <Link
@@ -85,21 +147,48 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                 Quick Actions
               </h3>
               <div className="space-y-2">
-                <Link href="/dashboard/video">
-                  <Button variant="outline" size="sm" className="w-full justify-start">
-                    Upload Video
-                  </Button>
-                </Link>
-                <Link href="/dashboard/student-assignments">
-                  <Button variant="outline" size="sm" className="w-full justify-start">
-                    Submit Assignment
-                  </Button>
-                </Link>
-                <Link href="/dashboard/law-review">
-                  <Button variant="outline" size="sm" className="w-full justify-start">
-                    New Article
-                  </Button>
-                </Link>
+                {hasAnyRole(["video_editor", "faculty", "admin"]) && (
+                  <Link href="/dashboard/videos">
+                    <Button variant="outline" size="sm" className="w-full justify-start">
+                      Upload Video
+                    </Button>
+                  </Link>
+                )}
+                {hasAnyRole(["student", "faculty", "admin"]) && (
+                  <Link href="/dashboard/student-assignments">
+                    <Button variant="outline" size="sm" className="w-full justify-start">
+                      Submit Assignment
+                    </Button>
+                  </Link>
+                )}
+                {hasAnyRole(["editor_in_chief", "editor", "faculty", "admin"]) && (
+                  <Link href="/dashboard/journals">
+                    <Button variant="outline" size="sm" className="w-full justify-start">
+                      New Journal
+                    </Button>
+                  </Link>
+                )}
+                {hasAnyRole(["editor_in_chief", "editor", "faculty", "admin"]) && (
+                  <Link href="/dashboard/articles/new">
+                    <Button variant="outline" size="sm" className="w-full justify-start">
+                      New Article
+                    </Button>
+                  </Link>
+                )}
+                {hasAnyRole(["admin"]) && (
+                  <Link href="/dashboard/admin/users">
+                    <Button variant="outline" size="sm" className="w-full justify-start">
+                      Manage Users
+                    </Button>
+                  </Link>
+                )}
+                {hasAnyRole(["reviewer", "editor", "admin"]) && (
+                  <Link href="/dashboard/reviews">
+                    <Button variant="outline" size="sm" className="w-full justify-start">
+                      Review Queue
+                    </Button>
+                  </Link>
+                )}
               </div>
             </div>
 

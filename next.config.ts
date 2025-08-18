@@ -10,6 +10,12 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+  // Increase max body size for video uploads (5GB)
+  experimental: {
+    serverActions: {
+      bodySizeLimit: '5gb',
+    },
+  },
 }
 
 export default nextConfig

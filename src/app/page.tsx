@@ -1,10 +1,36 @@
 "use client";
 
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/contexts/AuthContext";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 export default function HomePage() {
+  const { isAuthenticated } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      router.push("/dashboard");
+    }
+  }, [isAuthenticated, router]);
+
+  // If authenticated, show loading while redirecting to dashboard
+  if (isAuthenticated) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Card className="border-0 shadow-sm">
+          <CardContent className="pt-6">
+            <p className="text-center text-slate-600">Redirecting to dashboard...</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // If not authenticated, show the public homepage
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-white">
       {/* Navigation Header */}
@@ -24,6 +50,9 @@ export default function HomePage() {
                 </Link>
                 <Link href="/public/videos" className="text-slate-600 hover:text-slate-900 transition-colors">
                   Videos
+                </Link>
+                <Link href="/public/journals" className="text-slate-600 hover:text-slate-900 transition-colors">
+                  Journals
                 </Link>
                 <Link href="/public/events" className="text-slate-600 hover:text-slate-900 transition-colors">
                   Events

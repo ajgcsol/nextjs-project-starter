@@ -1,0 +1,673 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import { useAuth } from "@/contexts/AuthContext";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { 
+  Upload, 
+  Video, 
+  Play, 
+  Pause, 
+  MoreHorizontal,
+  Search,
+  Filter,
+  Download,
+  Share,
+  Edit,
+  Trash2,
+  Eye,
+  EyeOff,
+  Clock,
+  Users,
+  Calendar,
+  RefreshCw
+} from "lucide-react";
+
+interface VideoFile {
+  id: string;
+  title: string;
+  description: string;
+  filename: string;
+  duration: number;
+  size: number;
+  uploadDate: string;
+  status: "processing" | "ready" | "failed";
+  visibility: "public" | "private" | "unlisted";
+  category: string;
+  tags: string[];
+  thumbnailUrl?: string;
+  views: number;
+  createdBy: string;
+}
+
+// Mock video data
+const MOCK_VIDEOS: VideoFile[] = [
+  {
+    id: "1",
+    title: "Constitutional Law: Introduction to Civil Rights",
+    description: "Comprehensive overview of civil rights law and constitutional interpretation",
+    filename: "civil-rights-intro.mp4",
+    duration: 3600, // 1 hour in seconds
+    size: 1024 * 1024 * 250, // 250MB
+    uploadDate: "2024-01-15",
+    status: "ready",
+    visibility: "public",
+    category: "Constitutional Law",
+    tags: ["civil rights", "constitution", "lecture"],
+    views: 234,
+    createdBy: "Prof. Sarah Johnson"
+  },
+  {
+    id: "2", 
+    title: "Contract Formation Principles",
+    description: "Essential principles of contract formation including offer, acceptance, and consideration",
+    filename: "contract-formation.mp4",
+    duration: 2700, // 45 minutes
+    size: 1024 * 1024 * 180,
+    uploadDate: "2024-01-12",
+    status: "ready",
+    visibility: "public", 
+    category: "Contract Law",
+    tags: ["contracts", "formation", "consideration"],
+    views: 156,
+    createdBy: "Prof. Michael Chen"
+  },
+  {
+    id: "3",
+    title: "Criminal Procedure Workshop",
+    description: "Hands-on workshop covering search and seizure procedures",
+    filename: "criminal-procedure-workshop.mp4", 
+    duration: 1800, // 30 minutes
+    size: 1024 * 1024 * 120,
+    uploadDate: "2024-01-10",
+    status: "processing",
+    visibility: "private",
+    category: "Criminal Law",
+    tags: ["criminal procedure", "workshop", "search seizure"],
+    views: 0,
+    createdBy: "Prof. David Kim"
+  }
+];
+
+const VIDEO_CATEGORIES = [
+  "All Categories",
+  "Constitutional Law",
+  "Contract Law", 
+  "Criminal Law",
+  "Corporate Law",
+  "Environmental Law",
+  "International Law",
+  "Tort Law"
+];
+
+export default function VideoManagementPage() {
+  const { isAuthenticated, canAccess } = useAuth();
+  const router = useRouter();
+  const [videos, setVideos] = useState<VideoFile[]>([]);
+  const [selectedVideo, setSelectedVideo] = useState<VideoFile | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState("All Categories");
+  const [sortBy, setSortBy] = useState("newest");
+  const [isLoadingVideos, setIsLoadingVideos] = useState(true);
+
+  // Upload form state
+  const [uploadForm, setUploadForm] = useState({
+    title: "",
+    description: "",
+    category: "",
+    tags: "",
+    visibility: "private" as "public" | "private" | "unlisted",
+    file: null as File | null
+  });
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      router.push("/login");
+      return;
+    }
+    if (!canAccess("videos", "upload") && !canAccess("*", "*")) {
+      router.push("/dashboard");
+      return;
+    }
+    
+    // Fetch videos from API
+    fetchVideos();
+  }, [isAuthenticated, canAccess, router]);
+
+  const fetchVideos = async () => {
+    try {
+      setIsLoadingVideos(true);
+      const response = await fetch('/api/videos/upload');
+      const data = await response.json();
+      console.log('Fetched videos:', data);
+      if (data.videos) {
+        setVideos(data.videos);
+        console.log('Updated video list with', data.videos.length, 'videos');
+      }
+    } catch (error) {
+      console.error('Error fetching videos:', error);
+    } finally {
+      setIsLoadingVideos(false);
+    }
+  };
+
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      setUploadForm({ ...uploadForm, file });
+    }
+  };
+
+  const handleUpload = async () => {
+    if (!uploadForm.file) return;
+
+    setIsUploading(true);
+    setUploadProgress(0);
+
+    try {
+      // Create FormData
+      const formData = new FormData();
+      formData.append('file', uploadForm.file);
+      formData.append('title', uploadForm.title);
+      formData.append('description', uploadForm.description);
+      formData.append('category', uploadForm.category);
+      formData.append('tags', uploadForm.tags);
+      formData.append('visibility', uploadForm.visibility);
+
+      // Create XMLHttpRequest for progress tracking
+      const xhr = new XMLHttpRequest();
+
+      // Track upload progress
+      xhr.upload.addEventListener('progress', (event) => {
+        if (event.lengthComputable) {
+          const percentComplete = (event.loaded / event.total) * 100;
+          setUploadProgress(Math.round(percentComplete));
+        }
+      });
+
+      // Handle completion
+      xhr.addEventListener('load', async () => {
+        if (xhr.status === 200) {
+          const response = JSON.parse(xhr.responseText);
+          console.log('Upload successful:', response);
+          
+          // Reset form first
+          setUploadForm({
+            title: "",
+            description: "",
+            category: "",
+            tags: "",
+            visibility: "private",
+            file: null
+          });
+          
+          // Clear file input
+          const fileInput = document.getElementById('video-file') as HTMLInputElement;
+          if (fileInput) {
+            fileInput.value = '';
+          }
+          
+          setIsUploading(false);
+          setUploadProgress(0);
+          
+          // Refresh video list with a small delay to ensure database is updated
+          setTimeout(async () => {
+            await fetchVideos();
+          }, 500);
+        } else {
+          console.error('Upload failed with status:', xhr.status);
+          alert('Upload failed. Please try again.');
+          setIsUploading(false);
+          setUploadProgress(0);
+        }
+      });
+
+      // Handle error
+      xhr.addEventListener('error', () => {
+        console.error('Upload error');
+        setIsUploading(false);
+        setUploadProgress(0);
+      });
+
+      // Send request
+      xhr.open('POST', '/api/videos/upload');
+      xhr.send(formData);
+
+    } catch (error) {
+      console.error('Upload error:', error);
+      setIsUploading(false);
+      setUploadProgress(0);
+    }
+  };
+
+  const filteredVideos = videos.filter(video => {
+    const matchesSearch = video.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                         video.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                         video.tags.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase()));
+    const matchesCategory = selectedCategory === "All Categories" || video.category === selectedCategory;
+    return matchesSearch && matchesCategory;
+  });
+
+  const sortedVideos = [...filteredVideos].sort((a, b) => {
+    switch (sortBy) {
+      case "newest":
+        return new Date(b.uploadDate).getTime() - new Date(a.uploadDate).getTime();
+      case "oldest":
+        return new Date(a.uploadDate).getTime() - new Date(b.uploadDate).getTime();
+      case "views":
+        return b.views - a.views;
+      case "duration":
+        return b.duration - a.duration;
+      default:
+        return 0;
+    }
+  });
+
+  const formatDuration = (seconds: number) => {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    if (hours > 0) {
+      return `${hours}h ${minutes}m`;
+    }
+    return `${minutes}m`;
+  };
+
+  const formatFileSize = (bytes: number) => {
+    const mb = bytes / (1024 * 1024);
+    return `${mb.toFixed(1)} MB`;
+  };
+
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Card className="border-0 shadow-sm">
+          <CardContent className="pt-6">
+            <p className="text-center text-slate-600">Redirecting to login...</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-50">
+      <div className="container mx-auto px-4 py-8">
+        <div className="space-y-6">
+          {/* Header */}
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold text-slate-900">Video Management</h1>
+              <p className="text-slate-600 mt-2">
+                Upload, manage, and organize your educational video content
+              </p>
+            </div>
+            <Button onClick={() => router.push("/dashboard/editor?type=video")}>
+              <Upload className="h-4 w-4 mr-2" />
+              Upload Video
+            </Button>
+          </div>
+
+          {/* Quick Stats */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <Card className="border-0 shadow-sm">
+              <CardContent className="pt-6">
+                <div className="flex items-center">
+                  <Video className="h-5 w-5 text-blue-500 mr-2" />
+                  <div>
+                    <p className="text-2xl font-bold">{videos.length}</p>
+                    <p className="text-sm text-slate-600">Total Videos</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="border-0 shadow-sm">
+              <CardContent className="pt-6">
+                <div className="flex items-center">
+                  <Users className="h-5 w-5 text-green-500 mr-2" />
+                  <div>
+                    <p className="text-2xl font-bold">{videos.reduce((sum, v) => sum + v.views, 0)}</p>
+                    <p className="text-sm text-slate-600">Total Views</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="border-0 shadow-sm">
+              <CardContent className="pt-6">
+                <div className="flex items-center">
+                  <Clock className="h-5 w-5 text-purple-500 mr-2" />
+                  <div>
+                    <p className="text-2xl font-bold">
+                      {Math.floor(videos.reduce((sum, v) => sum + v.duration, 0) / 3600)}h
+                    </p>
+                    <p className="text-sm text-slate-600">Total Duration</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="border-0 shadow-sm">
+              <CardContent className="pt-6">
+                <div className="flex items-center">
+                  <Eye className="h-5 w-5 text-orange-500 mr-2" />
+                  <div>
+                    <p className="text-2xl font-bold">{videos.filter(v => v.visibility === "public").length}</p>
+                    <p className="text-sm text-slate-600">Public Videos</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Tabs defaultValue="library" className="space-y-6">
+            <TabsList>
+              <TabsTrigger value="library">Video Library</TabsTrigger>
+              <TabsTrigger value="upload">Quick Upload</TabsTrigger>
+              <TabsTrigger value="analytics">Analytics</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="library" className="space-y-6">
+              {/* Search and Filters */}
+              <Card className="border-0 shadow-sm">
+                <CardContent className="pt-6">
+                  <div className="flex gap-4 flex-wrap">
+                    <div className="flex-1 relative">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
+                      <Input
+                        placeholder="Search videos by title, description, or tags..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="pl-10"
+                      />
+                    </div>
+                    <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+                      <SelectTrigger className="w-[200px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {VIDEO_CATEGORIES.map(category => (
+                          <SelectItem key={category} value={category}>{category}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Select value={sortBy} onValueChange={setSortBy}>
+                      <SelectTrigger className="w-[150px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="newest">Newest First</SelectItem>
+                        <SelectItem value="oldest">Oldest First</SelectItem>
+                        <SelectItem value="views">Most Views</SelectItem>
+                        <SelectItem value="duration">Longest First</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Button 
+                      variant="outline" 
+                      size="icon"
+                      onClick={() => fetchVideos()}
+                      disabled={isLoadingVideos}
+                      title="Refresh videos"
+                    >
+                      <RefreshCw className={`h-4 w-4 ${isLoadingVideos ? 'animate-spin' : ''}`} />
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Video Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {sortedVideos.map(video => (
+                  <Card key={video.id} className="border-0 shadow-sm hover:shadow-md transition-shadow">
+                    <CardHeader className="pb-4">
+                      <div className="aspect-video bg-slate-100 rounded-lg overflow-hidden mb-4 relative group">
+                        <img
+                          src={`/api/videos/thumbnail/${video.id}`}
+                          alt={`${video.title} thumbnail`}
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            const img = e.target as HTMLImageElement;
+                            img.style.display = 'none';
+                            const placeholder = img.parentElement?.querySelector('.thumbnail-placeholder');
+                            if (placeholder) {
+                              (placeholder as HTMLElement).style.display = 'flex';
+                            }
+                          }}
+                        />
+                        <div className="thumbnail-placeholder w-full h-full flex items-center justify-center absolute inset-0" style={{display: 'none'}}>
+                          <Video className="h-12 w-12 text-slate-400" />
+                        </div>
+                        {/* Play overlay */}
+                        <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                          <div className="bg-white/90 rounded-full p-3">
+                            <Play className="h-6 w-6 text-slate-800" fill="currentColor" />
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <CardTitle className="text-lg line-clamp-2">{video.title}</CardTitle>
+                          <CardDescription className="mt-1 line-clamp-2">
+                            {video.description}
+                          </CardDescription>
+                        </div>
+                        <Badge 
+                          variant={video.status === "ready" ? "default" : video.status === "processing" ? "secondary" : "destructive"}
+                          className="ml-2"
+                        >
+                          {video.status}
+                        </Badge>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-4 text-sm text-slate-600">
+                          <span className="flex items-center gap-1">
+                            <Clock className="h-4 w-4" />
+                            {formatDuration(video.duration)}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <Users className="h-4 w-4" />
+                            {video.views} views
+                          </span>
+                          <span className="flex items-center gap-1">
+                            {video.visibility === "public" ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+                            {video.visibility}
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap gap-1">
+                          {video.tags.slice(0, 3).map(tag => (
+                            <Badge key={tag} variant="outline" className="text-xs">
+                              {tag}
+                            </Badge>
+                          ))}
+                          {video.tags.length > 3 && (
+                            <Badge variant="outline" className="text-xs">
+                              +{video.tags.length - 3} more
+                            </Badge>
+                          )}
+                        </div>
+                        <div className="flex justify-between items-center pt-2">
+                          <span className="text-sm text-slate-500">
+                            {new Date(video.uploadDate).toLocaleDateString()}
+                          </span>
+                          <div className="flex gap-1">
+                            <Link href={`/dashboard/videos/${video.id}`}>
+                              <Button variant="ghost" size="icon" className="h-8 w-8">
+                                <Play className="h-4 w-4" />
+                              </Button>
+                            </Link>
+                            <Button variant="ghost" size="icon" className="h-8 w-8">
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-8 w-8">
+                              <Share className="h-4 w-4" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-8 w-8">
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </TabsContent>
+
+            <TabsContent value="upload">
+              <Card className="border-0 shadow-sm">
+                <CardHeader>
+                  <CardTitle>Quick Upload</CardTitle>
+                  <CardDescription>
+                    Upload a new video with basic metadata. For advanced options, use the full editor.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {isUploading && (
+                    <div className="mb-6">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm font-medium">Uploading...</span>
+                        <span className="text-sm text-slate-500">{Math.round(uploadProgress)}%</span>
+                      </div>
+                      <Progress value={uploadProgress} />
+                    </div>
+                  )}
+                  
+                  <div>
+                    <Label htmlFor="video-file">Video File</Label>
+                    <Input
+                      id="video-file"
+                      type="file"
+                      accept="video/*"
+                      onChange={handleFileSelect}
+                      disabled={isUploading}
+                    />
+                    {uploadForm.file && (
+                      <p className="text-sm text-slate-500 mt-1">
+                        {uploadForm.file.name} ({formatFileSize(uploadForm.file.size)})
+                      </p>
+                    )}
+                  </div>
+
+                  <div>
+                    <Label htmlFor="video-title">Title</Label>
+                    <Input
+                      id="video-title"
+                      value={uploadForm.title}
+                      onChange={(e) => setUploadForm({ ...uploadForm, title: e.target.value })}
+                      placeholder="Enter video title"
+                      disabled={isUploading}
+                    />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="video-description">Description</Label>
+                    <Textarea
+                      id="video-description"
+                      value={uploadForm.description}
+                      onChange={(e) => setUploadForm({ ...uploadForm, description: e.target.value })}
+                      placeholder="Describe the video content"
+                      rows={3}
+                      disabled={isUploading}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="video-category">Category</Label>
+                      <Select 
+                        value={uploadForm.category} 
+                        onValueChange={(value) => setUploadForm({ ...uploadForm, category: value })}
+                        disabled={isUploading}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select category" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {VIDEO_CATEGORIES.slice(1).map(category => (
+                            <SelectItem key={category} value={category}>{category}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div>
+                      <Label htmlFor="video-visibility">Visibility</Label>
+                      <Select 
+                        value={uploadForm.visibility} 
+                        onValueChange={(value) => setUploadForm({ ...uploadForm, visibility: value as any })}
+                        disabled={isUploading}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="private">Private</SelectItem>
+                          <SelectItem value="unlisted">Unlisted</SelectItem>
+                          <SelectItem value="public">Public</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="video-tags">Tags (comma-separated)</Label>
+                    <Input
+                      id="video-tags"
+                      value={uploadForm.tags}
+                      onChange={(e) => setUploadForm({ ...uploadForm, tags: e.target.value })}
+                      placeholder="lecture, introduction, civil rights"
+                      disabled={isUploading}
+                    />
+                  </div>
+
+                  <div className="flex justify-end gap-2">
+                    <Button variant="outline" disabled={isUploading}>
+                      Cancel
+                    </Button>
+                    <Button 
+                      onClick={handleUpload}
+                      disabled={!uploadForm.file || !uploadForm.title || isUploading}
+                    >
+                      {isUploading ? "Uploading..." : "Upload Video"}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="analytics">
+              <Card className="border-0 shadow-sm">
+                <CardHeader>
+                  <CardTitle>Video Analytics</CardTitle>
+                  <CardDescription>
+                    Track performance metrics for your video content
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-center py-12">
+                    <Video className="h-12 w-12 text-slate-400 mx-auto mb-4" />
+                    <h3 className="text-lg font-medium text-slate-900 mb-2">Analytics Coming Soon</h3>
+                    <p className="text-slate-600">
+                      Detailed video analytics and performance metrics will be available here.
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+          </Tabs>
+        </div>
+      </div>
+    </div>
+  );
+}
