@@ -13,11 +13,38 @@ import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { VideoUploadComponent } from "./VideoUploadComponent";
 
+interface ContentData {
+  title: string;
+  description: string;
+  body: string;
+  category: string;
+  tags: string[];
+  status: string;
+  metadata: {
+    abstract?: string;
+    transcript?: string;
+    instructions?: string;
+    eventDate?: string;
+    location?: string;
+    dueDate?: string;
+    duration?: string;
+    visibility?: string;
+    publishDate?: string;
+    author?: string;
+    videoId?: string;
+    videoUrl?: string;
+    thumbnailUrl?: string;
+    fileSize?: number;
+    originalFilename?: string;
+    [key: string]: unknown;
+  };
+}
+
 interface ContentEditorProps {
   contentType: "article" | "video" | "event" | "assignment";
-  initialContent?: any;
-  onSave?: (content: any) => void;
-  onPublish?: (content: any) => void;
+  initialContent?: Partial<ContentData>;
+  onSave?: (content: ContentData) => void;
+  onPublish?: (content: ContentData) => void;
   className?: string;
 }
 
@@ -28,14 +55,14 @@ export function ContentEditor({
   onPublish,
   className
 }: ContentEditorProps) {
-  const [content, setContent] = useState({
+  const [content, setContent] = useState<ContentData>({
     title: "",
     description: "",
     body: "",
     category: "",
     tags: [] as string[],
     status: "draft",
-    metadata: {} as any,
+    metadata: {},
     ...initialContent
   });
 
@@ -63,12 +90,15 @@ export function ContentEditor({
 
   const handleAutoSave = async () => {
     setIsSaving(true);
-    // Simulate save
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    setLastSaved(new Date());
-    setIsSaving(false);
-    if (onSave) {
-      onSave(content);
+    try {
+      if (onSave) {
+        await onSave({ ...content, status: "draft" });
+      }
+      setLastSaved(new Date());
+    } catch (error) {
+      console.error('Auto-save failed:', error);
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -436,6 +466,30 @@ export function ContentEditor({
                     <p>{content.metadata.abstract}</p>
                   </div>
                 )}
+                
+                {/* Video Preview */}
+                {content.metadata.videoUrl && (
+                  <div className="mb-6">
+                    <h3>Video</h3>
+                    <div className="aspect-video bg-slate-100 rounded-lg overflow-hidden">
+                      <video 
+                        controls 
+                        className="w-full h-full object-cover"
+                        poster={content.metadata.thumbnailUrl}
+                      >
+                        <source src={content.metadata.videoUrl} type="video/mp4" />
+                        Your browser does not support the video tag.
+                      </video>
+                    </div>
+                    {content.metadata.duration && (
+                      <p className="text-sm text-slate-600 mt-2">
+                        Duration: {Math.floor(Number(content.metadata.duration) / 60)}:{(Number(content.metadata.duration) % 60).toString().padStart(2, '0')} | 
+                        Size: {content.metadata.fileSize ? (Number(content.metadata.fileSize) / (1024 * 1024)).toFixed(1) + ' MB' : 'Unknown'}
+                      </p>
+                    )}
+                  </div>
+                )}
+                
                 <Separator className="my-6" />
                 <div className="whitespace-pre-wrap">{content.body}</div>
                 {content.tags.length > 0 && (

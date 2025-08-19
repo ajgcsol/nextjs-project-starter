@@ -1,0 +1,52 @@
+[
+  {
+    "id": "sample-1",
+    "title": "Constitutional Law: Introduction to Civil Rights",
+    "description": "Comprehensive overview of civil rights law and constitutional interpretation",
+    "category": "Constitutional Law",
+    "tags": [
+      "civil rights",
+      "constitution",
+      "lecture"
+    ],
+    "visibility": "public",
+    "originalFilename": "civil-rights-intro.mp4",
+    "storedFilename": "sample-1_original.mp4",
+    "thumbnailPath": "/api/videos/thumbnail/sample-1",
+    "size": 262144000,
+    "duration": 3600,
+    "width": 1920,
+    "height": 1080,
+    "bitrate": 5000000,
+    "status": "ready",
+    "uploadDate": "2024-01-15",
+    "views": 234,
+    "createdBy": "Prof. Sarah Johnson",
+    "streamUrl": "/api/videos/stream/sample-1"
+  },
+  {
+    "id": "sample-2",
+    "title": "Contract Formation Principles",
+    "description": "Essential principles of contract formation including offer, acceptance, and consideration",
+    "category": "Contract Law",
+    "tags": [
+      "contracts",
+      "formation",
+      "consideration"
+    ],
+    "visibility": "public",
+    "originalFilename": "contract-formation.mp4",
+    "storedFilename": "sample-2_original.mp4",
+    "thumbnailPath": "/api/videos/thumbnail/sample-2",
+    "size": 188743680,
+    "duration": 2700,
+    "width": 1920,
+    "height": 1080,
+    "bitrate": 4000000,
+    "status": "ready",
+    "uploadDate": "2024-01-12",
+    "views": 156,
+    "createdBy": "Prof. Michael Chen",
+    "streamUrl": "/api/videos/stream/sample-2"
+  }
+]

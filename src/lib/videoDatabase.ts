@@ -1,5 +1,7 @@
-// Simple in-memory database for video metadata
+// Simple file-based database for video metadata
 // In production, this would be replaced with a real database
+import { writeFileSync, readFileSync, existsSync } from 'fs';
+import { join } from 'path';
 
 export interface VideoRecord {
   id: string;
@@ -26,10 +28,44 @@ export interface VideoRecord {
 
 class VideoDatabase {
   private videos: Map<string, VideoRecord> = new Map();
+  private dbPath: string;
 
   constructor() {
-    // Initialize with some sample videos for testing
-    this.addSampleVideos();
+    this.dbPath = join(process.cwd(), 'database', 'videos.json');
+    // Load existing data or initialize with sample videos
+    this.loadDatabase();
+  }
+
+  private loadDatabase() {
+    try {
+      if (existsSync(this.dbPath)) {
+        const data = readFileSync(this.dbPath, 'utf8');
+        const videosArray: VideoRecord[] = JSON.parse(data);
+        this.videos = new Map(videosArray.map(video => [video.id, video]));
+      } else {
+        // Initialize with sample videos if no database exists
+        this.addSampleVideos();
+        this.saveDatabase();
+      }
+    } catch (error) {
+      console.error('Error loading video database:', error);
+      this.addSampleVideos();
+    }
+  }
+
+  private saveDatabase() {
+    try {
+      const videosArray = Array.from(this.videos.values());
+      // Ensure database directory exists
+      const dbDir = join(process.cwd(), 'database');
+      if (!existsSync(dbDir)) {
+        const { mkdirSync } = require('fs');
+        mkdirSync(dbDir, { recursive: true });
+      }
+      writeFileSync(this.dbPath, JSON.stringify(videosArray, null, 2));
+    } catch (error) {
+      console.error('Error saving video database:', error);
+    }
   }
 
   private addSampleVideos() {
@@ -87,6 +123,7 @@ class VideoDatabase {
   // Create a new video record
   create(video: VideoRecord): VideoRecord {
     this.videos.set(video.id, video);
+    this.saveDatabase();
     return video;
   }
 
@@ -111,6 +148,7 @@ class VideoDatabase {
     if (video) {
       const updated = { ...video, ...updates };
       this.videos.set(id, updated);
+      this.saveDatabase();
       return updated;
     }
     return undefined;
@@ -118,7 +156,11 @@ class VideoDatabase {
 
   // Delete a video
   delete(id: string): boolean {
-    return this.videos.delete(id);
+    const result = this.videos.delete(id);
+    if (result) {
+      this.saveDatabase();
+    }
+    return result;
   }
 
   // Search videos
@@ -148,6 +190,7 @@ class VideoDatabase {
     if (video) {
       video.views += 1;
       this.videos.set(id, video);
+      this.saveDatabase();
     }
   }
 }

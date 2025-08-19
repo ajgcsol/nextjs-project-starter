@@ -1,16 +1,17 @@
 "use client";
 
+import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { ContentEditor } from "@/components/ContentEditor";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 
-export default function EditorPage() {
+function EditorContent() {
   const { isAuthenticated, canAccess } = useAuth();
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -47,38 +48,93 @@ export default function EditorPage() {
 
   const handleSave = async (content: any) => {
     console.log("Saving content:", content);
-    // Here you would call your API to save the content
-    // Example: await saveContent(content);
+    
+    try {
+      // Handle video content specifically
+      if (contentType === "video" && content.metadata?.videoId) {
+        // Update the video as draft
+        const response = await fetch(`/api/videos/upload`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            id: content.metadata.videoId,
+            title: content.title,
+            description: content.description,
+            category: content.category,
+            tags: content.tags,
+            visibility: 'private',
+            status: 'draft'
+          })
+        });
+        
+        if (response.ok) {
+          console.log("Draft saved successfully");
+        }
+      }
+      
+      // For other content types, call respective APIs
+      // Example: await saveContent(content);
+    } catch (error) {
+      console.error('Save error:', error);
+    }
   };
 
   const handlePublish = async (content: any) => {
     setIsPublishing(true);
     console.log("Publishing content:", content);
     
-    // Here you would call your API to publish the content
-    // Example: await publishContent(content);
-    
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
-    setIsPublishing(false);
-    
-    // Redirect based on content type
-    switch (contentType) {
-      case "article":
-        router.push("/public/articles");
-        break;
-      case "video":
-        router.push("/public/videos");
-        break;
-      case "event":
-        router.push("/public/events");
-        break;
-      case "assignment":
-        router.push("/dashboard/student-assignments");
-        break;
-      default:
-        router.push("/dashboard");
+    try {
+      // Handle video content specifically
+      if (contentType === "video" && content.metadata?.videoId) {
+        // Update the video status to published
+        await fetch(`/api/videos/upload`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            id: content.metadata.videoId,
+            title: content.title,
+            description: content.description,
+            category: content.category,
+            tags: content.tags,
+            visibility: 'public',
+            status: 'published'
+          })
+        });
+      }
+      
+      // For other content types, call respective APIs
+      // Example: await publishContent(content);
+      
+      // Simulate API call for demo
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      setIsPublishing(false);
+      
+      // Redirect to management pages instead of public pages
+      switch (contentType) {
+        case "article":
+          router.push("/dashboard/law-review");
+          break;
+        case "video":
+          router.push("/dashboard/videos");
+          break;
+        case "event":
+          router.push("/dashboard/events");
+          break;
+        case "assignment":
+          router.push("/dashboard/student-assignments");
+          break;
+        default:
+          router.push("/dashboard");
+      }
+    } catch (error) {
+      console.error('Publishing error:', error);
+      setIsPublishing(false);
+      alert('Publishing failed. Please try again.');
     }
   };
 
@@ -87,9 +143,9 @@ export default function EditorPage() {
       case "article":
         return "/dashboard/law-review";
       case "video":
-        return "/dashboard/video";
+        return "/dashboard/videos";
       case "event":
-        return "/dashboard/advocacy";
+        return "/dashboard/events";
       case "assignment":
         return "/dashboard/student-assignments";
       default:
@@ -144,5 +200,21 @@ export default function EditorPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function EditorPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center">
+        <Card className="border-0 shadow-sm">
+          <CardContent className="pt-6">
+            <p className="text-center text-slate-600">Loading editor...</p>
+          </CardContent>
+        </Card>
+      </div>
+    }>
+      <EditorContent />
+    </Suspense>
   );
 }

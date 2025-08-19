@@ -197,6 +197,50 @@ export async function GET(request: NextRequest) {
   }
 }
 
+// PUT endpoint for updating videos
+export async function PUT(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { id, title, description, category, tags, visibility, status } = body;
+    
+    if (!id) {
+      return NextResponse.json(
+        { error: 'Video ID required' },
+        { status: 400 }
+      );
+    }
+    
+    // Update the video in the database
+    const updatedVideo = videoDatabase.update(id, {
+      title,
+      description,
+      category,
+      tags,
+      visibility,
+      status
+    });
+    
+    if (updatedVideo) {
+      return NextResponse.json({
+        success: true,
+        video: updatedVideo,
+        message: 'Video updated successfully'
+      });
+    } else {
+      return NextResponse.json(
+        { error: 'Video not found' },
+        { status: 404 }
+      );
+    }
+  } catch (error) {
+    console.error('Update error:', error);
+    return NextResponse.json(
+      { error: 'Failed to update video' },
+      { status: 500 }
+    );
+  }
+}
+
 // DELETE endpoint for removing videos
 export async function DELETE(request: NextRequest) {
   try {
