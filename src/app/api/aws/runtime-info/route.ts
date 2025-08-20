@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
     try {
       const testResponse = new Response('test');
       testResponse.headers.set('Test-Header', 'simple-value');
-      testResponse.headers.set('Test-ASCII', 'AKIA3Q6FF4YAHNYSVFPW');
+      testResponse.headers.set('Test-ASCII', 'test-ascii-value');
       return NextResponse.json({
         ...runtimeInfo,
         headerTest: 'SUCCESS - Basic headers work',

@@ -3,12 +3,12 @@ import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 
 export async function POST(request: NextRequest) {
   try {
-    // Use hardcoded working credentials for testing
+    // Use environment credentials for testing
     const s3Client = new S3Client({
       region: 'us-east-1',
       credentials: {
-        accessKeyId: 'AKIA3Q6FF4YAHNYSVFPW',
-        secretAccessKey: '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'
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID || 'test-access-key',
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || 'test-secret-key'
       }
     });
 
