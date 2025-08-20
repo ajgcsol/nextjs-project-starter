@@ -1,0 +1,73 @@
+# Dependencies
+node_modules
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Testing
+coverage
+*.lcov
+
+# Next.js
+.next/
+out/
+
+# Production build
+build/
+dist/
+
+# Environment variables (these should be set in Vercel dashboard)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.aws
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+temp_*.txt
+temp_access_key.txt
+temp_secret_key.txt
+
+# Database
+*.db
+*.sqlite
+database/
+
+# AWS credentials (should never be deployed)
+.aws/
+aws-credentials.json
+
+# Documentation and setup files
+*.md
+setup-vercel-env.sh
+gitignore.txt
+
+# Test files
+test-video.mp4
+
+# TypeScript build info
+tsconfig.tsbuildinfo
+
+# Vercel
+.vercel/
+
+# Git
+.git/
+
+# Scripts
+scripts/

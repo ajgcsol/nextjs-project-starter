@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { VideoUploadEnhanced } from "@/components/VideoUploadEnhanced";
 import { 
   Upload, 
   Video, 
@@ -41,7 +42,7 @@ interface VideoFile {
   duration: number;
   size: number;
   uploadDate: string;
-  status: "processing" | "ready" | "failed";
+  status: "processing" | "ready" | "failed" | "draft";
   visibility: "public" | "private" | "unlisted";
   category: string;
   tags: string[];
@@ -122,15 +123,6 @@ export default function VideoManagementPage() {
   const [sortBy, setSortBy] = useState("newest");
   const [isLoadingVideos, setIsLoadingVideos] = useState(true);
 
-  // Upload form state
-  const [uploadForm, setUploadForm] = useState({
-    title: "",
-    description: "",
-    category: "",
-    tags: "",
-    visibility: "private" as "public" | "private" | "unlisted",
-    file: null as File | null
-  });
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -149,6 +141,7 @@ export default function VideoManagementPage() {
   const fetchVideos = async () => {
     try {
       setIsLoadingVideos(true);
+      // Use working API for now
       const response = await fetch('/api/videos/upload');
       const data = await response.json();
       console.log('Fetched videos:', data);
@@ -163,94 +156,33 @@ export default function VideoManagementPage() {
     }
   };
 
-  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      setUploadForm({ ...uploadForm, file });
-    }
-  };
 
-  const handleUpload = async () => {
-    if (!uploadForm.file) return;
-
-    setIsUploading(true);
-    setUploadProgress(0);
-
+  const handlePublishVideo = async (videoId: string) => {
     try {
-      // Create FormData
-      const formData = new FormData();
-      formData.append('file', uploadForm.file);
-      formData.append('title', uploadForm.title);
-      formData.append('description', uploadForm.description);
-      formData.append('category', uploadForm.category);
-      formData.append('tags', uploadForm.tags);
-      formData.append('visibility', uploadForm.visibility);
-
-      // Create XMLHttpRequest for progress tracking
-      const xhr = new XMLHttpRequest();
-
-      // Track upload progress
-      xhr.upload.addEventListener('progress', (event) => {
-        if (event.lengthComputable) {
-          const percentComplete = (event.loaded / event.total) * 100;
-          setUploadProgress(Math.round(percentComplete));
-        }
+      const response = await fetch('/api/videos/upload', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          id: videoId,
+          status: 'ready'
+        }),
       });
 
-      // Handle completion
-      xhr.addEventListener('load', async () => {
-        if (xhr.status === 200) {
-          const response = JSON.parse(xhr.responseText);
-          console.log('Upload successful:', response);
-          
-          // Reset form first
-          setUploadForm({
-            title: "",
-            description: "",
-            category: "",
-            tags: "",
-            visibility: "private",
-            file: null
-          });
-          
-          // Clear file input
-          const fileInput = document.getElementById('video-file') as HTMLInputElement;
-          if (fileInput) {
-            fileInput.value = '';
-          }
-          
-          setIsUploading(false);
-          setUploadProgress(0);
-          
-          // Refresh video list with a small delay to ensure database is updated
-          setTimeout(async () => {
-            await fetchVideos();
-          }, 500);
-        } else {
-          console.error('Upload failed with status:', xhr.status);
-          alert('Upload failed. Please try again.');
-          setIsUploading(false);
-          setUploadProgress(0);
-        }
-      });
-
-      // Handle error
-      xhr.addEventListener('error', () => {
-        console.error('Upload error');
-        setIsUploading(false);
-        setUploadProgress(0);
-      });
-
-      // Send request
-      xhr.open('POST', '/api/videos/upload');
-      xhr.send(formData);
-
+      if (response.ok) {
+        // Refresh the video list
+        await fetchVideos();
+      } else {
+        console.error('Failed to publish video');
+        alert('Failed to publish video. Please try again.');
+      }
     } catch (error) {
-      console.error('Upload error:', error);
-      setIsUploading(false);
-      setUploadProgress(0);
+      console.error('Error publishing video:', error);
+      alert('Error publishing video. Please try again.');
     }
   };
+
 
   const filteredVideos = videos.filter(video => {
     const matchesSearch = video.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -274,6 +206,17 @@ export default function VideoManagementPage() {
         return 0;
     }
   });
+
+  // Filter videos by status - handle both API response formats
+  const publishedVideos = sortedVideos.filter(video => 
+    video.status === 'ready' || 
+    (video.status as any) === 'published' || 
+    (video.visibility === 'public' && video.status !== 'draft')
+  );
+  const draftVideos = sortedVideos.filter(video => 
+    video.status === 'draft' || 
+    video.status === 'processing'
+  );
 
   const formatDuration = (seconds: number) => {
     const hours = Math.floor(seconds / 3600);
@@ -371,7 +314,8 @@ export default function VideoManagementPage() {
 
           <Tabs defaultValue="library" className="space-y-6">
             <TabsList>
-              <TabsTrigger value="library">Video Library</TabsTrigger>
+              <TabsTrigger value="library">Published</TabsTrigger>
+              <TabsTrigger value="drafts">Drafts</TabsTrigger>
               <TabsTrigger value="upload">Quick Upload</TabsTrigger>
               <TabsTrigger value="analytics">Analytics</TabsTrigger>
             </TabsList>
@@ -426,7 +370,7 @@ export default function VideoManagementPage() {
 
               {/* Video Grid */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {sortedVideos.map(video => (
+                {publishedVideos.map(video => (
                   <Card key={video.id} className="border-0 shadow-sm hover:shadow-md transition-shadow">
                     <CardHeader className="pb-4">
                       <div className="aspect-video bg-slate-100 rounded-lg overflow-hidden mb-4 relative group">
@@ -524,126 +468,140 @@ export default function VideoManagementPage() {
               </div>
             </TabsContent>
 
-            <TabsContent value="upload">
+            <TabsContent value="drafts" className="space-y-6">
+              {/* Search and Filters */}
               <Card className="border-0 shadow-sm">
-                <CardHeader>
-                  <CardTitle>Quick Upload</CardTitle>
-                  <CardDescription>
-                    Upload a new video with basic metadata. For advanced options, use the full editor.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {isUploading && (
-                    <div className="mb-6">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-medium">Uploading...</span>
-                        <span className="text-sm text-slate-500">{Math.round(uploadProgress)}%</span>
-                      </div>
-                      <Progress value={uploadProgress} />
+                <CardContent className="pt-6">
+                  <div className="flex gap-4 flex-wrap">
+                    <div className="flex-1 relative">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
+                      <Input
+                        placeholder="Search draft videos..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="pl-10"
+                      />
                     </div>
-                  )}
-                  
-                  <div>
-                    <Label htmlFor="video-file">Video File</Label>
-                    <Input
-                      id="video-file"
-                      type="file"
-                      accept="video/*"
-                      onChange={handleFileSelect}
-                      disabled={isUploading}
-                    />
-                    {uploadForm.file && (
-                      <p className="text-sm text-slate-500 mt-1">
-                        {uploadForm.file.name} ({formatFileSize(uploadForm.file.size)})
-                      </p>
-                    )}
-                  </div>
-
-                  <div>
-                    <Label htmlFor="video-title">Title</Label>
-                    <Input
-                      id="video-title"
-                      value={uploadForm.title}
-                      onChange={(e) => setUploadForm({ ...uploadForm, title: e.target.value })}
-                      placeholder="Enter video title"
-                      disabled={isUploading}
-                    />
-                  </div>
-
-                  <div>
-                    <Label htmlFor="video-description">Description</Label>
-                    <Textarea
-                      id="video-description"
-                      value={uploadForm.description}
-                      onChange={(e) => setUploadForm({ ...uploadForm, description: e.target.value })}
-                      placeholder="Describe the video content"
-                      rows={3}
-                      disabled={isUploading}
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label htmlFor="video-category">Category</Label>
-                      <Select 
-                        value={uploadForm.category} 
-                        onValueChange={(value) => setUploadForm({ ...uploadForm, category: value })}
-                        disabled={isUploading}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select category" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {VIDEO_CATEGORIES.slice(1).map(category => (
-                            <SelectItem key={category} value={category}>{category}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div>
-                      <Label htmlFor="video-visibility">Visibility</Label>
-                      <Select 
-                        value={uploadForm.visibility} 
-                        onValueChange={(value) => setUploadForm({ ...uploadForm, visibility: value as any })}
-                        disabled={isUploading}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="private">Private</SelectItem>
-                          <SelectItem value="unlisted">Unlisted</SelectItem>
-                          <SelectItem value="public">Public</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-
-                  <div>
-                    <Label htmlFor="video-tags">Tags (comma-separated)</Label>
-                    <Input
-                      id="video-tags"
-                      value={uploadForm.tags}
-                      onChange={(e) => setUploadForm({ ...uploadForm, tags: e.target.value })}
-                      placeholder="lecture, introduction, civil rights"
-                      disabled={isUploading}
-                    />
-                  </div>
-
-                  <div className="flex justify-end gap-2">
-                    <Button variant="outline" disabled={isUploading}>
-                      Cancel
-                    </Button>
+                    <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+                      <SelectTrigger className="w-[200px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {VIDEO_CATEGORIES.map(category => (
+                          <SelectItem key={category} value={category}>{category}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                     <Button 
-                      onClick={handleUpload}
-                      disabled={!uploadForm.file || !uploadForm.title || isUploading}
+                      variant="outline" 
+                      size="icon"
+                      onClick={() => fetchVideos()}
+                      disabled={isLoadingVideos}
+                      title="Refresh videos"
                     >
-                      {isUploading ? "Uploading..." : "Upload Video"}
+                      <RefreshCw className={`h-4 w-4 ${isLoadingVideos ? 'animate-spin' : ''}`} />
                     </Button>
                   </div>
                 </CardContent>
               </Card>
+
+              {/* Draft Video Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {draftVideos.length === 0 ? (
+                  <div className="col-span-full text-center py-12">
+                    <Video className="h-12 w-12 text-slate-400 mx-auto mb-4" />
+                    <h3 className="text-lg font-medium text-slate-900 mb-2">No Draft Videos</h3>
+                    <p className="text-slate-600">Upload a video to get started with drafts.</p>
+                  </div>
+                ) : (
+                  draftVideos.map(video => (
+                    <Card key={video.id} className="border-0 shadow-sm hover:shadow-md transition-shadow">
+                      <CardHeader className="pb-4">
+                        <div className="aspect-video bg-slate-100 rounded-lg overflow-hidden mb-4 relative group">
+                          <img
+                            src={`/api/videos/thumbnail/${video.id}`}
+                            alt={`${video.title} thumbnail`}
+                            className="w-full h-full object-cover"
+                            onError={(e) => {
+                              const img = e.target as HTMLImageElement;
+                              img.style.display = 'none';
+                              const placeholder = img.parentElement?.querySelector('.thumbnail-placeholder');
+                              if (placeholder) {
+                                (placeholder as HTMLElement).style.display = 'flex';
+                              }
+                            }}
+                          />
+                          <div className="thumbnail-placeholder w-full h-full flex items-center justify-center absolute inset-0" style={{display: 'none'}}>
+                            <Video className="h-12 w-12 text-slate-400" />
+                          </div>
+                          {/* Draft indicator */}
+                          <div className="absolute top-2 left-2">
+                            <Badge variant="secondary" className="bg-yellow-100 text-yellow-800">
+                              {video.status === 'processing' ? 'Processing' : 'Draft'}
+                            </Badge>
+                          </div>
+                        </div>
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <CardTitle className="text-lg line-clamp-2">{video.title}</CardTitle>
+                            <CardDescription className="mt-1 line-clamp-2">
+                              {video.description}
+                            </CardDescription>
+                          </div>
+                        </div>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-3">
+                          <div className="flex items-center gap-4 text-sm text-slate-600">
+                            <span className="flex items-center gap-1">
+                              <Clock className="h-4 w-4" />
+                              {formatDuration(video.duration)}
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <Calendar className="h-4 w-4" />
+                              {new Date(video.uploadDate).toLocaleDateString()}
+                            </span>
+                          </div>
+                          <div className="flex justify-between items-center pt-2">
+                            <span className="text-sm text-slate-500">
+                              Created: {new Date(video.uploadDate).toLocaleDateString()}
+                            </span>
+                            <div className="flex gap-1">
+                              <Button variant="ghost" size="sm" className="h-8">
+                                <Edit className="h-4 w-4 mr-1" />
+                                Edit
+                              </Button>
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                className="h-8"
+                                onClick={() => handlePublishVideo(video.id)}
+                              >
+                                <Eye className="h-4 w-4 mr-1" />
+                                Publish
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))
+                )}
+              </div>
+            </TabsContent>
+
+            <TabsContent value="upload">
+              <VideoUploadEnhanced 
+                onUploadComplete={(video) => {
+                  console.log('Video uploaded successfully:', video);
+                  // Refresh video list
+                  fetchVideos();
+                }}
+                onUploadError={(error) => {
+                  console.error('Upload error:', error);
+                  alert(`Upload failed: ${error}`);
+                }}
+              />
             </TabsContent>
 
             <TabsContent value="analytics">

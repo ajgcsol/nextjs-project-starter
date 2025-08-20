@@ -1,33 +1,150 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { writeFile, mkdir } from 'fs/promises';
-import { existsSync } from 'fs';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
-import videoDatabase from '@/lib/videoDatabase';
+import liteVideoDatabase from '@/lib/videoDatabase-lite';
+import { VideoDB } from '@/lib/database';
 
-// Configure upload directories - use public folder for direct serving
-const UPLOAD_DIR = path.join(process.cwd(), 'public', 'uploads');
-const VIDEOS_DIR = path.join(UPLOAD_DIR, 'videos');
-const THUMBNAILS_DIR = path.join(UPLOAD_DIR, 'thumbnails');
-
-// Ensure directories exist
-async function ensureDirectories() {
-  for (const dir of [UPLOAD_DIR, VIDEOS_DIR, THUMBNAILS_DIR]) {
-    if (!existsSync(dir)) {
-      await mkdir(dir, { recursive: true });
-    }
-  }
-}
+// For serverless environment, we'll skip local file storage
+// In production, files should be uploaded directly to S3
 
 export const runtime = 'nodejs';
 export const maxDuration = 300; // 5 minutes timeout for large uploads
 
+// Production environment check
+const isProduction = process.env.NODE_ENV === 'production';
+
+// Configure runtime for memory efficiency
 // Configure to handle large files (5GB max)
 export async function POST(request: NextRequest) {
+  console.log('🎬 VIDEO UPLOAD: Starting POST request');
+  console.log('🎬 Environment:', process.env.NODE_ENV);
+  console.log('🎬 Has S3 Bucket:', !!process.env.S3_BUCKET_NAME);
+  console.log('🎬 Has AWS Credentials:', !!(process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY));
+  
+  if (isProduction) {
+    console.log('🎬 Production mode - optimized for S3 uploads');
+  }
+  
   try {
-    await ensureDirectories();
+    const contentType = request.headers.get('content-type');
+    console.log('🎬 Content-Type:', contentType);
+    
+    // Prioritize JSON data handling for presigned URL uploads
+    if (contentType?.includes('application/json')) {
+      console.log('🎬 Processing JSON S3 upload data');
+      
+      let data;
+      try {
+        data = await request.json();
+        console.log('🎬 Received JSON data:', {
+          title: data.title,
+          filename: data.filename,
+          size: data.size ? `${(data.size / (1024*1024)).toFixed(2)}MB` : 'unknown',
+          s3Key: data.s3Key,
+          hasPublicUrl: !!data.publicUrl,
+          dataSize: JSON.stringify(data).length
+        });
+      } catch (jsonError) {
+        console.error('🎬 ❌ JSON parsing error:', jsonError);
+        return NextResponse.json(
+          { error: 'Invalid JSON data in request body' },
+          { status: 400 }
+        );
+      }
+      
+      const { title, description, category, tags, visibility, s3Key, publicUrl, filename, size, mimeType } = data;
+      console.log('🎬 Extracted fields:', { title, description, category, tags, visibility, s3Key, publicUrl, filename, size, mimeType });
+
+      if (!s3Key || !publicUrl || !filename) {
+        console.log('🎬 ❌ Missing required S3 data:', { s3Key: !!s3Key, publicUrl: !!publicUrl, filename: !!filename });
+        return NextResponse.json(
+          { error: 'Missing required S3 upload data' },
+          { status: 400 }
+        );
+      }
+
+      // Generate unique ID
+      const fileId = crypto.randomUUID();
+      console.log('🎬 Generated file ID:', fileId);
+      
+      // Extract basic metadata
+      const estimatedDuration = Math.floor(Math.random() * 3600) + 600; // Random duration for demo
+      
+      // Determine video dimensions based on file size
+      let width = 1920;
+      let height = 1080;
+      
+      if (size < 100 * 1024 * 1024) { // Less than 100MB
+        width = 1280;
+        height = 720;
+      } else if (size < 50 * 1024 * 1024) { // Less than 50MB
+        width = 854;
+        height = 480;
+      }
+
+      // Create video record with S3 data and CloudFront optimization
+      const cloudFrontDomain = process.env.CLOUDFRONT_DOMAIN;
+      const optimizedStreamUrl = cloudFrontDomain 
+        ? `https://${cloudFrontDomain}/${s3Key}`
+        : publicUrl;
+
+      const videoRecord = {
+        id: fileId,
+        title: title || filename.replace(/\.[^/.]+$/, ''),
+        description: description || '',
+        category: category || 'General',
+        tags: tags ? tags.split(',').map((tag: string) => tag.trim()).filter(Boolean) : [],
+        visibility: (visibility || 'private') as 'public' | 'private' | 'unlisted',
+        originalFilename: filename,
+        storedFilename: s3Key,
+        thumbnailPath: `/api/videos/thumbnail/${fileId}`,
+        size: size,
+        duration: estimatedDuration,
+        width,
+        height,
+        bitrate: Math.round((size * 8) / estimatedDuration),
+        status: 'ready' as 'processing' | 'ready' | 'failed' | 'draft', // Mark as ready since upload is complete
+        uploadDate: new Date().toISOString(),
+        views: 0,
+        streamUrl: optimizedStreamUrl, // Use CloudFront URL if available
+        createdBy: 'Current User',
+        metadata: {
+          mimeType: mimeType || 'video/mp4',
+          originalName: filename,
+          s3Key: s3Key,
+          publicUrl: publicUrl,
+          cloudFrontUrl: optimizedStreamUrl,
+          uploadMethod: 'presigned-url',
+          processingComplete: true
+        }
+      };
+
+      // Save to database - use in-memory storage for serverless
+      const savedVideo = liteVideoDatabase.create(videoRecord);
+      console.log('🎬 Video saved to in-memory database:', savedVideo.id);
+
+      return NextResponse.json({
+        success: true,
+        video: savedVideo,
+        message: 'Video uploaded successfully to S3 and database'
+      });
+    }
+
+    // Original file upload handling - serverless compatible
+    // In production, only use presigned URL uploads to avoid 413 errors
+    if (isProduction) {
+      console.log('🎬 ❌ FormData uploads disabled in production - use presigned URLs only');
+      return NextResponse.json(
+        { error: 'FormData uploads not supported in production. Use presigned URL upload instead.' },
+        { status: 400 }
+      );
+    }
+    
+    console.log('🎬 Processing FormData upload (development mode only)');
 
     const formData = await request.formData();
+    console.log('🎬 FormData parsed, entries:', Array.from(formData.entries()).map(([key, value]) => [key, typeof value === 'string' ? value : `File(${value.name})`]));
+    
     const file = formData.get('file') as File;
     const title = formData.get('title') as string;
     const description = formData.get('description') as string;
@@ -35,14 +152,26 @@ export async function POST(request: NextRequest) {
     const tags = formData.get('tags') as string;
     const visibility = formData.get('visibility') as string;
 
+    console.log('🎬 Extracted form fields:', { 
+      hasFile: !!file, 
+      fileName: file?.name, 
+      fileSize: file?.size, 
+      title, 
+      description, 
+      category, 
+      tags, 
+      visibility 
+    });
+
     if (!file) {
+      console.log('🎬 ❌ No file provided in FormData');
       return NextResponse.json(
         { error: 'No file provided' },
         { status: 400 }
       );
     }
 
-    // Validate file type
+    // Validate file type - be more lenient with MIME type detection
     const allowedTypes = [
       'video/mp4',
       'video/webm',
@@ -50,16 +179,30 @@ export async function POST(request: NextRequest) {
       'video/quicktime',
       'video/x-msvideo',
       'video/x-matroska',
-      'video/x-m4v'
+      'video/x-m4v',
+      'video/avi',
+      'video/mov',
+      'application/octet-stream' // Sometimes video files are detected as this
     ];
 
     const fileType = file.type || 'video/mp4';
-    if (!allowedTypes.includes(fileType) && !fileType.startsWith('video/')) {
+    const fileName = file.name.toLowerCase();
+    const videoExtensions = ['.mp4', '.mov', '.avi', '.webm', '.ogg', '.mkv', '.m4v'];
+    
+    // Check both MIME type and file extension
+    const isValidType = allowedTypes.includes(fileType) || 
+                       fileType.startsWith('video/') ||
+                       videoExtensions.some(ext => fileName.endsWith(ext));
+    
+    if (!isValidType) {
+      console.log('🎬 ❌ Invalid file type:', { fileType, fileName });
       return NextResponse.json(
         { error: 'Invalid file type. Please upload a video file.' },
         { status: 400 }
       );
     }
+    
+    console.log('🎬 ✅ File type validation passed:', { fileType, fileName });
 
     // Check file size (5GB max)
     const maxSize = 5 * 1024 * 1024 * 1024;
@@ -70,20 +213,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Generate unique filename
+    // Generate unique filename (for metadata only in serverless)
     const fileId = uuidv4();
     const fileExtension = path.extname(file.name) || '.mp4';
     const originalFilename = `${fileId}_original${fileExtension}`;
-    const originalPath = path.join(VIDEOS_DIR, originalFilename);
+    
+    // In serverless environment, we skip file storage
+    // In production, you would upload directly to S3 here
+    console.log('🎬 Skipping file storage in serverless environment');
 
-    // Save original file
-    const bytes = await file.arrayBuffer();
-    const buffer = Buffer.from(bytes);
-    await writeFile(originalPath, buffer);
-
-    // Generate thumbnail placeholder path
-    const thumbnailFilename = `${fileId}_thumb.jpg`;
-    const thumbnailUrl = `/uploads/thumbnails/${thumbnailFilename}`;
+    // Use thumbnail API endpoint instead of direct file path
+    const thumbnailUrl = `/api/videos/thumbnail/${fileId}`;
     
     // Extract basic metadata (in production, use cloud services for proper extraction)
     const estimatedDuration = Math.floor(Math.random() * 3600) + 600; // Random duration for demo
@@ -117,10 +257,10 @@ export async function POST(request: NextRequest) {
       width,
       height,
       bitrate: estimatedBitrate,
-      status: 'ready' as 'processing' | 'ready' | 'failed', // Mark as ready immediately
+      status: 'draft' as 'processing' | 'ready' | 'failed' | 'draft', // New uploads start as drafts
       uploadDate: new Date().toISOString(),
       views: 0,
-      streamUrl: `/uploads/videos/${originalFilename}`,
+      streamUrl: `#placeholder-${fileId}`, // Placeholder URL for serverless
       createdBy: 'Current User', // In production, get from auth context
       metadata: {
         mimeType: fileType,
@@ -129,8 +269,9 @@ export async function POST(request: NextRequest) {
       }
     };
 
-    // Save to database
+    // Save to database using in-memory storage
     const savedVideo = videoDatabase.create(videoRecord);
+    console.log('🎬 Video saved to database:', savedVideo.id);
 
     // In production, you would:
     // 1. Upload to AWS S3
@@ -146,7 +287,7 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error) {
-    console.error('Upload error:', error);
+    console.error('🎬 Upload error:', error);
     return NextResponse.json(
       { 
         error: 'Upload failed', 
@@ -158,38 +299,56 @@ export async function POST(request: NextRequest) {
 }
 
 export async function GET(request: NextRequest) {
+  console.log('🎬 VIDEO GET: Starting GET request');
+  
   try {
     const url = new URL(request.url);
     const query = url.searchParams.get('q');
     const category = url.searchParams.get('category');
     const visibility = url.searchParams.get('visibility');
     
-    let videos = videoDatabase.getAll();
+    console.log('🎬 GET filters:', { query, category, visibility });
+    
+    // Get videos from in-memory database
+    let videos = liteVideoDatabase.getAll();
+    console.log('🎬 Videos loaded from database:', videos.length);
+    console.log('🎬 Sample video IDs:', videos.slice(0, 3).map(v => ({ id: v.id, title: v.title })));
     
     // Apply filters
     if (query) {
-      videos = videoDatabase.search(query);
+      console.log('🎬 Applying search filter:', query);
+      videos = liteVideoDatabase.search(query);
+      console.log('🎬 After search filter:', videos.length);
     }
     
     if (category && category !== 'All Categories') {
+      console.log('🎬 Applying category filter:', category);
       videos = videos.filter(v => v.category === category);
+      console.log('🎬 After category filter:', videos.length);
     }
     
     if (visibility) {
+      console.log('🎬 Applying visibility filter:', visibility);
       videos = videos.filter(v => v.visibility === visibility);
+      console.log('🎬 After visibility filter:', videos.length);
     }
     
     // Sort by upload date (newest first)
-    videos.sort((a, b) => 
-      new Date(b.uploadDate).getTime() - new Date(a.uploadDate).getTime()
-    );
+    videos.sort((a, b) => {
+      const dateA = new Date(a.uploadDate).getTime();
+      const dateB = new Date(b.uploadDate).getTime();
+      return dateB - dateA;
+    });
+    
+    console.log('🎬 Final video count:', videos.length);
+    console.log('🎬 Returning videos:', videos.map(v => ({ id: v.id, title: v.title, status: v.status })));
     
     return NextResponse.json({
       videos,
       total: videos.length
     });
   } catch (error) {
-    console.error('Error fetching videos:', error);
+    console.error('🎬 ❌ Error fetching videos:', error);
     return NextResponse.json(
       { error: 'Failed to fetch videos' },
       { status: 500 }
@@ -211,7 +370,7 @@ export async function PUT(request: NextRequest) {
     }
     
     // Update the video in the database
-    const updatedVideo = videoDatabase.update(id, {
+    const updatedVideo = liteVideoDatabase.update(id, {
       title,
       description,
       category,
@@ -254,7 +413,8 @@ export async function DELETE(request: NextRequest) {
       );
     }
     
-    const success = videoDatabase.delete(videoId);
+    // Delete from database
+    const success = liteVideoDatabase.delete(videoId);
     
     if (success) {
       // In production, also delete files from storage

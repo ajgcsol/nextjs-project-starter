@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
-import { VideoUploadComponent } from "./VideoUploadComponent";
+import { VideoUploadLarge } from "./VideoUploadLarge";
 
 interface ContentData {
   title: string;
@@ -271,7 +271,7 @@ export function ContentEditor({
 
               {config.showVideoUrl && (
                 <div className="space-y-4">
-                  <VideoUploadComponent
+                  <VideoUploadLarge
                     onUploadComplete={(video) => {
                       setContent({
                         ...content,
@@ -341,7 +341,7 @@ export function ContentEditor({
                   value={content.category} 
                   onValueChange={(value) => setContent({ ...content, category: value })}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger id="category">
                     <SelectValue placeholder="Select category" />
                   </SelectTrigger>
                   <SelectContent>
@@ -524,7 +524,7 @@ export function ContentEditor({
                     metadata: { ...content.metadata, visibility: value }
                   })}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger id="visibility">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>

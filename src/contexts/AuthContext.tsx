@@ -23,6 +23,7 @@ export interface User {
   roles: UserRole[];
   department?: string;
   permissions?: Permission[];
+  profilePicture?: string;
 }
 
 export interface Permission {
@@ -65,7 +66,8 @@ const MOCK_USERS: Record<string, User> = {
     permissions: [
       { resource: "course_content", actions: ["create", "edit", "delete", "publish"] },
       { resource: "law_review", actions: ["review", "comment"] },
-      { resource: "videos", actions: ["upload", "edit"] }
+      { resource: "videos", actions: ["upload", "edit"] },
+      { resource: "events", actions: ["create", "edit", "delete", "publish", "view"] }
     ]
   },
   "editor.chief@law.edu": {
@@ -78,7 +80,7 @@ const MOCK_USERS: Record<string, User> = {
       { resource: "editorial_workflow", actions: ["*"] },
       { resource: "assignments", actions: ["*"] },
       { resource: "bluebook", actions: ["*"] },
-      { resource: "journals", actions: ["*"] },
+      { resource: "journals", actions: ["view", "edit", "review"] },
       { resource: "editorial", actions: ["*"] },
       { resource: "reviews", actions: ["*"] },
       { resource: "advocacy", actions: ["*"] }
@@ -207,7 +209,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           permissions.push(
             { resource: "course_content", actions: ["create", "edit", "delete", "publish"] },
             { resource: "assignments", actions: ["create", "edit", "grade"] },
-            { resource: "videos", actions: ["upload", "edit"] }
+            { resource: "videos", actions: ["upload", "edit"] },
+            { resource: "events", actions: ["create", "edit", "delete", "publish", "view"] }
           );
           break;
         case "editor_in_chief":

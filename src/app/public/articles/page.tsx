@@ -169,8 +169,13 @@ const recentIssues = [
   { volume: "Vol. 46", issue: "Issue 3", date: "April 2023", articles: 9 }
 ];
 
+const availableYears = ["All Years", "2024", "2023", "2022", "2021"];
+const availableMonths = ["All Months", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
 export default function ArticlesPage() {
   const [selectedSubject, setSelectedSubject] = useState("All Subjects");
+  const [selectedYear, setSelectedYear] = useState("All Years");
+  const [selectedMonth, setSelectedMonth] = useState("All Months");
   const [searchQuery, setSearchQuery] = useState("");
 
   // Filter academic materials based on subject and search query

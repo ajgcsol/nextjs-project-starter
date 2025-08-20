@@ -12,20 +12,29 @@ const sanitizeCredential = (credential: string | undefined): string | undefined 
 };
 
 const getAWSConfig = () => {
+  // Get credentials from environment variables
+  const accessKeyId = sanitizeCredential(process.env.AWS_ACCESS_KEY_ID);
+  const secretAccessKey = sanitizeCredential(process.env.AWS_SECRET_ACCESS_KEY);
+  const region = process.env.AWS_REGION || 'us-east-1';
+  
+  if (!accessKeyId || !secretAccessKey) {
+    throw new Error('AWS credentials not configured. Please set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment variables.');
+  }
+  
   const config = {
-    region: process.env.AWS_REGION || 'us-east-1',
+    region,
     credentials: {
-      accessKeyId: sanitizeCredential(process.env.AWS_ACCESS_KEY_ID) || '',
-      secretAccessKey: sanitizeCredential(process.env.AWS_SECRET_ACCESS_KEY) || ''
+      accessKeyId,
+      secretAccessKey
     }
   };
   
   console.log('AWS Config Debug:', {
     region: config.region,
-    accessKeyId: config.credentials.accessKeyId ? `${config.credentials.accessKeyId.substring(0, 4)}...` : 'missing',
-    secretAccessKey: config.credentials.secretAccessKey ? `${config.credentials.secretAccessKey.substring(0, 4)}...` : 'missing',
-    accessKeyLength: config.credentials.accessKeyId?.length,
-    secretKeyLength: config.credentials.secretAccessKey?.length
+    accessKeyId: `${config.credentials.accessKeyId.substring(0, 4)}...`,
+    secretAccessKey: `${config.credentials.secretAccessKey.substring(0, 4)}...`,
+    accessKeyLength: config.credentials.accessKeyId.length,
+    secretKeyLength: config.credentials.secretAccessKey.length
   });
   
   return config;

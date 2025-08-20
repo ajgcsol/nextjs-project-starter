@@ -1,7 +1,5 @@
-// Simple file-based database for video metadata
-// In production, this would be replaced with a real database
-import { writeFileSync, readFileSync, existsSync } from 'fs';
-import { join } from 'path';
+// Serverless-compatible video database
+// Uses global variable for persistence within the same function instance
 
 export interface VideoRecord {
   id: string;
@@ -18,7 +16,7 @@ export interface VideoRecord {
   width: number;
   height: number;
   bitrate: number;
-  status: 'processing' | 'ready' | 'failed';
+  status: 'processing' | 'ready' | 'failed' | 'draft';
   uploadDate: string;
   views: number;
   createdBy: string;
@@ -26,104 +24,95 @@ export interface VideoRecord {
   metadata?: any;
 }
 
+// Global variable to persist data across function calls within the same instance
+let globalVideoStore: Map<string, VideoRecord> | null = null;
+
 class VideoDatabase {
-  private videos: Map<string, VideoRecord> = new Map();
-  private dbPath: string;
+  private videos: Map<string, VideoRecord>;
 
   constructor() {
-    this.dbPath = join(process.cwd(), 'database', 'videos.json');
-    // Load existing data or initialize with sample videos
-    this.loadDatabase();
-  }
-
-  private loadDatabase() {
     try {
-      if (existsSync(this.dbPath)) {
-        const data = readFileSync(this.dbPath, 'utf8');
-        const videosArray: VideoRecord[] = JSON.parse(data);
-        this.videos = new Map(videosArray.map(video => [video.id, video]));
-      } else {
-        // Initialize with sample videos if no database exists
+      // Use global store for persistence within the same serverless function instance
+      if (globalVideoStore === null) {
+        globalVideoStore = new Map();
+        this.videos = globalVideoStore;
         this.addSampleVideos();
-        this.saveDatabase();
+        console.log('🎬 Initialized new video database with sample data');
+      } else {
+        this.videos = globalVideoStore;
       }
+      console.log('🎬 Video database loaded with', this.videos.size, 'videos');
     } catch (error) {
-      console.error('Error loading video database:', error);
-      this.addSampleVideos();
-    }
-  }
-
-  private saveDatabase() {
-    try {
-      const videosArray = Array.from(this.videos.values());
-      // Ensure database directory exists
-      const dbDir = join(process.cwd(), 'database');
-      if (!existsSync(dbDir)) {
-        const { mkdirSync } = require('fs');
-        mkdirSync(dbDir, { recursive: true });
-      }
-      writeFileSync(this.dbPath, JSON.stringify(videosArray, null, 2));
-    } catch (error) {
-      console.error('Error saving video database:', error);
+      console.error('🎬 Error initializing video database:', error);
+      // Fallback to empty map if initialization fails
+      this.videos = new Map();
+      globalVideoStore = this.videos;
     }
   }
 
   private addSampleVideos() {
-    // Add sample videos that were already in the UI
-    const sampleVideos: VideoRecord[] = [
-      {
-        id: "sample-1",
-        title: "Constitutional Law: Introduction to Civil Rights",
-        description: "Comprehensive overview of civil rights law and constitutional interpretation",
-        category: "Constitutional Law",
-        tags: ["civil rights", "constitution", "lecture"],
-        visibility: "public",
-        originalFilename: "civil-rights-intro.mp4",
-        storedFilename: "sample-1_original.mp4",
-        thumbnailPath: "/api/videos/thumbnail/sample-1",
-        size: 1024 * 1024 * 250, // 250MB
-        duration: 3600, // 1 hour
-        width: 1920,
-        height: 1080,
-        bitrate: 5000000,
-        status: "ready",
-        uploadDate: "2024-01-15",
-        views: 234,
-        createdBy: "Prof. Sarah Johnson",
-        streamUrl: "/api/videos/stream/sample-1"
-      },
-      {
-        id: "sample-2",
-        title: "Contract Formation Principles",
-        description: "Essential principles of contract formation including offer, acceptance, and consideration",
-        category: "Contract Law",
-        tags: ["contracts", "formation", "consideration"],
-        visibility: "public",
-        originalFilename: "contract-formation.mp4",
-        storedFilename: "sample-2_original.mp4",
-        thumbnailPath: "/api/videos/thumbnail/sample-2",
-        size: 1024 * 1024 * 180, // 180MB
-        duration: 2700, // 45 minutes
-        width: 1920,
-        height: 1080,
-        bitrate: 4000000,
-        status: "ready",
-        uploadDate: "2024-01-12",
-        views: 156,
-        createdBy: "Prof. Michael Chen",
-        streamUrl: "/api/videos/stream/sample-2"
-      }
-    ];
+    try {
+      // Add sample videos that were already in the UI
+      const sampleVideos: VideoRecord[] = [
+        {
+          id: "sample-1",
+          title: "Constitutional Law: Introduction to Civil Rights",
+          description: "Comprehensive overview of civil rights law and constitutional interpretation",
+          category: "Constitutional Law",
+          tags: ["civil rights", "constitution", "lecture"],
+          visibility: "public",
+          originalFilename: "civil-rights-intro.mp4",
+          storedFilename: "sample-1_original.mp4",
+          thumbnailPath: "/api/videos/thumbnail/sample-1",
+          size: 1024 * 1024 * 250, // 250MB
+          duration: 3600, // 1 hour
+          width: 1920,
+          height: 1080,
+          bitrate: 5000000,
+          status: "ready",
+          uploadDate: "2024-01-15",
+          views: 234,
+          createdBy: "Prof. Sarah Johnson",
+          streamUrl: "/api/videos/stream/sample-1"
+        },
+        {
+          id: "sample-2",
+          title: "Contract Formation Principles",
+          description: "Essential principles of contract formation including offer, acceptance, and consideration",
+          category: "Contract Law",
+          tags: ["contracts", "formation", "consideration"],
+          visibility: "public",
+          originalFilename: "contract-formation.mp4",
+          storedFilename: "sample-2_original.mp4",
+          thumbnailPath: "/api/videos/thumbnail/sample-2",
+          size: 1024 * 1024 * 180, // 180MB
+          duration: 2700, // 45 minutes
+          width: 1920,
+          height: 1080,
+          bitrate: 4000000,
+          status: "ready",
+          uploadDate: "2024-01-12",
+          views: 156,
+          createdBy: "Prof. Michael Chen",
+          streamUrl: "/api/videos/stream/sample-2"
+        }
+      ];
 
-    sampleVideos.forEach(video => {
-      this.videos.set(video.id, video);
-    });
+      sampleVideos.forEach(video => {
+        if (this.videos) {
+          this.videos.set(video.id, video);
+        }
+      });
+    } catch (error) {
+      console.error('🎬 Error adding sample videos:', error);
+    }
   }
 
   // Create a new video record
   create(video: VideoRecord): VideoRecord {
     this.videos.set(video.id, video);
-    this.saveDatabase();
+    globalVideoStore = this.videos; // Update global reference
+    console.log('🎬 Created video:', video.id, '- Total videos:', this.videos.size);
     return video;
   }
 
@@ -148,7 +137,8 @@ class VideoDatabase {
     if (video) {
       const updated = { ...video, ...updates };
       this.videos.set(id, updated);
-      this.saveDatabase();
+      globalVideoStore = this.videos; // Update global reference
+      console.log('🎬 Updated video:', id);
       return updated;
     }
     return undefined;
@@ -158,7 +148,8 @@ class VideoDatabase {
   delete(id: string): boolean {
     const result = this.videos.delete(id);
     if (result) {
-      this.saveDatabase();
+      globalVideoStore = this.videos; // Update global reference
+      console.log('🎬 Deleted video:', id);
     }
     return result;
   }
@@ -180,7 +171,7 @@ class VideoDatabase {
   }
 
   // Update video status
-  updateStatus(id: string, status: 'processing' | 'ready' | 'failed'): VideoRecord | undefined {
+  updateStatus(id: string, status: 'processing' | 'ready' | 'failed' | 'draft'): VideoRecord | undefined {
     return this.update(id, { status });
   }
 
@@ -190,7 +181,7 @@ class VideoDatabase {
     if (video) {
       video.views += 1;
       this.videos.set(id, video);
-      this.saveDatabase();
+      globalVideoStore = this.videos; // Update global reference
     }
   }
 }

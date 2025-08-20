@@ -48,5 +48,31 @@
     "views": 156,
     "createdBy": "Prof. Michael Chen",
     "streamUrl": "/api/videos/stream/sample-2"
+  },
+  {
+    "id": "4c779cf8-d41e-480f-be14-740556d63759",
+    "title": "Test Video Upload",
+    "description": "Testing video upload with debugging",
+    "category": "Test",
+    "tags": [],
+    "visibility": "public",
+    "originalFilename": "test-video.mp4",
+    "storedFilename": "4c779cf8-d41e-480f-be14-740556d63759_original.mp4",
+    "thumbnailPath": "/uploads/thumbnails/4c779cf8-d41e-480f-be14-740556d63759_thumb.jpg",
+    "size": 20,
+    "duration": 3347,
+    "width": 1280,
+    "height": 720,
+    "bitrate": 0,
+    "status": "draft",
+    "uploadDate": "2025-08-19T23:00:15.334Z",
+    "views": 0,
+    "streamUrl": "/uploads/videos/4c779cf8-d41e-480f-be14-740556d63759_original.mp4",
+    "createdBy": "Current User",
+    "metadata": {
+      "mimeType": "video/mp4",
+      "originalName": "test-video.mp4",
+      "fileExtension": ".mp4"
+    }
   }
 ]

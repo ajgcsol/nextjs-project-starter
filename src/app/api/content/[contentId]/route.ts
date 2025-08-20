@@ -88,10 +88,10 @@ This document contains the Blue Book citation review for case references in the 
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { contentId: string } }
+  { params }: { params: Promise<{ contentId: string }> }
 ) {
   try {
-    const { contentId } = params;
+    const { contentId } = await params;
     
     // Remove 'sha256:' prefix if present
     const cleanContentId = contentId.replace('sha256:', '');
@@ -129,10 +129,10 @@ export async function GET(
 
 export async function HEAD(
   request: NextRequest,
-  { params }: { params: { contentId: string } }
+  { params }: { params: Promise<{ contentId: string }> }
 ) {
   try {
-    const { contentId } = params;
+    const { contentId } = await params;
     const cleanContentId = contentId.replace('sha256:', '');
     const content = contentDatabase[cleanContentId];
     

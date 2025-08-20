@@ -25,9 +25,11 @@ interface NavigationItem {
 const navigation: NavigationItem[] = [
   { name: "Overview", href: "/dashboard", icon: "📊" }, // Available to all authenticated users
   { name: "Video Management", href: "/dashboard/videos", icon: "🎥", requiredRoles: ["video_editor", "faculty", "admin"] },
+  { name: "Event Management", href: "/dashboard/events", icon: "📅", requiredRoles: ["faculty", "admin"] },
+  { name: "Course Management", href: "/dashboard/courses", icon: "🎓", requiredRoles: ["faculty", "admin"] },
   { name: "Editorial Assignments", href: "/dashboard/student-assignments", icon: "📝", requiredRoles: ["student", "faculty", "admin"] },
   { name: "Blue Book Citations", href: "/dashboard/bluebook", icon: "📘", requiredRoles: ["student", "editor", "reviewer", "faculty", "admin"] },
-  { name: "Journal Management", href: "/dashboard/journals", icon: "📚", requiredRoles: ["editor_in_chief", "editor", "faculty", "admin"] },
+  { name: "Journal Management", href: "/dashboard/journals", icon: "📚", requiredRoles: ["faculty", "admin"] },
   { name: "Advocacy Programs", href: "/dashboard/advocacy", icon: "⚖️", requiredRoles: ["faculty", "admin"] },
   { name: "Law Review", href: "/dashboard/law-review", icon: "📖", requiredRoles: ["editor_in_chief", "editor", "reviewer", "faculty", "admin"] },
   { name: "Editorial Queue", href: "/dashboard/editorial", icon: "📄", requiredRoles: ["editor_in_chief", "editor", "reviewer", "admin"] },
@@ -79,7 +81,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                   <DropdownMenuTrigger asChild>
                     <Button variant="ghost" className="relative h-8 w-8 rounded-full">
                       <Avatar className="h-8 w-8">
-                        <AvatarImage src={user.profilePicture || ""} alt={user.name} />
+                        <AvatarImage src="" alt={user.name} />
                         <AvatarFallback>
                           {user.name ? user.name.split(' ').map(n => n[0]).join('').toUpperCase() : 'U'}
                         </AvatarFallback>
@@ -161,7 +163,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                     </Button>
                   </Link>
                 )}
-                {hasAnyRole(["editor_in_chief", "editor", "faculty", "admin"]) && (
+                {hasAnyRole(["faculty", "admin"]) && (
                   <Link href="/dashboard/journals">
                     <Button variant="outline" size="sm" className="w-full justify-start">
                       New Journal

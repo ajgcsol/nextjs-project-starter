@@ -1,0 +1,41 @@
+{
+  "framework": "nextjs",
+  "buildCommand": "npm run build",
+  "devCommand": "npm run dev",
+  "installCommand": "npm install",
+  "functions": {
+    "src/app/api/**/*.ts": {
+      "maxDuration": 30
+    },
+    "src/app/api/videos/upload/route.ts": {
+      "maxDuration": 300,
+      "memory": 512
+    },
+    "src/app/api/videos/presigned-url/route.ts": {
+      "maxDuration": 60,
+      "memory": 512
+    },
+    "src/app/api/videos/multipart-upload/route.ts": {
+      "maxDuration": 300,
+      "memory": 1024
+    },
+    "src/app/api/aws/upload/route.ts": {
+      "maxDuration": 300
+    },
+    "src/app/api/files/upload/route.ts": {
+      "maxDuration": 180
+    }
+  },
+  "build": {
+    "env": {
+      "NEXT_TELEMETRY_DISABLED": "1"
+    }
+  },
+  "regions": ["iad1"],
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/$1"
+    }
+  ]
+}

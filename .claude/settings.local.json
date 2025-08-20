@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:github.com)",
+      "Bash(vercel:*)",
+      "Bash(npx tsc:*)",
+      "Bash(curl:*)",
+      "Bash(mkdir:*)",
+      "Bash(npx vercel:*)",
+      "Bash(aws s3api get-bucket-logging:*)",
+      "Bash(aws logs describe-log-groups:*)",
+      "Bash(aws s3 ls:*)",
+      "Bash(npm install:*)",
+      "Bash(npm uninstall:*)",
+      "Bash(npm ls:*)",
+      "Bash(npm run build:*)",
+      "WebSearch",
+      "WebSearch",
+      "WebSearch",
+      "Bash(rm:*)",
+      "Bash(touch:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

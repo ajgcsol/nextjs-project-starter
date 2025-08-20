@@ -1,14 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createReadStream, existsSync, statSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
-import path from 'path';
 import videoDatabase from '@/lib/videoDatabase';
-
-const THUMBNAILS_DIR = path.join(process.cwd(), 'public', 'uploads', 'thumbnails');
-
-// Ensure thumbnails directory exists
-if (!existsSync(THUMBNAILS_DIR)) {
-  mkdirSync(THUMBNAILS_DIR, { recursive: true });
-}
+import { AWSFileManager } from '@/lib/aws-integration';
 
 export async function GET(
   request: NextRequest,
@@ -17,35 +9,38 @@ export async function GET(
   try {
     const { id } = await params;
     
-    // Check for custom thumbnail first
-    const customThumbnailPath = path.join(THUMBNAILS_DIR, `${id}_custom.jpg`);
-    if (existsSync(customThumbnailPath)) {
-      const stat = statSync(customThumbnailPath);
-      const stream = createReadStream(customThumbnailPath);
-      return new Response(stream as any, {
+    // Check if video exists and has custom thumbnail
+    const video = videoDatabase.get(id);
+    
+    if (video?.metadata?.customThumbnail) {
+      // Return custom thumbnail from database
+      const thumbnailData = video.metadata.customThumbnail;
+      const thumbnailType = video.metadata.thumbnailType || 'image/jpeg';
+      
+      const buffer = Buffer.from(thumbnailData, 'base64');
+      
+      return new Response(buffer, {
         headers: {
-          'Content-Type': 'image/jpeg',
-          'Content-Length': stat.size.toString(),
-          'Cache-Control': 'public, max-age=86400',
+          'Content-Type': thumbnailType,
+          'Cache-Control': 'public, max-age=3600',
         },
       });
     }
-
-    // Check for auto-generated thumbnail
-    const autoThumbnailPath = path.join(THUMBNAILS_DIR, `${id}_thumb.jpg`);
-    if (existsSync(autoThumbnailPath)) {
-      const stat = statSync(autoThumbnailPath);
-      const stream = createReadStream(autoThumbnailPath);
-      return new Response(stream as any, {
-        headers: {
-          'Content-Type': 'image/jpeg',
-          'Content-Length': stat.size.toString(),
-          'Cache-Control': 'public, max-age=86400',
-        },
-      });
+    
+    if (video?.metadata?.s3ThumbnailKey) {
+      // Return CloudFront URL for S3 thumbnail
+      const cloudFrontDomain = process.env.CLOUDFRONT_DOMAIN;
+      if (cloudFrontDomain) {
+        const thumbnailUrl = `https://${cloudFrontDomain}/${video.metadata.s3ThumbnailKey}`;
+        return NextResponse.redirect(thumbnailUrl);
+      } else {
+        // Fallback to S3 direct URL
+        const thumbnailUrl = AWSFileManager.getPublicUrl(video.metadata.s3ThumbnailKey);
+        return NextResponse.redirect(thumbnailUrl);
+      }
     }
-
-    // Generate placeholder thumbnail
+    
+    // Fallback to placeholder
     return generatePlaceholderThumbnail(id);
 
   } catch (error) {
@@ -60,6 +55,7 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
+    
     const formData = await request.formData();
     const file = formData.get('thumbnail') as File;
     
@@ -78,25 +74,86 @@ export async function POST(
       );
     }
 
-    // Save custom thumbnail
-    const customThumbnailPath = path.join(THUMBNAILS_DIR, `${id}_custom.jpg`);
-    const bytes = await file.arrayBuffer();
-    const buffer = Buffer.from(bytes);
-    writeFileSync(customThumbnailPath, buffer);
-
-    // Update database record
-    const video = videoDatabase.get(id);
-    if (video) {
-      videoDatabase.update(id, {
-        thumbnailPath: `/api/videos/thumbnail/${id}`
-      });
+    // Validate file size (10MB max)
+    const maxSize = 10 * 1024 * 1024;
+    if (file.size > maxSize) {
+      return NextResponse.json(
+        { error: 'Thumbnail file too large. Maximum size is 10MB.' },
+        { status: 400 }
+      );
     }
 
-    return NextResponse.json({
-      success: true,
-      message: 'Thumbnail updated successfully',
-      thumbnailUrl: `/api/videos/thumbnail/${id}`
-    });
+    const video = videoDatabase.get(id);
+    if (!video) {
+      return NextResponse.json(
+        { error: 'Video not found' },
+        { status: 404 }
+      );
+    }
+
+    try {
+      // Try to upload to S3 first
+      const bytes = await file.arrayBuffer();
+      const buffer = Buffer.from(bytes);
+      
+      // Generate S3 key for thumbnail
+      const extension = file.name.split('.').pop() || 'jpg';
+      const s3Key = `thumbnails/${id}-${Date.now()}.${extension}`;
+      
+      // Upload to S3
+      const uploadResult = await AWSFileManager.uploadFile(
+        buffer,
+        s3Key,
+        file.type
+      );
+      
+      // Update video with S3 thumbnail info
+      videoDatabase.update(id, {
+        thumbnailPath: `/api/videos/thumbnail/${id}`,
+        metadata: {
+          ...video.metadata,
+          s3ThumbnailKey: s3Key,
+          s3ThumbnailUrl: uploadResult.Location,
+          thumbnailType: file.type
+        }
+      });
+
+      // Return CloudFront URL if available
+      const cloudFrontDomain = process.env.CLOUDFRONT_DOMAIN;
+      const thumbnailUrl = cloudFrontDomain 
+        ? `https://${cloudFrontDomain}/${s3Key}`
+        : uploadResult.Location;
+
+      return NextResponse.json({
+        success: true,
+        message: 'Thumbnail uploaded to S3 successfully',
+        thumbnailUrl: `/api/videos/thumbnail/${id}`,
+        s3Url: thumbnailUrl
+      });
+
+    } catch (s3Error) {
+      console.warn('S3 upload failed, falling back to base64 storage:', s3Error);
+      
+      // Fallback to base64 storage in database
+      const bytes = await file.arrayBuffer();
+      const buffer = Buffer.from(bytes);
+      const base64Data = buffer.toString('base64');
+
+      videoDatabase.update(id, {
+        thumbnailPath: `/api/videos/thumbnail/${id}`,
+        metadata: {
+          ...video.metadata,
+          customThumbnail: base64Data,
+          thumbnailType: file.type
+        }
+      });
+
+      return NextResponse.json({
+        success: true,
+        message: 'Thumbnail stored successfully (fallback mode)',
+        thumbnailUrl: `/api/videos/thumbnail/${id}`
+      });
+    }
 
   } catch (error) {
     console.error('Thumbnail upload error:', error);

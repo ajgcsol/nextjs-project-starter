@@ -3,28 +3,75 @@ import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { GetObjectCommand } from '@aws-sdk/client-s3';
 
-// Configure AWS SDK with explicit credential handling and sanitization
+// Advanced credential sanitization for Vercel + AWS SDK v3 compatibility
 const sanitizeCredential = (credential: string | undefined): string | undefined => {
   if (!credential) return undefined;
-  // Remove all whitespace, newlines, carriage returns, and non-printable characters
-  // Also remove any non-ASCII characters that might cause header issues
-  return credential.replace(/[^\x20-\x7E]/g, '').replace(/[\s\r\n\t]/g, '').trim();
+  
+  return credential
+    // Remove BOM (Byte Order Mark) characters
+    .replace(/^\uFEFF/, '')
+    // Remove all Unicode control characters (0x00-0x1F, 0x7F-0x9F)
+    .replace(/[\u0000-\u001F\u007F-\u009F]/g, '')
+    // Remove all whitespace characters (spaces, tabs, newlines, etc.)
+    .replace(/\s/g, '')
+    // Remove any non-ASCII characters that could cause header issues
+    .replace(/[^\x20-\x7E]/g, '')
+    // Trim any remaining whitespace
+    .trim();
+};
+
+// Validate AWS credential format
+const validateCredential = (credential: string, type: 'accessKey' | 'secretKey'): boolean => {
+  if (!credential) return false;
+  
+  if (type === 'accessKey') {
+    // AWS Access Key format: AKIA followed by 16 alphanumeric characters
+    return /^AKIA[A-Z0-9]{16}$/.test(credential);
+  } else {
+    // AWS Secret Key: 40 characters, base64-like
+    return credential.length === 40 && /^[A-Za-z0-9+/]+$/.test(credential);
+  }
 };
 
 const createS3Client = () => {
-  // Use the proven working credentials approach
-  // This resolves the "Invalid character in header content" issue with Vercel + AWS SDK v3
-  const region = 'us-east-1';
-  const accessKeyId = 'AKIA3Q6FF4YAHNYSVFPW';
-  const secretAccessKey = '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';
+  // Get and sanitize credentials from environment variables
+  const region = process.env.AWS_REGION || 'us-east-1';
+  const rawAccessKeyId = process.env.AWS_ACCESS_KEY_ID;
+  const rawSecretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
   
-  console.log('Creating S3 Client with verified working credentials');
+  // Sanitize credentials
+  const accessKeyId = sanitizeCredential(rawAccessKeyId);
+  const secretAccessKey = sanitizeCredential(rawSecretAccessKey);
+  
+  // Validate credentials
+  if (!accessKeyId || !secretAccessKey) {
+    console.error('AWS credentials missing from environment variables');
+    throw new Error('AWS credentials not found in environment variables');
+  }
+  
+  if (!validateCredential(accessKeyId, 'accessKey')) {
+    console.error('Invalid AWS Access Key format after sanitization');
+    throw new Error('Invalid AWS Access Key format');
+  }
+  
+  if (!validateCredential(secretAccessKey, 'secretKey')) {
+    console.error('Invalid AWS Secret Key format after sanitization');
+    throw new Error('Invalid AWS Secret Key format');
+  }
+  
+  console.log('Creating S3 Client with sanitized environment credentials');
+  console.log(`Access Key: ${accessKeyId.substring(0, 8)}...${accessKeyId.substring(accessKeyId.length - 4)}`);
   
   return new S3Client({
     region: region,
     credentials: {
       accessKeyId: accessKeyId,
       secretAccessKey: secretAccessKey
+    },
+    // Additional configuration to handle Vercel edge cases
+    requestHandler: {
+      requestTimeout: 30000,
+      connectionTimeout: 5000
     }
   });
 };
@@ -47,11 +94,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate file size (max 100MB)
-    const maxSize = 100 * 1024 * 1024; // 100MB
+    // Validate file size (max 5GB for videos, 100MB for documents)
+    const isVideo = file.type.startsWith('video/');
+    const maxSize = isVideo ? 5 * 1024 * 1024 * 1024 : 100 * 1024 * 1024; // 5GB for videos, 100MB for documents
     if (file.size > maxSize) {
       return NextResponse.json(
-        { error: 'File too large. Maximum size is 100MB.' },
+        { error: `File too large. Maximum size is ${isVideo ? '5GB' : '100MB'}.` },
         { status: 400 }
       );
     }

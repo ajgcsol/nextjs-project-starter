@@ -85,7 +85,7 @@ export function PublicLayout({
                   <DropdownMenuTrigger asChild>
                     <Button variant="ghost" className="relative h-8 w-8 rounded-full">
                       <Avatar className="h-8 w-8">
-                        <AvatarImage src={user.profilePicture || ""} alt={user.name} />
+                        <AvatarImage src="" alt={user.name} />
                         <AvatarFallback>
                           {user.name ? user.name.split(' ').map(n => n[0]).join('').toUpperCase() : 'U'}
                         </AvatarFallback>
