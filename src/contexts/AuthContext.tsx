@@ -167,10 +167,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     };
 
-    // Check for stored session (local auth)
+    // Check for stored session (local auth) with expiration check
     const storedUser = localStorage.getItem("currentUser");
-    if (storedUser) {
-      setUser(JSON.parse(storedUser));
+    const sessionExpiry = localStorage.getItem("sessionExpiry");
+    
+    if (storedUser && sessionExpiry) {
+      const now = new Date().getTime();
+      const expiry = parseInt(sessionExpiry);
+      
+      // If session is still valid (24 hours), restore user
+      if (now < expiry) {
+        console.log('🔑 Restoring valid session');
+        setUser(JSON.parse(storedUser));
+      } else {
+        console.log('🔑 Session expired, clearing storage');
+        localStorage.removeItem("currentUser");
+        localStorage.removeItem("sessionExpiry");
+        initializeMsal();
+      }
     } else {
       initializeMsal();
     }
@@ -227,7 +241,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const mockUser = MOCK_USERS[email];
     if (mockUser) {
       setUser(mockUser);
+      
+      // Set session to expire in 24 hours
+      const expiry = new Date().getTime() + (24 * 60 * 60 * 1000);
       localStorage.setItem("currentUser", JSON.stringify(mockUser));
+      localStorage.setItem("sessionExpiry", expiry.toString());
+      
+      console.log('🔑 Login successful, session valid for 24 hours');
     } else {
       throw new Error("Invalid credentials");
     }
@@ -254,6 +274,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = async () => {
     setUser(null);
     localStorage.removeItem("currentUser");
+    localStorage.removeItem("sessionExpiry");
+    
+    console.log('🔑 Logout successful');
     
     // If using MSAL, also logout from Microsoft
     if (msalInstance && msalInstance.getAllAccounts().length > 0) {
