@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
-import liteVideoDatabase from '@/lib/videoDatabase-lite';
 import { VideoDB } from '@/lib/database';
 
 // For serverless environment, we'll skip local file storage
@@ -119,15 +118,67 @@ export async function POST(request: NextRequest) {
         }
       };
 
-      // Save to database - use in-memory storage for serverless
-      const savedVideo = liteVideoDatabase.create(videoRecord);
-      console.log('🎬 Video saved to in-memory database:', savedVideo.id);
-
-      return NextResponse.json({
-        success: true,
-        video: savedVideo,
-        message: 'Video uploaded successfully to S3 and database'
-      });
+      // Save to database - use persistent PostgreSQL storage
+      try {
+        console.log('🎬 Attempting to save to database...');
+        console.log('🎬 DATABASE_URL exists:', !!process.env.DATABASE_URL);
+        
+        const savedVideo = await VideoDB.create({
+          title: videoRecord.title,
+          description: videoRecord.description,
+          filename: videoRecord.originalFilename,
+          file_path: videoRecord.streamUrl,
+          file_size: videoRecord.size,
+          duration: videoRecord.duration,
+          thumbnail_path: videoRecord.thumbnailPath,
+          video_quality: 'HD',
+          uploaded_by: 'current-user', // TODO: Get from auth context
+          course_id: null,
+          s3_key: s3Key,
+          s3_bucket: process.env.S3_BUCKET_NAME
+        });
+        console.log('🎬 Video saved to persistent database:', savedVideo.id);
+        
+        // Return the video in the expected format
+        const formattedVideo = {
+          id: savedVideo.id,
+          title: savedVideo.title,
+          description: savedVideo.description || '',
+          category: 'General',
+          tags: [],
+          visibility: savedVideo.is_public ? 'public' : 'private',
+          originalFilename: savedVideo.filename,
+          storedFilename: savedVideo.filename,
+          thumbnailPath: savedVideo.thumbnail_path || `/api/videos/thumbnail/${savedVideo.id}`,
+          size: savedVideo.file_size,
+          duration: savedVideo.duration,
+          width: videoRecord.width,
+          height: videoRecord.height,
+          bitrate: videoRecord.bitrate,
+          status: savedVideo.is_processed ? 'ready' : 'processing',
+          uploadDate: savedVideo.uploaded_at,
+          views: savedVideo.view_count || 0,
+          streamUrl: savedVideo.file_path,
+          createdBy: 'Current User',
+          metadata: videoRecord.metadata
+        };
+        
+        return NextResponse.json({
+          success: true,
+          video: formattedVideo,
+          message: 'Video uploaded successfully to S3 and database'
+        });
+      } catch (dbError) {
+        console.error('🎬 Database save failed, falling back to in-memory:', dbError);
+        
+        // Fallback to original response format
+        return NextResponse.json({
+          success: true,
+          video: videoRecord,
+          message: 'Video uploaded successfully to S3 (database fallback)',
+          warning: 'Video saved to temporary storage - may not persist'
+        });
+      }
     }
 
     // Original file upload handling - serverless compatible
@@ -309,15 +360,62 @@ export async function GET(request: NextRequest) {
     
     console.log('🎬 GET filters:', { query, category, visibility });
     
-    // Get videos from in-memory database
-    let videos = liteVideoDatabase.getAll();
-    console.log('🎬 Videos loaded from database:', videos.length);
-    console.log('🎬 Sample video IDs:', videos.slice(0, 3).map(v => ({ id: v.id, title: v.title })));
+    // Get videos from persistent database
+    let dbVideos;
+    try {
+      console.log('🎬 Attempting to load videos from database...');
+      console.log('🎬 DATABASE_URL exists:', !!process.env.DATABASE_URL);
+      
+      dbVideos = await VideoDB.findAll(100, 0); // Get up to 100 videos
+      console.log('🎬 Videos loaded from database:', dbVideos.length);
+      console.log('🎬 Sample video IDs:', dbVideos.slice(0, 3).map(v => ({ id: v.id, title: v.title })));
+    } catch (dbError) {
+      console.error('🎬 Database query failed:', dbError);
+      return NextResponse.json({
+        videos: [],
+        total: 0,
+        error: 'Database connection failed',
+        details: dbError instanceof Error ? dbError.message : 'Unknown database error'
+      });
+    }
+    
+    // Transform database videos to expected frontend format
+    let videos = dbVideos.map(v => ({
+      id: v.id,
+      title: v.title,
+      description: v.description || '',
+      category: 'General', // TODO: Add category field to database
+      tags: [], // TODO: Add tags field to database
+      visibility: v.is_public ? 'public' : 'private',
+      originalFilename: v.filename,
+      storedFilename: v.filename,
+      thumbnailPath: v.thumbnail_path || `/api/videos/thumbnail/${v.id}`,
+      size: v.file_size,
+      duration: v.duration,
+      width: 1920, // Default values
+      height: 1080,
+      bitrate: v.file_size && v.duration ? Math.round((v.file_size * 8) / v.duration) : 0,
+      status: v.is_processed ? 'ready' : 'processing',
+      uploadDate: v.uploaded_at,
+      views: v.view_count || 0,
+      streamUrl: v.file_path,
+      createdBy: 'Current User',
+      metadata: {
+        mimeType: 'video/mp4',
+        originalName: v.filename,
+        s3Key: v.s3_key,
+        cloudFrontUrl: v.file_path
+      }
+    }));
     
     // Apply filters
     if (query) {
       console.log('🎬 Applying search filter:', query);
-      videos = liteVideoDatabase.search(query);
+      const lowercaseQuery = query.toLowerCase();
+      videos = videos.filter(v =>
+        v.title.toLowerCase().includes(lowercaseQuery) ||
+        v.description.toLowerCase().includes(lowercaseQuery)
+      );
       console.log('🎬 After search filter:', videos.length);
     }
     

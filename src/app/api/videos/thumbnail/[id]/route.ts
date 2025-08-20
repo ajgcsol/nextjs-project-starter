@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import liteVideoDatabase from '@/lib/videoDatabase-lite';
+import { VideoDB } from '@/lib/database';
 import { AWSFileManager } from '@/lib/aws-integration';
 
 export async function GET(
@@ -10,34 +10,12 @@ export async function GET(
     const { id } = await params;
     
     // Check if video exists and has custom thumbnail
-    const video = liteVideoDatabase.get(id);
+    const video = await VideoDB.findById(id);
     
-    if (video?.metadata?.customThumbnail) {
-      // Return custom thumbnail from database
-      const thumbnailData = video.metadata.customThumbnail;
-      const thumbnailType = video.metadata.thumbnailType || 'image/jpeg';
-      
-      const buffer = Buffer.from(thumbnailData, 'base64');
-      
-      return new Response(buffer, {
-        headers: {
-          'Content-Type': thumbnailType,
-          'Cache-Control': 'public, max-age=3600',
-        },
-      });
-    }
-    
-    if (video?.metadata?.s3ThumbnailKey) {
-      // Return CloudFront URL for S3 thumbnail
-      const cloudFrontDomain = process.env.CLOUDFRONT_DOMAIN;
-      if (cloudFrontDomain) {
-        const thumbnailUrl = `https://${cloudFrontDomain}/${video.metadata.s3ThumbnailKey}`;
-        return NextResponse.redirect(thumbnailUrl);
-      } else {
-        // Fallback to S3 direct URL
-        const thumbnailUrl = AWSFileManager.getPublicUrl(video.metadata.s3ThumbnailKey);
-        return NextResponse.redirect(thumbnailUrl);
-      }
+    // Check if video has a thumbnail path
+    if (video?.thumbnail_path && video.thumbnail_path.startsWith('http')) {
+      // Redirect to external thumbnail URL
+      return NextResponse.redirect(video.thumbnail_path);
     }
     
     // Fallback to placeholder
@@ -83,7 +61,7 @@ export async function POST(
       );
     }
 
-    const video = liteVideoDatabase.get(id);
+    const video = await VideoDB.findById(id);
     if (!video) {
       return NextResponse.json(
         { error: 'Video not found' },

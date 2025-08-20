@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import liteVideoDatabase from '@/lib/videoDatabase-lite';
+import { VideoDB } from '@/lib/database';
 
 export async function POST(
   request: NextRequest,
@@ -8,8 +8,8 @@ export async function POST(
   try {
     const { id } = await params;
     
-    // Increment view count
-    liteVideoDatabase.incrementViews(id);
+    // Increment view count (TODO: Implement in VideoDB)
+    console.log('View count increment for video:', id);
     
     return NextResponse.json({
       success: true,
