@@ -422,7 +422,7 @@ export function VideoUploadLarge({
     return { s3Key, publicUrl: completeResult.publicUrl };
   };
 
-  // Main upload handler
+  // Main upload handler - FIXED: Don't upload immediately, just prepare the video data
   const handleUpload = async () => {
     if (!selectedFile) return;
 
@@ -432,84 +432,54 @@ export function VideoUploadLarge({
         total: selectedFile.size,
         percentage: 0,
         stage: 'preparing',
-        message: 'Preparing upload...'
+        message: 'Preparing video for content editor...'
       });
 
-      const uploadMethod = getUploadMethod(selectedFile.size);
-      let uploadResult;
-
-      if (uploadMethod === 'multipart') {
-        uploadResult = await uploadMultipartFile();
-      } else {
-        uploadResult = await uploadSingleFile();
-      }
-
-      // Save video metadata
-      setUploadProgress(prev => prev ? {
-        ...prev,
-        stage: 'processing',
-        percentage: 90,
-        message: 'Saving video information...'
-      } : null);
-
-      const videoResponse = await fetch('/api/videos/upload', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: formData.title,
-          description: formData.description,
-          category: formData.category,
-          tags: formData.tags,
-          visibility: formData.visibility,
-          s3Key: uploadResult.s3Key,
-          publicUrl: uploadResult.publicUrl,
-          filename: selectedFile.name,
-          size: selectedFile.size,
+      // Instead of uploading immediately, just prepare the video data for the ContentEditor
+      const videoData = {
+        id: `temp-${Date.now()}`, // Temporary ID until actual upload
+        title: formData.title || selectedFile.name.replace(/\.[^/.]+$/, ''),
+        description: formData.description,
+        category: formData.category,
+        tags: formData.tags,
+        visibility: formData.visibility,
+        originalFilename: selectedFile.name,
+        size: selectedFile.size,
+        duration: previewInfo?.duration || 0,
+        thumbnailPath: autoThumbnail || `/api/videos/thumbnail/placeholder`,
+        status: 'draft',
+        uploadDate: new Date().toISOString(),
+        views: 0,
+        streamUrl: '#pending-upload',
+        createdBy: 'Current User',
+        metadata: {
           mimeType: selectedFile.type,
-          autoThumbnail: autoThumbnail // Include auto-generated thumbnail
-        }),
+          originalName: selectedFile.name,
+          fileExtension: selectedFile.name.split('.').pop(),
+          // Store the actual file data for later upload
+          pendingFile: selectedFile,
+          autoThumbnail: autoThumbnail,
+          customThumbnail: customThumbnail,
+          uploadMethod: getUploadMethod(selectedFile.size)
+        }
+      };
+
+      setUploadProgress({
+        loaded: selectedFile.size,
+        total: selectedFile.size,
+        percentage: 100,
+        stage: 'complete',
+        message: 'Video ready for content editor!'
       });
 
-      if (!videoResponse.ok) {
-        throw new Error('Failed to save video metadata');
-      }
-
-      const videoData = await videoResponse.json();
-
-      // Handle custom thumbnail if provided
-      if (customThumbnail && videoData.video?.id) {
-        setUploadProgress(prev => prev ? {
-          ...prev,
-          percentage: 95,
-          message: 'Uploading custom thumbnail...'
-        } : null);
-
-        const thumbnailFormData = new FormData();
-        thumbnailFormData.append('thumbnail', customThumbnail);
-
-        await fetch(`/api/videos/thumbnail/${videoData.video.id}`, {
-          method: 'POST',
-          body: thumbnailFormData,
-        });
-      }
-
-      // Complete
-      setUploadProgress(prev => prev ? {
-        ...prev,
-        stage: 'complete',
-        percentage: 100,
-        message: 'Upload complete!'
-      } : null);
-
-      onUploadComplete?.(videoData.video);
+      // Pass the prepared video data to the ContentEditor (don't reset form!)
+      onUploadComplete?.(videoData);
       
-      // Reset form
-      setTimeout(() => {
-        resetForm();
-      }, 2000);
+      // Don't reset the form - let the user see their video is ready
+      // The actual upload will happen when they save/publish in ContentEditor
 
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Upload failed';
+      const errorMessage = error instanceof Error ? error.message : 'Preparation failed';
       setUploadProgress(prev => prev ? {
         ...prev,
         stage: 'error',

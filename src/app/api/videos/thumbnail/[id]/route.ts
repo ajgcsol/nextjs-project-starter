@@ -89,17 +89,18 @@ export async function POST(
         file.type
       );
       
-      // Update video with S3 thumbnail info
-      await VideoDB.update(id, {
-        thumbnail_path: cloudFrontDomain 
-          ? `https://${cloudFrontDomain}/${s3Key}`
-          : uploadResult.Location
-      });
-
-      // Return CloudFront URL if available
+      // Get CloudFront domain from environment
+      const cloudFrontDomain = process.env.CLOUDFRONT_DOMAIN;
+      
+      // Generate the final thumbnail URL (prefer CloudFront if available)
       const thumbnailUrl = cloudFrontDomain 
         ? `https://${cloudFrontDomain}/${s3Key}`
         : uploadResult.Location;
+      
+      // Update video with S3 thumbnail info
+      await VideoDB.update(id, {
+        thumbnail_path: thumbnailUrl
+      });
 
       return NextResponse.json({
         success: true,

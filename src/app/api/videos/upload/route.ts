@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
+import crypto from 'crypto';
 import { VideoDB } from '@/lib/database';
 
 // For serverless environment, we'll skip local file storage
@@ -194,9 +195,9 @@ export async function POST(request: NextRequest) {
           thumbnail_path: thumbnailCloudFrontUrl || videoRecord.thumbnailPath,
           video_quality: 'HD',
           uploaded_by: 'current-user', // TODO: Get from auth context
-          course_id: null,
+          course_id: undefined,
           s3_key: s3Key,
-          s3_bucket: process.env.S3_BUCKET_NAME,
+          s3_bucket: process.env.S3_BUCKET_NAME || undefined,
           is_processed: true, // Mark as processed since S3 upload is complete
           is_public: visibility === 'public'
         });
@@ -394,7 +395,7 @@ export async function POST(request: NextRequest) {
       thumbnail_path: videoRecord.thumbnailPath,
       video_quality: 'HD',
       uploaded_by: 'current-user',
-      course_id: null,
+      course_id: undefined,
       is_processed: true,
       is_public: videoRecord.visibility === 'public'
     });

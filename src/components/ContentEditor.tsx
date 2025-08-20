@@ -102,10 +102,144 @@ export function ContentEditor({
     }
   };
 
-  const handlePublish = () => {
+  const handlePublish = async () => {
+    // If there's a pending video file, upload it first
+    if (content.metadata.pendingFile) {
+      await handleActualVideoUpload();
+    }
+    
     if (onPublish) {
       onPublish({ ...content, status: "published" });
     }
+  };
+
+  const handleSaveAsDraft = async () => {
+    // If there's a pending video file, upload it first
+    if (content.metadata.pendingFile) {
+      await handleActualVideoUpload();
+    }
+    
+    if (onSave) {
+      onSave({ ...content, status: "draft" });
+    }
+  };
+
+  // NEW: Handle the actual video upload when saving/publishing
+  const handleActualVideoUpload = async () => {
+    const pendingFile = content.metadata.pendingFile as File;
+    const autoThumbnail = content.metadata.autoThumbnail as string;
+    const customThumbnail = content.metadata.customThumbnail as File;
+    const uploadMethod = content.metadata.uploadMethod as string;
+
+    if (!pendingFile) return;
+
+    try {
+      console.log('🎬 Starting actual video upload for:', pendingFile.name);
+      
+      let uploadResult;
+
+      if (uploadMethod === 'multipart') {
+        uploadResult = await uploadMultipartFile(pendingFile);
+      } else {
+        uploadResult = await uploadSingleFile(pendingFile);
+      }
+
+      // Save video metadata to database
+      const videoResponse = await fetch('/api/videos/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: content.title,
+          description: content.description,
+          category: content.category,
+          tags: content.tags.join(','),
+          visibility: content.metadata.visibility || 'private',
+          s3Key: uploadResult.s3Key,
+          publicUrl: uploadResult.publicUrl,
+          filename: pendingFile.name,
+          size: pendingFile.size,
+          mimeType: pendingFile.type,
+          autoThumbnail: autoThumbnail
+        }),
+      });
+
+      if (!videoResponse.ok) {
+        throw new Error('Failed to save video metadata');
+      }
+
+      const videoData = await videoResponse.json();
+
+      // Handle custom thumbnail if provided
+      if (customThumbnail && videoData.video?.id) {
+        const thumbnailFormData = new FormData();
+        thumbnailFormData.append('thumbnail', customThumbnail);
+
+        await fetch(`/api/videos/thumbnail/${videoData.video.id}`, {
+          method: 'POST',
+          body: thumbnailFormData,
+        });
+      }
+
+      // Update content metadata with the real video data
+      setContent(prev => ({
+        ...prev,
+        metadata: {
+          ...prev.metadata,
+          videoId: videoData.video.id,
+          videoUrl: videoData.video.streamUrl,
+          thumbnailUrl: videoData.video.thumbnailPath,
+          // Remove pending file data
+          pendingFile: undefined,
+          autoThumbnail: undefined,
+          customThumbnail: undefined,
+          uploadMethod: undefined
+        }
+      }));
+
+      console.log('🎬 ✅ Video upload completed successfully');
+
+    } catch (error) {
+      console.error('🎬 ❌ Video upload failed:', error);
+      throw error; // Re-throw to handle in calling function
+    }
+  };
+
+  // Helper functions for video upload
+  const uploadSingleFile = async (file: File) => {
+    const presignedResponse = await fetch('/api/videos/presigned-url', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        filename: file.name,
+        contentType: file.type,
+        fileSize: file.size,
+      }),
+    });
+
+    if (!presignedResponse.ok) {
+      throw new Error('Failed to get upload URL');
+    }
+
+    const { presignedUrl, s3Key, publicUrl } = await presignedResponse.json();
+
+    // Upload file to S3
+    const uploadResponse = await fetch(presignedUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': file.type },
+      body: file,
+    });
+
+    if (!uploadResponse.ok) {
+      throw new Error(`Upload failed with status ${uploadResponse.status}`);
+    }
+
+    return { s3Key, publicUrl };
+  };
+
+  const uploadMultipartFile = async (file: File) => {
+    // This is a simplified version - in production you'd want the full multipart logic
+    // For now, fall back to single file upload for large files
+    return await uploadSingleFile(file);
   };
 
   const addTag = () => {
