@@ -51,8 +51,8 @@ export async function POST(request: NextRequest) {
         );
       }
       
-      const { title, description, category, tags, visibility, s3Key, publicUrl, filename, size, mimeType } = data;
-      console.log('🎬 Extracted fields:', { title, description, category, tags, visibility, s3Key, publicUrl, filename, size, mimeType });
+      const { title, description, category, tags, visibility, s3Key, publicUrl, filename, size, mimeType, autoThumbnail } = data;
+      console.log('🎬 Extracted fields:', { title, description, category, tags, visibility, s3Key, publicUrl, filename, size, mimeType, hasThumbnail: !!autoThumbnail });
 
       if (!s3Key || !publicUrl || !filename) {
         console.log('🎬 ❌ Missing required S3 data:', { s3Key: !!s3Key, publicUrl: !!publicUrl, filename: !!filename });
@@ -60,6 +60,56 @@ export async function POST(request: NextRequest) {
           { error: 'Missing required S3 upload data' },
           { status: 400 }
         );
+      }
+
+      // Handle thumbnail upload to S3 if provided
+      let thumbnailS3Key = null;
+      let thumbnailCloudFrontUrl = null;
+      
+      if (autoThumbnail) {
+        try {
+          console.log('🎬 Processing auto-generated thumbnail...');
+          
+          // Convert base64 thumbnail to buffer
+          const base64Data = autoThumbnail.split(',')[1]; // Remove data:image/jpeg;base64, prefix
+          const thumbnailBuffer = Buffer.from(base64Data, 'base64');
+          
+          // Generate S3 key for thumbnail
+          const videoFileName = filename.split('.')[0];
+          thumbnailS3Key = `thumbnails/${videoFileName}-${Date.now()}.jpg`;
+          
+          // Import AWS SDK for thumbnail upload
+          const { S3Client, PutObjectCommand } = await import('@aws-sdk/client-s3');
+          
+          const s3Client = new S3Client({
+            region: process.env.AWS_REGION || 'us-east-1',
+            credentials: {
+              accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
+              secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+            },
+          });
+
+          // Upload thumbnail to S3
+          const thumbnailUpload = await s3Client.send(
+            new PutObjectCommand({
+              Bucket: process.env.S3_BUCKET_NAME!,
+              Key: thumbnailS3Key,
+              Body: thumbnailBuffer,
+              ContentType: 'image/jpeg',
+              CacheControl: 'max-age=31536000', // 1 year cache
+            })
+          );
+
+          const cloudFrontDomain = process.env.CLOUDFRONT_DOMAIN;
+          thumbnailCloudFrontUrl = cloudFrontDomain 
+            ? `https://${cloudFrontDomain}/${thumbnailS3Key}`
+            : `https://${process.env.S3_BUCKET_NAME}.s3.${process.env.AWS_REGION || 'us-east-1'}.amazonaws.com/${thumbnailS3Key}`;
+          
+          console.log('🎬 ✅ Thumbnail uploaded to S3:', thumbnailS3Key);
+        } catch (thumbnailError) {
+          console.error('🎬 ⚠️ Thumbnail upload failed:', thumbnailError);
+          // Continue without thumbnail - don't fail the entire upload
+        }
       }
 
       // Generate unique ID
@@ -96,7 +146,7 @@ export async function POST(request: NextRequest) {
         visibility: (visibility || 'private') as 'public' | 'private' | 'unlisted',
         originalFilename: filename,
         storedFilename: s3Key,
-        thumbnailPath: `/api/videos/thumbnail/${fileId}`,
+        thumbnailPath: thumbnailCloudFrontUrl || `/api/videos/thumbnail/${fileId}`,
         size: size,
         duration: estimatedDuration,
         width,
@@ -130,7 +180,7 @@ export async function POST(request: NextRequest) {
           file_path: videoRecord.streamUrl,
           file_size: videoRecord.size,
           duration: videoRecord.duration,
-          thumbnail_path: videoRecord.thumbnailPath,
+          thumbnail_path: thumbnailCloudFrontUrl || videoRecord.thumbnailPath,
           video_quality: 'HD',
           uploaded_by: 'current-user', // TODO: Get from auth context
           course_id: null,

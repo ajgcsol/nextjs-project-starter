@@ -465,7 +465,8 @@ export function VideoUploadLarge({
           publicUrl: uploadResult.publicUrl,
           filename: selectedFile.name,
           size: selectedFile.size,
-          mimeType: selectedFile.type
+          mimeType: selectedFile.type,
+          autoThumbnail: autoThumbnail // Include auto-generated thumbnail
         }),
       });
 

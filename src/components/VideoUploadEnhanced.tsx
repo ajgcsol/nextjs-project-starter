@@ -355,7 +355,8 @@ export function VideoUploadEnhanced({
         publicUrl,
         filename: selectedFile.name,
         size: selectedFile.size,
-        mimeType: selectedFile.type
+        mimeType: selectedFile.type,
+        autoThumbnail: autoThumbnail // Include auto-generated thumbnail
       };
 
       console.log('💾 Saving video metadata:', {

@@ -14,8 +14,12 @@ export async function GET(
     
     // Check if video has a thumbnail path
     if (video?.thumbnail_path && video.thumbnail_path.startsWith('http')) {
-      // Redirect to external thumbnail URL
+      // Redirect to external thumbnail URL (CloudFront or S3)
       return NextResponse.redirect(video.thumbnail_path);
+    }
+    
+    if (!video) {
+      return generatePlaceholderThumbnail('not-found');
     }
     
     // Fallback to placeholder
