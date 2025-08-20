@@ -1,6 +1,5 @@
 'use client';
 
-import { VideoUploadEnhanced } from '@/components/VideoUploadEnhanced';
 import { VideoUploadDirect } from '@/components/VideoUploadDirect';
 import { VideoUploadFallback } from '@/components/VideoUploadFallback';
 import { VideoUploadLarge } from '@/components/VideoUploadLarge';
@@ -22,20 +21,7 @@ export default function DebugUploadPage() {
       <div className="max-w-6xl mx-auto px-4">
         <h1 className="text-3xl font-bold text-gray-900 mb-8">Upload Debug Page</h1>
         
-        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-8">
-          {/* Enhanced Upload */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-xl font-semibold mb-4">Enhanced Upload (Recommended)</h2>
-            <p className="text-gray-600 mb-6">
-              Direct S3 upload with presigned URLs. Supports up to 5GB files.
-            </p>
-            
-            <VideoUploadEnhanced 
-              onUploadComplete={handleUploadComplete}
-              onUploadError={handleUploadError}
-            />
-          </div>
-
+        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-8">
           {/* Direct Upload */}
           <div className="bg-white rounded-lg shadow p-6">
             <h2 className="text-xl font-semibold mb-4">Direct Upload (Original)</h2>
@@ -66,7 +52,7 @@ export default function DebugUploadPage() {
             <h2 className="text-xl font-semibold mb-4">Fallback Upload (Server)</h2>
             <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
               <p className="text-red-800 text-sm font-medium">⚠️ Known Issue</p>
-              <p className="text-red-700 text-sm">This method advertises 100MB support but fails with 413 errors for files >4.5MB due to Vercel's function request body limit. Use Enhanced Upload instead.</p>
+              <p className="text-red-700 text-sm">This method advertises 100MB support but fails with 413 errors for files {'>'}4.5MB due to Vercel&apos;s function request body limit. Use Large File Upload instead.</p>
             </div>
             <p className="text-gray-600 mb-6">
               Server-side upload through Vercel. Advertises 100MB limit but actually limited to ~4.5MB.
