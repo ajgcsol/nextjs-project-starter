@@ -131,11 +131,18 @@ export async function POST(request: NextRequest) {
         height = 480;
       }
 
-      // Create video record with S3 data and CloudFront optimization
+      // Create video record with S3 data - use direct S3 URL for now to bypass CloudFront issues
       const cloudFrontDomain = process.env.CLOUDFRONT_DOMAIN;
-      const optimizedStreamUrl = cloudFrontDomain 
-        ? `https://${cloudFrontDomain}/${s3Key}`
-        : publicUrl;
+      // Temporarily use direct S3 URL instead of CloudFront until we fix CloudFront configuration
+      const optimizedStreamUrl = publicUrl; // This is the direct S3 URL that should work
+      
+      console.log('🎬 Stream URL decision:', {
+        cloudFrontDomain,
+        s3Key,
+        publicUrl,
+        usingCloudFront: false, // Set to false temporarily
+        finalStreamUrl: optimizedStreamUrl
+      });
 
       const videoRecord = {
         id: fileId,
