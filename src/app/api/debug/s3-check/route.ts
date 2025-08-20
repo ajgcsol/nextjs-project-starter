@@ -58,7 +58,15 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(
       { 
         error: 'Failed to check S3 object',
-        details: error instanceof Error ? error.message : 'Unknown error'
+        details: error instanceof Error ? error.message : 'Unknown error',
+        errorType: error instanceof Error ? error.name : typeof error,
+        errorStack: error instanceof Error ? error.stack : null,
+        awsConfig: {
+          region: process.env.AWS_REGION || 'us-east-1',
+          hasAccessKey: !!process.env.AWS_ACCESS_KEY_ID,
+          hasSecretKey: !!process.env.AWS_SECRET_ACCESS_KEY,
+          bucket: process.env.S3_BUCKET_NAME || 'law-school-repository-content'
+        }
       },
       { status: 500 }
     );
