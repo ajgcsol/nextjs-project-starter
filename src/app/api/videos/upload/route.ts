@@ -455,16 +455,20 @@ export async function GET(request: NextRequest) {
       console.log('🎬 Sample video IDs:', dbVideos.slice(0, 3).map(v => ({ id: v.id, title: v.title })));
     } catch (dbError) {
       console.error('🎬 Database query failed:', dbError);
+      
+      // Return empty result with clear error message instead of crashing the dashboard
       return NextResponse.json({
         videos: [],
         total: 0,
-        error: 'Database connection failed',
+        error: 'Database server unreachable',
         details: dbError instanceof Error ? dbError.message : 'Unknown database error',
         troubleshooting: {
+          issue: 'PostgreSQL server at 10.0.2.167:5432 is unreachable',
           checkDatabaseUrl: !process.env.DATABASE_URL ? 'DATABASE_URL environment variable is missing' : 'DATABASE_URL is configured',
-          suggestion: 'Check Vercel environment variables or database connection'
+          suggestion: 'Fix database connectivity - server appears to be down or network blocked',
+          nextSteps: 'Check DATABASE_CONNECTION_DEBUG.md for diagnostic steps'
         }
-      });
+      }, { status: 200 }); // Return 200 so dashboard doesn't crash
     }
     
     // Transform database videos to expected frontend format
