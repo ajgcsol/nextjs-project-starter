@@ -180,6 +180,10 @@ export async function POST(request: NextRequest) {
         console.log('🎬 Attempting to save to database...');
         console.log('🎬 DATABASE_URL exists:', !!process.env.DATABASE_URL);
         
+        if (!process.env.DATABASE_URL) {
+          throw new Error('DATABASE_URL not configured');
+        }
+        
         const savedVideo = await VideoDB.create({
           title: videoRecord.title,
           description: videoRecord.description,
@@ -438,6 +442,10 @@ export async function GET(request: NextRequest) {
       console.log('🎬 Attempting to load videos from database...');
       console.log('🎬 DATABASE_URL exists:', !!process.env.DATABASE_URL);
       
+      if (!process.env.DATABASE_URL) {
+        throw new Error('DATABASE_URL not configured - check environment variables');
+      }
+      
       dbVideos = await VideoDB.findAll(100, 0); // Get up to 100 videos
       console.log('🎬 Videos loaded from database:', dbVideos.length);
       console.log('🎬 Sample video IDs:', dbVideos.slice(0, 3).map(v => ({ id: v.id, title: v.title })));
@@ -447,7 +455,11 @@ export async function GET(request: NextRequest) {
         videos: [],
         total: 0,
         error: 'Database connection failed',
-        details: dbError instanceof Error ? dbError.message : 'Unknown database error'
+        details: dbError instanceof Error ? dbError.message : 'Unknown database error',
+        troubleshooting: {
+          checkDatabaseUrl: !process.env.DATABASE_URL ? 'DATABASE_URL environment variable is missing' : 'DATABASE_URL is configured',
+          suggestion: 'Check Vercel environment variables or database connection'
+        }
       });
     }
     
