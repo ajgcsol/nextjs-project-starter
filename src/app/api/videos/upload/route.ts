@@ -379,8 +379,21 @@ export async function POST(request: NextRequest) {
       }
     };
 
-    // Save to database using in-memory storage
-    const savedVideo = liteVideoDatabase.create(videoRecord);
+    // Save to database using persistent storage
+    const savedVideo = await VideoDB.create({
+      title: videoRecord.title,
+      description: videoRecord.description,
+      filename: videoRecord.originalFilename,
+      file_path: videoRecord.streamUrl,
+      file_size: videoRecord.size,
+      duration: videoRecord.duration,
+      thumbnail_path: videoRecord.thumbnailPath,
+      video_quality: 'HD',
+      uploaded_by: 'current-user',
+      course_id: null,
+      is_processed: true,
+      is_public: videoRecord.visibility === 'public'
+    });
     console.log('🎬 Video saved to database:', savedVideo.id);
 
     // In production, you would:
@@ -527,13 +540,13 @@ export async function PUT(request: NextRequest) {
     }
     
     // Update the video in the database
-    const updatedVideo = liteVideoDatabase.update(id, {
+    const updatedVideo = await VideoDB.update(id, {
       title,
       description,
-      category,
-      tags,
-      visibility,
-      status
+      // category, // TODO: Add category field to database
+      // tags, // TODO: Add tags field to database
+      // visibility, // TODO: Add visibility field to database
+      // status // TODO: Add status field to database
     });
     
     if (updatedVideo) {
@@ -571,7 +584,7 @@ export async function DELETE(request: NextRequest) {
     }
     
     // Delete from database
-    const success = liteVideoDatabase.delete(videoId);
+    const success = await VideoDB.delete(videoId);
     
     if (success) {
       // In production, also delete files from storage

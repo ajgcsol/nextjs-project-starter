@@ -90,18 +90,13 @@ export async function POST(
       );
       
       // Update video with S3 thumbnail info
-      liteVideoDatabase.update(id, {
-        thumbnailPath: `/api/videos/thumbnail/${id}`,
-        metadata: {
-          ...video.metadata,
-          s3ThumbnailKey: s3Key,
-          s3ThumbnailUrl: uploadResult.Location,
-          thumbnailType: file.type
-        }
+      await VideoDB.update(id, {
+        thumbnail_path: cloudFrontDomain 
+          ? `https://${cloudFrontDomain}/${s3Key}`
+          : uploadResult.Location
       });
 
       // Return CloudFront URL if available
-      const cloudFrontDomain = process.env.CLOUDFRONT_DOMAIN;
       const thumbnailUrl = cloudFrontDomain 
         ? `https://${cloudFrontDomain}/${s3Key}`
         : uploadResult.Location;
@@ -121,14 +116,9 @@ export async function POST(
       const buffer = Buffer.from(bytes);
       const base64Data = buffer.toString('base64');
 
-      liteVideoDatabase.update(id, {
-        thumbnailPath: `/api/videos/thumbnail/${id}`,
-        metadata: {
-          ...video.metadata,
-          customThumbnail: base64Data,
-          thumbnailType: file.type
-        }
-      });
+      // Note: Base64 storage not supported in persistent database
+      // For now, we'll skip storing base64 thumbnails and rely on placeholder
+      console.warn('Base64 thumbnail storage not implemented for persistent database');
 
       return NextResponse.json({
         success: true,
