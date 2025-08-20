@@ -13,13 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import dynamic from 'next/dynamic';
-
-// Dynamically import VideoUploadEnhanced to avoid hydration issues
-const VideoUploadEnhanced = dynamic(() => import("@/components/VideoUploadEnhanced").then(mod => ({ default: mod.VideoUploadEnhanced })), {
-  ssr: false,
-  loading: () => <div className="flex items-center justify-center p-8"><div className="animate-spin h-8 w-8 border-b-2 border-blue-500"></div></div>
-});
+import { VideoUploadLarge } from "@/components/VideoUploadLarge";
 import { 
   Upload, 
   Video, 
@@ -322,7 +316,7 @@ export default function VideoManagementPage() {
             <TabsList>
               <TabsTrigger value="library">Published</TabsTrigger>
               <TabsTrigger value="drafts">Drafts</TabsTrigger>
-              <TabsTrigger value="upload">Quick Upload</TabsTrigger>
+              <TabsTrigger value="upload">Upload Video</TabsTrigger>
               <TabsTrigger value="analytics">Analytics</TabsTrigger>
             </TabsList>
 
@@ -597,7 +591,7 @@ export default function VideoManagementPage() {
             </TabsContent>
 
             <TabsContent value="upload">
-              <VideoUploadEnhanced 
+              <VideoUploadLarge 
                 onUploadComplete={(video) => {
                   console.log('Video uploaded successfully:', video);
                   // Refresh video list

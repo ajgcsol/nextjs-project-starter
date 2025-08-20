@@ -103,24 +103,40 @@ export function ContentEditor({
   };
 
   const handlePublish = async () => {
-    // If there's a pending video file, upload it first
-    if (content.metadata.pendingFile) {
-      await handleActualVideoUpload();
-    }
-    
-    if (onPublish) {
-      onPublish({ ...content, status: "published" });
+    setIsSaving(true);
+    try {
+      // If there's a pending video file, upload it first
+      if (content.metadata.pendingFile) {
+        await handleActualVideoUpload();
+      }
+      
+      if (onPublish) {
+        await onPublish({ ...content, status: "published" });
+      }
+      setLastSaved(new Date());
+    } catch (error) {
+      console.error('Publish failed:', error);
+    } finally {
+      setIsSaving(false);
     }
   };
 
   const handleSaveAsDraft = async () => {
-    // If there's a pending video file, upload it first
-    if (content.metadata.pendingFile) {
-      await handleActualVideoUpload();
-    }
-    
-    if (onSave) {
-      onSave({ ...content, status: "draft" });
+    setIsSaving(true);
+    try {
+      // If there's a pending video file, upload it first
+      if (content.metadata.pendingFile) {
+        await handleActualVideoUpload();
+      }
+      
+      if (onSave) {
+        await onSave({ ...content, status: "draft" });
+      }
+      setLastSaved(new Date());
+    } catch (error) {
+      console.error('Save draft failed:', error);
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -808,7 +824,7 @@ export function ContentEditor({
         <CardContent className="pt-6">
           <div className="flex items-center justify-between">
             <div className="flex gap-2">
-              <Button variant="outline" onClick={handleAutoSave}>
+              <Button variant="outline" onClick={handleSaveAsDraft}>
                 Save Draft
               </Button>
               <Button variant="outline">

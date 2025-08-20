@@ -422,8 +422,8 @@ export function VideoUploadLarge({
     return { s3Key, publicUrl: completeResult.publicUrl };
   };
 
-  // Main upload handler - FIXED: Don't upload immediately, just prepare the video data
-  const handleUpload = async () => {
+  // Main upload handler - ACTUALLY UPLOAD THE VIDEO
+  const handleUpload = async (publishStatus: 'draft' | 'published' = 'draft') => {
     if (!selectedFile) return;
 
     // Start monitoring session
@@ -440,12 +440,13 @@ export function VideoUploadLarge({
             filename: selectedFile.name,
             fileSize: selectedFile.size,
             mimeType: selectedFile.type,
-            userAgent: navigator.userAgent
+            userAgent: navigator.userAgent,
+            publishStatus
           }
         })
       });
       
-      if (monitorResponse.ok) {
+      if (monitorSessionId) {
         const monitorData = await monitorResponse.json();
         monitorSessionId = monitorData.sessionId;
         console.log('🔍 MONITOR: Started session', monitorSessionId);
@@ -469,96 +470,129 @@ export function VideoUploadLarge({
         }
       };
 
-      await logStep('video_file_selected', 'success', {
-        filename: selectedFile.name,
-        fileSize: selectedFile.size,
-        mimeType: selectedFile.type,
-        uploadMethod: getUploadMethod(selectedFile.size)
-      });
+      // Validate form data
+      if (!formData.title.trim()) {
+        throw new Error('Title is required');
+      }
 
       setUploadProgress({
         loaded: 0,
         total: selectedFile.size,
         percentage: 0,
         stage: 'preparing',
-        message: 'Preparing video for content editor...'
+        message: publishStatus === 'draft' ? 'Uploading video as draft...' : 'Uploading and publishing video...'
       });
 
-      await logStep('form_data_validation', 'pending', {
-        title: formData.title,
-        description: formData.description,
-        category: formData.category,
-        hasAutoThumbnail: !!autoThumbnail,
-        hasCustomThumbnail: !!customThumbnail
+      await logStep('upload_start', 'pending', {
+        filename: selectedFile.name,
+        fileSize: selectedFile.size,
+        publishStatus,
+        uploadMethod: getUploadMethod(selectedFile.size)
       });
 
-      // Validate form data
-      if (!formData.title.trim()) {
-        await logStep('form_data_validation', 'error', {}, 'Title is required');
-        throw new Error('Title is required');
+      // Step 1: Upload to S3
+      const uploadMethod = getUploadMethod(selectedFile.size);
+      let uploadResult;
+
+      if (uploadMethod === 'multipart') {
+        uploadResult = await uploadMultipartFile();
+      } else {
+        uploadResult = await uploadSingleFile();
       }
 
-      await logStep('form_data_validation', 'success');
+      if (!uploadResult) {
+        throw new Error('Upload failed - no result returned');
+      }
 
-      await logStep('video_data_preparation', 'pending');
+      await logStep('s3_upload_complete', 'success', {
+        s3Key: uploadResult.s3Key,
+        publicUrl: uploadResult.publicUrl
+      });
 
-      // Instead of uploading immediately, just prepare the video data for the ContentEditor
-      const videoData = {
-        id: `temp-${Date.now()}`, // Temporary ID until actual upload
-        title: formData.title || selectedFile.name.replace(/\.[^/.]+$/, ''),
-        description: formData.description,
-        category: formData.category,
-        tags: formData.tags,
-        visibility: formData.visibility,
-        originalFilename: selectedFile.name,
-        size: selectedFile.size,
-        duration: previewInfo?.duration || 0,
-        thumbnailPath: autoThumbnail || `/api/videos/thumbnail/placeholder`,
-        status: 'draft',
-        uploadDate: new Date().toISOString(),
-        views: 0,
-        streamUrl: '#pending-upload',
-        createdBy: 'Current User',
-        metadata: {
+      // Step 2: Save video metadata to database
+      setUploadProgress(prev => prev ? {
+        ...prev,
+        stage: 'processing',
+        percentage: 90,
+        message: 'Saving video information...'
+      } : null);
+
+      const videoResponse = await fetch('/api/videos/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: formData.title,
+          description: formData.description,
+          category: formData.category,
+          tags: formData.tags,
+          visibility: publishStatus === 'published' ? 'public' : 'private',
+          s3Key: uploadResult.s3Key,
+          publicUrl: uploadResult.publicUrl,
+          filename: selectedFile.name,
+          size: selectedFile.size,
           mimeType: selectedFile.type,
-          originalName: selectedFile.name,
-          fileExtension: selectedFile.name.split('.').pop(),
-          // Store the actual file data for later upload
-          pendingFile: selectedFile,
           autoThumbnail: autoThumbnail,
-          customThumbnail: customThumbnail,
-          uploadMethod: getUploadMethod(selectedFile.size),
-          monitorSessionId: monitorSessionId // Pass session ID for later use
+          status: publishStatus === 'published' ? 'ready' : 'draft'
+        }),
+      });
+
+      if (!videoResponse.ok) {
+        throw new Error('Failed to save video metadata');
+      }
+
+      const videoData = await videoResponse.json();
+
+      await logStep('database_save_complete', 'success', {
+        videoId: videoData.video?.id,
+        status: publishStatus
+      });
+
+      // Step 3: Handle custom thumbnail if provided
+      if (customThumbnail && videoData.video?.id) {
+        setUploadProgress(prev => prev ? {
+          ...prev,
+          percentage: 95,
+          message: 'Uploading custom thumbnail...'
+        } : null);
+
+        try {
+          const thumbnailFormData = new FormData();
+          thumbnailFormData.append('thumbnail', customThumbnail);
+
+          await fetch(`/api/videos/thumbnail/${videoData.video.id}`, {
+            method: 'POST',
+            body: thumbnailFormData,
+          });
+
+          await logStep('thumbnail_upload_complete', 'success');
+        } catch (thumbnailError) {
+          console.warn('Custom thumbnail upload failed:', thumbnailError);
+          await logStep('thumbnail_upload_failed', 'error', {}, thumbnailError instanceof Error ? thumbnailError.message : 'Unknown error');
         }
-      };
+      }
 
-      await logStep('video_data_preparation', 'success', {
-        videoId: videoData.id,
-        title: videoData.title,
-        size: videoData.size,
-        duration: videoData.duration
-      });
-
-      setUploadProgress({
-        loaded: selectedFile.size,
-        total: selectedFile.size,
-        percentage: 100,
+      // Complete
+      setUploadProgress(prev => prev ? {
+        ...prev,
         stage: 'complete',
-        message: 'Video ready for content editor!'
+        percentage: 100,
+        message: publishStatus === 'published' ? 'Video uploaded and published!' : 'Video saved as draft!'
+      } : null);
+
+      await logStep('upload_complete', 'success', {
+        finalStatus: publishStatus,
+        message: publishStatus === 'published' ? 'Video is now live and public' : 'Video saved as draft - you can publish it later'
       });
 
-      await logStep('preparation_complete', 'success', {
-        message: 'Video prepared for ContentEditor - actual upload will happen on save/publish'
-      });
-
-      // Pass the prepared video data to the ContentEditor (don't reset form!)
-      onUploadComplete?.(videoData);
+      onUploadComplete?.(videoData.video);
       
-      // Don't reset the form - let the user see their video is ready
-      // The actual upload will happen when they save/publish in ContentEditor
+      // Reset form after successful upload
+      setTimeout(() => {
+        resetForm();
+      }, 2000);
 
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Preparation failed';
+      const errorMessage = error instanceof Error ? error.message : 'Upload failed';
       
       if (monitorSessionId) {
         await fetch('/api/debug/upload-monitor', {
@@ -587,6 +621,18 @@ export function VideoUploadLarge({
       onUploadError?.(errorMessage);
     }
   };
+
+  // Auto-save as draft when component unmounts (user leaves page)
+  React.useEffect(() => {
+    return () => {
+      // If there's a selected file with filled form but no upload in progress, auto-save as draft
+      if (selectedFile && formData.title.trim() && !uploadProgress) {
+        console.log('🔄 Auto-saving video as draft before page leave...');
+        handleUpload('draft').catch(console.error);
+      }
+    };
+  }, [selectedFile, formData.title, uploadProgress]);
+    // Start monitoring session
 
   const resetForm = () => {
     setSelectedFile(null);
@@ -933,17 +979,25 @@ export function VideoUploadLarge({
                 />
               </div>
 
-              {/* Upload Button */}
+              {/* Upload Buttons */}
               <div className="flex justify-end gap-2 pt-4">
                 <Button variant="outline" onClick={resetForm}>
                   Cancel
                 </Button>
                 <Button
-                  onClick={handleUpload}
+                  variant="outline"
+                  onClick={() => handleUpload('draft')}
                   disabled={!formData.title.trim()}
                 >
                   <Upload className="h-4 w-4 mr-2" />
-                  {getUploadMethod(selectedFile.size) === 'multipart' ? 'Start Large Upload' : 'Upload Video'}
+                  Save as Draft
+                </Button>
+                <Button
+                  onClick={() => handleUpload('published')}
+                  disabled={!formData.title.trim()}
+                >
+                  <Upload className="h-4 w-4 mr-2" />
+                  Upload & Publish
                 </Button>
               </div>
             </div>
