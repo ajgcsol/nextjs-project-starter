@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import videoDatabase from '@/lib/videoDatabase';
+import liteVideoDatabase from '@/lib/videoDatabase-lite';
 import { AWSFileManager } from '@/lib/aws-integration';
 
 export async function GET(
@@ -10,7 +10,7 @@ export async function GET(
     const { id } = await params;
     
     // Check if video exists and has custom thumbnail
-    const video = videoDatabase.get(id);
+    const video = liteVideoDatabase.get(id);
     
     if (video?.metadata?.customThumbnail) {
       // Return custom thumbnail from database
@@ -83,7 +83,7 @@ export async function POST(
       );
     }
 
-    const video = videoDatabase.get(id);
+    const video = liteVideoDatabase.get(id);
     if (!video) {
       return NextResponse.json(
         { error: 'Video not found' },
@@ -108,7 +108,7 @@ export async function POST(
       );
       
       // Update video with S3 thumbnail info
-      videoDatabase.update(id, {
+      liteVideoDatabase.update(id, {
         thumbnailPath: `/api/videos/thumbnail/${id}`,
         metadata: {
           ...video.metadata,
@@ -139,7 +139,7 @@ export async function POST(
       const buffer = Buffer.from(bytes);
       const base64Data = buffer.toString('base64');
 
-      videoDatabase.update(id, {
+      liteVideoDatabase.update(id, {
         thumbnailPath: `/api/videos/thumbnail/${id}`,
         metadata: {
           ...video.metadata,

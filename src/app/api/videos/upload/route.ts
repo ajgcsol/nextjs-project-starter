@@ -270,7 +270,7 @@ export async function POST(request: NextRequest) {
     };
 
     // Save to database using in-memory storage
-    const savedVideo = videoDatabase.create(videoRecord);
+    const savedVideo = liteVideoDatabase.create(videoRecord);
     console.log('🎬 Video saved to database:', savedVideo.id);
 
     // In production, you would:

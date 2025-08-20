@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import videoDatabase from '@/lib/videoDatabase';
+import liteVideoDatabase from '@/lib/videoDatabase-lite';
 
 export async function GET(
   request: NextRequest,
@@ -11,7 +11,7 @@ export async function GET(
     const quality = url.searchParams.get('quality') || 'original';
     
     // Get video from database
-    const video = videoDatabase.get(id);
+    const video = liteVideoDatabase.get(id);
     
     if (!video) {
       return NextResponse.json(
@@ -27,7 +27,7 @@ export async function GET(
     }
 
     // Increment view count
-    videoDatabase.incrementViews(id);
+    liteVideoDatabase.incrementViews(id);
 
     // Determine the best streaming URL
     let streamingUrl: string;
