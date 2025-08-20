@@ -237,15 +237,65 @@ export function VideoUploadEnhanced({
     return `${minutes}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // Upload video using presigned URL
+  // Upload video using presigned URL - WITH MONITORING
   const handleUpload = async () => {
     if (!selectedFile) return;
 
+    // Start monitoring session
+    let monitorSessionId: string | null = null;
+
     try {
+      // Initialize upload monitoring
+      const monitorResponse = await fetch('/api/debug/upload-monitor', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'start',
+          data: {
+            filename: selectedFile.name,
+            fileSize: selectedFile.size,
+            mimeType: selectedFile.type,
+            userAgent: navigator.userAgent,
+            component: 'VideoUploadEnhanced'
+          }
+        })
+      });
+      
+      if (monitorResponse.ok) {
+        const monitorData = await monitorResponse.json();
+        monitorSessionId = monitorData.sessionId;
+        console.log('🔍 MONITOR: Started session', monitorSessionId);
+      }
+
+      const logStep = async (step: string, status: 'success' | 'error' | 'pending', details: any = {}, error?: string) => {
+        if (monitorSessionId) {
+          try {
+            await fetch('/api/debug/upload-monitor', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                action: 'log',
+                sessionId: monitorSessionId,
+                data: { step, status, details, error }
+              })
+            });
+          } catch (e) {
+            console.warn('Failed to log step:', e);
+          }
+        }
+      };
+
       console.log('🚀 Starting video upload process:', {
         fileName: selectedFile.name,
         fileSize: `${(selectedFile.size / (1024*1024)).toFixed(2)}MB`,
         fileType: selectedFile.type
+      });
+
+      await logStep('upload_start', 'success', {
+        filename: selectedFile.name,
+        fileSize: selectedFile.size,
+        mimeType: selectedFile.type,
+        component: 'VideoUploadEnhanced'
       });
 
       setUploadProgress({
@@ -257,7 +307,9 @@ export function VideoUploadEnhanced({
       });
 
       // Step 1: Get presigned URL
+      await logStep('presigned_url_request', 'pending');
       console.log('📡 Requesting presigned URL...');
+      
       const presignedResponse = await fetch('/api/videos/presigned-url', {
         method: 'POST',
         headers: {
@@ -272,10 +324,16 @@ export function VideoUploadEnhanced({
 
       if (!presignedResponse.ok) {
         const errorData = await presignedResponse.json();
+        await logStep('presigned_url_request', 'error', { 
+          status: presignedResponse.status,
+          statusText: presignedResponse.statusText,
+          errorData 
+        }, errorData.error || 'Failed to get upload URL');
         throw new Error(errorData.error || 'Failed to get upload URL');
       }
 
       const { presignedUrl, s3Key, publicUrl } = await presignedResponse.json();
+      await logStep('presigned_url_request', 'success', { s3Key, publicUrl });
 
       setUploadProgress(prev => prev ? {
         ...prev,
@@ -283,6 +341,7 @@ export function VideoUploadEnhanced({
       } : null);
 
       // Step 2: Upload directly to S3
+      await logStep('s3_upload_start', 'pending', { s3Key });
       const xhr = new XMLHttpRequest();
 
       // Track upload progress
@@ -337,7 +396,10 @@ export function VideoUploadEnhanced({
         xhr.send(selectedFile);
       });
 
+      await logStep('s3_upload_complete', 'success', { s3Key, publicUrl });
+
       // Step 3: Save video metadata
+      await logStep('metadata_save_start', 'pending');
       setUploadProgress(prev => prev ? {
         ...prev,
         stage: 'processing',
@@ -382,6 +444,12 @@ export function VideoUploadEnhanced({
 
       if (!videoResponse.ok) {
         const errorText = await videoResponse.text();
+        await logStep('metadata_save_failed', 'error', {
+          status: videoResponse.status,
+          statusText: videoResponse.statusText,
+          response: errorText
+        }, `Failed to save video metadata: ${videoResponse.status} ${videoResponse.statusText} - ${errorText}`);
+        
         console.error('💾 Metadata save failed:', {
           status: videoResponse.status,
           statusText: videoResponse.statusText,
@@ -391,9 +459,14 @@ export function VideoUploadEnhanced({
       }
 
       const videoData = await videoResponse.json();
+      await logStep('metadata_save_complete', 'success', {
+        videoId: videoData.video?.id,
+        videoTitle: videoData.video?.title
+      });
 
       // Step 4: Upload thumbnail if custom one is provided (skip auto-thumbnail to save memory)
       if (customThumbnail && videoData.video?.id) {
+        await logStep('custom_thumbnail_upload_start', 'pending');
         setUploadProgress(prev => prev ? {
           ...prev,
           stage: 'thumbnail',
@@ -412,9 +485,13 @@ export function VideoUploadEnhanced({
           });
 
           if (!thumbnailResponse.ok) {
+            await logStep('custom_thumbnail_upload_failed', 'error', {}, 'Custom thumbnail upload failed');
             console.warn('Custom thumbnail upload failed, continuing without it');
+          } else {
+            await logStep('custom_thumbnail_upload_complete', 'success');
           }
         } catch (thumbnailError) {
+          await logStep('custom_thumbnail_upload_error', 'error', {}, thumbnailError instanceof Error ? thumbnailError.message : 'Unknown thumbnail error');
           console.warn('Custom thumbnail upload error:', thumbnailError);
           // Don't fail the entire upload for thumbnail issues
         }
@@ -427,6 +504,29 @@ export function VideoUploadEnhanced({
         percentage: 100,
         message: 'Upload complete!'
       } : null);
+
+      await logStep('upload_complete', 'success', {
+        finalVideoId: videoData.video?.id,
+        finalVideoTitle: videoData.video?.title,
+        finalVideoUrl: videoData.video?.streamUrl
+      });
+
+      // Mark session as complete
+      if (monitorSessionId) {
+        await fetch('/api/debug/upload-monitor', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'complete',
+            sessionId: monitorSessionId,
+            data: {
+              videoId: videoData.video?.id,
+              title: formData.title,
+              finalUrl: videoData.video?.streamUrl
+            }
+          })
+        });
+      }
 
       onUploadComplete?.(videoData.video);
       
@@ -449,8 +549,28 @@ export function VideoUploadEnhanced({
       }, 2000);
 
     } catch (error) {
-      console.error('❌ Upload failed:', error);
       const errorMessage = error instanceof Error ? error.message : 'Upload failed';
+      
+      if (monitorSessionId) {
+        await fetch('/api/debug/upload-monitor', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'error',
+            sessionId: monitorSessionId,
+            data: {
+              error: errorMessage,
+              details: {
+                stack: error instanceof Error ? error.stack : undefined,
+                filename: selectedFile?.name,
+                fileSize: selectedFile?.size
+              }
+            }
+          })
+        });
+      }
+
+      console.error('❌ Upload failed:', error);
       console.error('❌ Error details:', {
         message: errorMessage,
         stack: error instanceof Error ? error.stack : undefined,
