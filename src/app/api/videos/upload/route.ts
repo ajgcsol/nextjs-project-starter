@@ -233,15 +233,18 @@ export async function POST(request: NextRequest) {
           message: 'Video uploaded successfully to S3 and database'
         });
       } catch (dbError) {
-        console.error('🎬 Database save failed, falling back to in-memory:', dbError);
+        console.error('🎬 Database save failed:', dbError);
         
-        // Fallback to original response format
+        // Don't fallback - fail the upload if database is unreachable
         return NextResponse.json({
-          success: true,
-          video: videoRecord,
-          message: 'Video uploaded successfully to S3 (database fallback)',
-          warning: 'Video saved to temporary storage - may not persist'
-        });
+          success: false,
+          error: 'Database connection failed - video upload aborted',
+          details: dbError instanceof Error ? dbError.message : 'Unknown database error',
+          troubleshooting: {
+            issue: 'Database server unreachable',
+            suggestion: 'Check DATABASE_URL and database server status'
+          }
+        }, { status: 500 });
       }
     }
 
