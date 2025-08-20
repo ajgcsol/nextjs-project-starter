@@ -135,7 +135,9 @@ export async function POST(request: NextRequest) {
           uploaded_by: 'current-user', // TODO: Get from auth context
           course_id: null,
           s3_key: s3Key,
-          s3_bucket: process.env.S3_BUCKET_NAME
+          s3_bucket: process.env.S3_BUCKET_NAME,
+          is_processed: true, // Mark as processed since S3 upload is complete
+          is_public: visibility === 'public'
         });
         console.log('🎬 Video saved to persistent database:', savedVideo.id);
         

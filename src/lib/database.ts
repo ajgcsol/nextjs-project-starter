@@ -383,15 +383,19 @@ export const VideoDB = {
     course_id?: string;
     s3_key?: string;
     s3_bucket?: string;
+    is_processed?: boolean;
+    is_public?: boolean;
   }) {
     const { rows } = await query(
       `INSERT INTO videos (title, description, filename, file_path, file_size, duration, 
-                          thumbnail_path, video_quality, uploaded_by, course_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                          thumbnail_path, video_quality, uploaded_by, course_id, 
+                          is_processed, is_public)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
        RETURNING *`,
       [videoData.title, videoData.description, videoData.filename, videoData.file_path,
        videoData.file_size, videoData.duration, videoData.thumbnail_path, 
-       videoData.video_quality || 'HD', videoData.uploaded_by, videoData.course_id]
+       videoData.video_quality || 'HD', videoData.uploaded_by, videoData.course_id,
+       videoData.is_processed || false, videoData.is_public || false]
     );
     return rows[0];
   },
