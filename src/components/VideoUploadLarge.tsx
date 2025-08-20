@@ -426,7 +426,56 @@ export function VideoUploadLarge({
   const handleUpload = async () => {
     if (!selectedFile) return;
 
+    // Start monitoring session
+    let monitorSessionId: string | null = null;
+    
     try {
+      // Initialize upload monitoring
+      const monitorResponse = await fetch('/api/debug/upload-monitor', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'start',
+          data: {
+            filename: selectedFile.name,
+            fileSize: selectedFile.size,
+            mimeType: selectedFile.type,
+            userAgent: navigator.userAgent
+          }
+        })
+      });
+      
+      if (monitorResponse.ok) {
+        const monitorData = await monitorResponse.json();
+        monitorSessionId = monitorData.sessionId;
+        console.log('🔍 MONITOR: Started session', monitorSessionId);
+      }
+
+      const logStep = async (step: string, status: 'success' | 'error' | 'pending', details: any = {}, error?: string) => {
+        if (monitorSessionId) {
+          try {
+            await fetch('/api/debug/upload-monitor', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                action: 'log',
+                sessionId: monitorSessionId,
+                data: { step, status, details, error }
+              })
+            });
+          } catch (e) {
+            console.warn('Failed to log step:', e);
+          }
+        }
+      };
+
+      await logStep('video_file_selected', 'success', {
+        filename: selectedFile.name,
+        fileSize: selectedFile.size,
+        mimeType: selectedFile.type,
+        uploadMethod: getUploadMethod(selectedFile.size)
+      });
+
       setUploadProgress({
         loaded: 0,
         total: selectedFile.size,
@@ -434,6 +483,24 @@ export function VideoUploadLarge({
         stage: 'preparing',
         message: 'Preparing video for content editor...'
       });
+
+      await logStep('form_data_validation', 'pending', {
+        title: formData.title,
+        description: formData.description,
+        category: formData.category,
+        hasAutoThumbnail: !!autoThumbnail,
+        hasCustomThumbnail: !!customThumbnail
+      });
+
+      // Validate form data
+      if (!formData.title.trim()) {
+        await logStep('form_data_validation', 'error', {}, 'Title is required');
+        throw new Error('Title is required');
+      }
+
+      await logStep('form_data_validation', 'success');
+
+      await logStep('video_data_preparation', 'pending');
 
       // Instead of uploading immediately, just prepare the video data for the ContentEditor
       const videoData = {
@@ -460,9 +527,17 @@ export function VideoUploadLarge({
           pendingFile: selectedFile,
           autoThumbnail: autoThumbnail,
           customThumbnail: customThumbnail,
-          uploadMethod: getUploadMethod(selectedFile.size)
+          uploadMethod: getUploadMethod(selectedFile.size),
+          monitorSessionId: monitorSessionId // Pass session ID for later use
         }
       };
+
+      await logStep('video_data_preparation', 'success', {
+        videoId: videoData.id,
+        title: videoData.title,
+        size: videoData.size,
+        duration: videoData.duration
+      });
 
       setUploadProgress({
         loaded: selectedFile.size,
@@ -470,6 +545,10 @@ export function VideoUploadLarge({
         percentage: 100,
         stage: 'complete',
         message: 'Video ready for content editor!'
+      });
+
+      await logStep('preparation_complete', 'success', {
+        message: 'Video prepared for ContentEditor - actual upload will happen on save/publish'
       });
 
       // Pass the prepared video data to the ContentEditor (don't reset form!)
@@ -480,6 +559,26 @@ export function VideoUploadLarge({
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Preparation failed';
+      
+      if (monitorSessionId) {
+        await fetch('/api/debug/upload-monitor', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'error',
+            sessionId: monitorSessionId,
+            data: {
+              error: errorMessage,
+              details: {
+                stack: error instanceof Error ? error.stack : undefined,
+                filename: selectedFile?.name,
+                fileSize: selectedFile?.size
+              }
+            }
+          })
+        });
+      }
+
       setUploadProgress(prev => prev ? {
         ...prev,
         stage: 'error',

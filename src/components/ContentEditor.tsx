@@ -130,13 +130,42 @@ export function ContentEditor({
     const autoThumbnail = content.metadata.autoThumbnail as string;
     const customThumbnail = content.metadata.customThumbnail as File;
     const uploadMethod = content.metadata.uploadMethod as string;
+    const monitorSessionId = content.metadata.monitorSessionId as string;
 
     if (!pendingFile) return;
+
+    const logStep = async (step: string, status: 'success' | 'error' | 'pending', details: any = {}, error?: string) => {
+      if (monitorSessionId) {
+        try {
+          await fetch('/api/debug/upload-monitor', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'log',
+              sessionId: monitorSessionId,
+              data: { step, status, details, error }
+            })
+          });
+        } catch (e) {
+          console.warn('Failed to log step:', e);
+        }
+      }
+    };
 
     try {
       console.log('🎬 Starting actual video upload for:', pendingFile.name);
       
+      await logStep('content_editor_upload_start', 'pending', {
+        filename: pendingFile.name,
+        fileSize: pendingFile.size,
+        uploadMethod: uploadMethod,
+        contentTitle: content.title,
+        contentDescription: content.description
+      });
+
       let uploadResult;
+
+      await logStep('s3_upload_start', 'pending', { uploadMethod });
 
       if (uploadMethod === 'multipart') {
         uploadResult = await uploadMultipartFile(pendingFile);
@@ -144,7 +173,14 @@ export function ContentEditor({
         uploadResult = await uploadSingleFile(pendingFile);
       }
 
+      await logStep('s3_upload_complete', 'success', {
+        s3Key: uploadResult.s3Key,
+        publicUrl: uploadResult.publicUrl
+      });
+
       // Save video metadata to database
+      await logStep('database_save_start', 'pending');
+
       const videoResponse = await fetch('/api/videos/upload', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -164,20 +200,39 @@ export function ContentEditor({
       });
 
       if (!videoResponse.ok) {
+        const errorText = await videoResponse.text();
+        await logStep('database_save_failed', 'error', { 
+          status: videoResponse.status,
+          statusText: videoResponse.statusText,
+          response: errorText
+        }, `Failed to save video metadata: ${videoResponse.status} - ${errorText}`);
         throw new Error('Failed to save video metadata');
       }
 
       const videoData = await videoResponse.json();
 
+      await logStep('database_save_complete', 'success', {
+        videoId: videoData.video?.id,
+        videoTitle: videoData.video?.title
+      });
+
       // Handle custom thumbnail if provided
       if (customThumbnail && videoData.video?.id) {
+        await logStep('custom_thumbnail_upload_start', 'pending');
+
         const thumbnailFormData = new FormData();
         thumbnailFormData.append('thumbnail', customThumbnail);
 
-        await fetch(`/api/videos/thumbnail/${videoData.video.id}`, {
+        const thumbnailResponse = await fetch(`/api/videos/thumbnail/${videoData.video.id}`, {
           method: 'POST',
           body: thumbnailFormData,
         });
+
+        if (thumbnailResponse.ok) {
+          await logStep('custom_thumbnail_upload_complete', 'success');
+        } else {
+          await logStep('custom_thumbnail_upload_failed', 'error', {}, 'Custom thumbnail upload failed');
+        }
       }
 
       // Update content metadata with the real video data
@@ -192,13 +247,62 @@ export function ContentEditor({
           pendingFile: undefined,
           autoThumbnail: undefined,
           customThumbnail: undefined,
-          uploadMethod: undefined
+          uploadMethod: undefined,
+          monitorSessionId: undefined
         }
       }));
+
+      await logStep('content_editor_upload_complete', 'success', {
+        finalVideoId: videoData.video.id,
+        finalVideoUrl: videoData.video.streamUrl,
+        finalThumbnailUrl: videoData.video.thumbnailPath
+      });
+
+      // Mark session as complete
+      if (monitorSessionId) {
+        await fetch('/api/debug/upload-monitor', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'complete',
+            sessionId: monitorSessionId,
+            data: {
+              videoId: videoData.video.id,
+              title: content.title,
+              finalUrl: videoData.video.streamUrl
+            }
+          })
+        });
+      }
 
       console.log('🎬 ✅ Video upload completed successfully');
 
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Upload failed';
+      
+      await logStep('content_editor_upload_failed', 'error', {
+        stack: error instanceof Error ? error.stack : undefined
+      }, errorMessage);
+
+      // Mark session as failed
+      if (monitorSessionId) {
+        await fetch('/api/debug/upload-monitor', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'error',
+            sessionId: monitorSessionId,
+            data: {
+              error: errorMessage,
+              details: {
+                contentTitle: content.title,
+                filename: pendingFile?.name
+              }
+            }
+          })
+        });
+      }
+
       console.error('🎬 ❌ Video upload failed:', error);
       throw error; // Re-throw to handle in calling function
     }
