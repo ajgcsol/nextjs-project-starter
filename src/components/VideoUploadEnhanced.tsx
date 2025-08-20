@@ -242,6 +242,12 @@ export function VideoUploadEnhanced({
     if (!selectedFile) return;
 
     try {
+      console.log('🚀 Starting video upload process:', {
+        fileName: selectedFile.name,
+        fileSize: `${(selectedFile.size / (1024*1024)).toFixed(2)}MB`,
+        fileType: selectedFile.type
+      });
+
       setUploadProgress({
         loaded: 0,
         total: selectedFile.size,
@@ -251,6 +257,7 @@ export function VideoUploadEnhanced({
       });
 
       // Step 1: Get presigned URL
+      console.log('📡 Requesting presigned URL...');
       const presignedResponse = await fetch('/api/videos/presigned-url', {
         method: 'POST',
         headers: {
@@ -441,7 +448,15 @@ export function VideoUploadEnhanced({
       }, 2000);
 
     } catch (error) {
+      console.error('❌ Upload failed:', error);
       const errorMessage = error instanceof Error ? error.message : 'Upload failed';
+      console.error('❌ Error details:', {
+        message: errorMessage,
+        stack: error instanceof Error ? error.stack : undefined,
+        fileName: selectedFile?.name,
+        fileSize: selectedFile?.size
+      });
+      
       setUploadProgress(prev => prev ? {
         ...prev,
         stage: 'error',

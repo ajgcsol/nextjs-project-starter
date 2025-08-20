@@ -13,7 +13,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { VideoUploadEnhanced } from "@/components/VideoUploadEnhanced";
+import dynamic from 'next/dynamic';
+
+// Dynamically import VideoUploadEnhanced to avoid hydration issues
+const VideoUploadEnhanced = dynamic(() => import("@/components/VideoUploadEnhanced").then(mod => ({ default: mod.VideoUploadEnhanced })), {
+  ssr: false,
+  loading: () => <div className="flex items-center justify-center p-8"><div className="animate-spin h-8 w-8 border-b-2 border-blue-500"></div></div>
+});
 import { 
   Upload, 
   Video, 
