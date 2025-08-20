@@ -43,10 +43,12 @@ temp_*.txt
 temp_access_key.txt
 temp_secret_key.txt
 
-# Database
+# Database files (but not API routes)
 *.db
 *.sqlite
-database/
+database/schema.sql
+database/videos.json
+database/migrations/
 
 # AWS credentials (should never be deployed)
 .aws/
