@@ -658,7 +658,7 @@ export const VideoDB = {
     return rows;
   },
 
-  async findVideosWithBrokenThumbnails(limit: number = 10) {
+  async findVideosWithBrokenThumbnails(limit: number = 10, offset: number = 0) {
     const { rows } = await query(
       `SELECT * FROM videos 
        WHERE (
@@ -674,19 +674,19 @@ export const VideoDB = {
        )
        AND file_path IS NOT NULL 
        ORDER BY uploaded_at DESC 
-       LIMIT $1`,
-      [limit]
+       LIMIT $1 OFFSET $2`,
+      [limit, offset]
     );
     return rows;
   },
 
-  async findAllVideosForThumbnailRegeneration(limit: number = 50) {
+  async findAllVideosForThumbnailRegeneration(limit: number = 50, offset: number = 0) {
     const { rows } = await query(
       `SELECT * FROM videos 
        WHERE file_path IS NOT NULL 
        ORDER BY uploaded_at DESC 
-       LIMIT $1`,
-      [limit]
+       LIMIT $1 OFFSET $2`,
+      [limit, offset]
     );
     return rows;
   },

@@ -250,46 +250,124 @@ export class ThumbnailGenerator {
   }
 
   /**
-   * Generate SVG thumbnail as fallback when other methods fail
+   * Generate enhanced SVG thumbnail with unique visual design for each video
    */
   static async generateSVGThumbnail(videoId: string, videoTitle?: string): Promise<ThumbnailGenerationResult> {
     try {
-      console.log('🎨 Generating SVG thumbnail for video:', videoId);
+      console.log('🎨 Generating enhanced SVG thumbnail for video:', videoId);
       
-      // Create a beautiful SVG thumbnail with video info
+      // Create unique visual elements based on video ID and title
       const colors = [
-        '#3B82F6', '#8B5CF6', '#10B981', '#F59E0B', 
-        '#EF4444', '#06B6D4', '#84CC16', '#F97316'
+        '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', 
+        '#DDA0DD', '#98D8C8', '#FF8A80', '#82B1FF', '#B39DDB',
+        '#F8BBD9', '#C5E1A5', '#FFE082', '#FFAB91', '#80CBC4'
       ];
-      const color = colors[videoId.length % colors.length];
+      
+      // Generate unique color scheme based on video ID
+      const primaryColor = colors[videoId.length % colors.length];
+      const secondaryColor = colors[(videoId.charCodeAt(0) + videoId.charCodeAt(videoId.length - 1)) % colors.length];
+      
+      // Create unique patterns based on video title/ID
+      const titleHash = (videoTitle || videoId).split('').reduce((a, b) => {
+        a = ((a << 5) - a) + b.charCodeAt(0);
+        return a & a;
+      }, 0);
+      
+      const patternType = Math.abs(titleHash) % 4;
+      const displayTitle = (videoTitle || videoId).substring(0, 20);
+      
+      // Generate different visual patterns
+      let patternElements = '';
+      switch (patternType) {
+        case 0: // Geometric circles
+          patternElements = `
+            <circle cx="200" cy="150" r="80" fill="${secondaryColor}" opacity="0.3"/>
+            <circle cx="1080" cy="200" r="60" fill="${primaryColor}" opacity="0.4"/>
+            <circle cx="300" cy="500" r="100" fill="${secondaryColor}" opacity="0.2"/>
+            <circle cx="1000" cy="550" r="70" fill="${primaryColor}" opacity="0.3"/>
+          `;
+          break;
+        case 1: // Diagonal stripes
+          patternElements = `
+            <defs>
+              <pattern id="stripes-${videoId}" patternUnits="userSpaceOnUse" width="40" height="40" patternTransform="rotate(45)">
+                <rect width="20" height="40" fill="${secondaryColor}" opacity="0.1"/>
+              </pattern>
+            </defs>
+            <rect width="1280" height="720" fill="url(#stripes-${videoId})"/>
+          `;
+          break;
+        case 2: // Hexagonal pattern
+          patternElements = `
+            <polygon points="200,100 250,130 250,190 200,220 150,190 150,130" fill="${secondaryColor}" opacity="0.3"/>
+            <polygon points="1000,150 1050,180 1050,240 1000,270 950,240 950,180" fill="${primaryColor}" opacity="0.4"/>
+            <polygon points="300,450 350,480 350,540 300,570 250,540 250,480" fill="${secondaryColor}" opacity="0.2"/>
+          `;
+          break;
+        case 3: // Wave pattern
+          patternElements = `
+            <path d="M0,300 Q320,200 640,300 T1280,300" stroke="${secondaryColor}" stroke-width="3" fill="none" opacity="0.4"/>
+            <path d="M0,400 Q320,500 640,400 T1280,400" stroke="${primaryColor}" stroke-width="2" fill="none" opacity="0.3"/>
+          `;
+          break;
+      }
       
       const svg = `
         <svg width="1280" height="720" xmlns="http://www.w3.org/2000/svg">
           <defs>
             <linearGradient id="bg-${videoId}" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" style="stop-color:${color};stop-opacity:0.8" />
-              <stop offset="100%" style="stop-color:${color};stop-opacity:0.4" />
+              <stop offset="0%" style="stop-color:${primaryColor};stop-opacity:0.8" />
+              <stop offset="50%" style="stop-color:${secondaryColor};stop-opacity:0.6" />
+              <stop offset="100%" style="stop-color:${primaryColor};stop-opacity:0.4" />
             </linearGradient>
-            <filter id="shadow">
-              <feDropShadow dx="2" dy="2" stdDeviation="3" flood-opacity="0.3"/>
+            <filter id="shadow-${videoId}">
+              <feDropShadow dx="3" dy="3" stdDeviation="4" flood-opacity="0.4"/>
+            </filter>
+            <filter id="glow-${videoId}">
+              <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+              <feMerge> 
+                <feMergeNode in="coloredBlur"/>
+                <feMergeNode in="SourceGraphic"/>
+              </feMerge>
             </filter>
           </defs>
+          
+          <!-- Background -->
           <rect width="1280" height="720" fill="url(#bg-${videoId})"/>
-          <circle cx="640" cy="300" r="60" fill="rgba(255,255,255,0.9)" filter="url(#shadow)"/>
-          <polygon points="620,270 620,330 670,300" fill="${color}"/>
-          <text x="640" y="420" font-family="Arial, sans-serif" font-size="32" font-weight="bold"
-                fill="white" text-anchor="middle" filter="url(#shadow)">
-            ${videoTitle || 'Video Thumbnail'}
+          
+          <!-- Pattern overlay -->
+          ${patternElements}
+          
+          <!-- Main play button with enhanced design -->
+          <circle cx="640" cy="300" r="80" fill="rgba(255,255,255,0.95)" filter="url(#shadow-${videoId})"/>
+          <circle cx="640" cy="300" r="75" fill="none" stroke="${primaryColor}" stroke-width="3" opacity="0.8"/>
+          <polygon points="610,270 610,330 690,300" fill="${primaryColor}" filter="url(#glow-${videoId})"/>
+          
+          <!-- Video title with better typography -->
+          <rect x="40" y="380" width="1200" height="80" rx="10" fill="rgba(0,0,0,0.7)" filter="url(#shadow-${videoId})"/>
+          <text x="640" y="420" font-family="Arial, sans-serif" font-size="36" font-weight="bold"
+                fill="white" text-anchor="middle" filter="url(#glow-${videoId})">
+            ${displayTitle}
           </text>
-          <text x="640" y="460" font-family="Arial, sans-serif" font-size="18" 
-                fill="rgba(255,255,255,0.8)" text-anchor="middle">
-            Generated Thumbnail
+          <text x="640" y="445" font-family="Arial, sans-serif" font-size="16" 
+                fill="rgba(255,255,255,0.9)" text-anchor="middle">
+            Video Content • Ready to Play
           </text>
-          <rect x="40" y="40" width="200" height="40" rx="20" fill="rgba(255,255,255,0.2)"/>
-          <text x="140" y="65" font-family="Arial, sans-serif" font-size="16" 
-                fill="white" text-anchor="middle" font-weight="bold">
-            ${videoId.substring(0, 8).toUpperCase()}
+          
+          <!-- Video ID badge -->
+          <rect x="40" y="40" width="240" height="50" rx="25" fill="rgba(0,0,0,0.8)" filter="url(#shadow-${videoId})"/>
+          <text x="160" y="70" font-family="Arial, sans-serif" font-size="18" 
+                fill="${primaryColor}" text-anchor="middle" font-weight="bold">
+            ID: ${videoId.substring(0, 8).toUpperCase()}
           </text>
+          
+          <!-- Decorative elements -->
+          <rect x="1180" y="40" width="60" height="60" rx="30" fill="rgba(255,255,255,0.2)" filter="url(#shadow-${videoId})"/>
+          <circle cx="1210" cy="70" r="15" fill="${secondaryColor}"/>
+          
+          <!-- Bottom accent -->
+          <rect x="0" y="680" width="1280" height="40" fill="rgba(0,0,0,0.3)"/>
+          <rect x="0" y="680" width="1280" height="4" fill="${primaryColor}"/>
         </svg>
       `;
       
@@ -305,7 +383,7 @@ export class ThumbnailGenerator {
       };
       
     } catch (error) {
-      console.error('❌ SVG thumbnail generation failed:', error);
+      console.error('❌ Enhanced SVG thumbnail generation failed:', error);
       return {
         success: false,
         method: 'placeholder',
@@ -360,26 +438,37 @@ export class ThumbnailGenerator {
       }
     }
 
-    // Method 3: Generate SVG thumbnail as fallback
-    console.log('🎨 Generating SVG thumbnail as fallback...');
+    // Method 3: Generate enhanced SVG thumbnail as fallback
+    console.log('🎨 Generating enhanced SVG thumbnail as fallback...');
     try {
-      const svgResult = await this.generateSVGThumbnail(videoId);
+      // Get video title from database for better thumbnails
+      let videoTitle = videoId;
+      try {
+        const video = await VideoDB.findById(videoId);
+        if (video?.title) {
+          videoTitle = video.title;
+        }
+      } catch (dbError) {
+        console.warn('⚠️ Could not fetch video title, using ID:', dbError);
+      }
+      
+      const svgResult = await this.generateSVGThumbnail(videoId, videoTitle);
       
       if (svgResult.success) {
-        // Update database with SVG thumbnail
+        // Update database with enhanced SVG thumbnail
         try {
           await VideoDB.update(videoId, {
             thumbnail_path: svgResult.thumbnailUrl
           });
-          console.log('✅ Database updated with SVG thumbnail');
+          console.log('✅ Database updated with enhanced SVG thumbnail');
         } catch (dbError) {
-          console.warn('⚠️ Failed to update database with SVG thumbnail:', dbError);
+          console.warn('⚠️ Failed to update database with thumbnail:', dbError);
         }
         
         return svgResult;
       }
     } catch (error) {
-      console.error('❌ SVG thumbnail generation failed:', error);
+      console.error('❌ Enhanced SVG thumbnail generation failed:', error);
     }
 
     // Method 4: Generate placeholder thumbnail
@@ -492,17 +581,17 @@ export class ThumbnailGenerator {
     failed: number;
     results: ThumbnailGenerationResult[];
   }> {
-    console.log('🔄 Starting batch thumbnail generation...', { limit, forceRegenerate });
+    console.log('🔄 Starting batch thumbnail generation...', { limit, forceRegenerate, offset });
     
     try {
       // Choose which videos to process based on forceRegenerate flag
       let videos;
       if (forceRegenerate) {
         console.log('🔄 Force regenerating thumbnails for ALL videos');
-        videos = await VideoDB.findAllVideosForThumbnailRegeneration(limit);
+        videos = await VideoDB.findAllVideosForThumbnailRegeneration(limit, offset);
       } else {
         console.log('🔄 Finding videos with broken/missing thumbnails');
-        videos = await VideoDB.findVideosWithBrokenThumbnails(limit);
+        videos = await VideoDB.findVideosWithBrokenThumbnails(limit, offset);
       }
       
       if (videos.length === 0) {
