@@ -208,7 +208,7 @@ export default function VideoPlayerPage({ params }: { params: { id: string } }) 
                       controls 
                       className="w-full h-full"
                       poster={`/api/videos/thumbnail/${video.id}`}
-                      preload="none" // Always use "none" to prevent initial loading issues
+                      preload="metadata" // Changed from "none" to "metadata" for better large video handling
                       playsInline
                       crossOrigin="anonymous"
                       onLoadStart={() => {
@@ -219,6 +219,9 @@ export default function VideoPlayerPage({ params }: { params: { id: string } }) 
                       }}
                       onCanPlay={() => {
                         console.log('Video can play:', video.id);
+                      }}
+                      onCanPlayThrough={() => {
+                        console.log('Video can play through:', video.id);
                       }}
                       onError={(e) => {
                         const error = e.currentTarget.error;
@@ -235,6 +238,10 @@ export default function VideoPlayerPage({ params }: { params: { id: string } }) 
                           switch (error.code) {
                             case MediaError.MEDIA_ERR_NETWORK:
                               console.log('Network error - video may be too large or connection issue');
+                              // For large videos, suggest direct download
+                              if (video.size > 500 * 1024 * 1024) { // 500MB+
+                                console.log('Large video detected - consider direct download');
+                              }
                               break;
                             case MediaError.MEDIA_ERR_DECODE:
                               console.log('Decode error - video format may be unsupported');
@@ -253,8 +260,22 @@ export default function VideoPlayerPage({ params }: { params: { id: string } }) 
                       onPlaying={() => {
                         console.log('Video playing');
                       }}
-                      onProgress={() => {
-                        console.log('Video progress event');
+                      onProgress={(e) => {
+                        const video = e.currentTarget;
+                        if (video.buffered.length > 0) {
+                          const bufferedEnd = video.buffered.end(video.buffered.length - 1);
+                          const duration = video.duration;
+                          if (duration > 0) {
+                            const bufferedPercent = (bufferedEnd / duration) * 100;
+                            console.log(`Video buffered: ${bufferedPercent.toFixed(1)}%`);
+                          }
+                        }
+                      }}
+                      onStalled={() => {
+                        console.log('Video stalled - network may be slow for large file');
+                      }}
+                      onSuspend={() => {
+                        console.log('Video loading suspended');
                       }}
                     >
                       <source src={streamUrl} type="video/mp4" />

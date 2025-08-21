@@ -29,11 +29,14 @@ export async function GET(
         discoveryMethod = 'database_data_url';
         discoveryAttempts.push(`database_data_url: ${video.thumbnail_path.substring(0, 50)}...`);
         
-        // Return the data URL directly
-        return new Response(video.thumbnail_path.split(',')[1], {
+        // Extract the base64 data and decode it
+        const base64Data = video.thumbnail_path.split(',')[1];
+        const imageBuffer = Buffer.from(base64Data, 'base64');
+        
+        // Return the decoded image data
+        return new Response(imageBuffer, {
           headers: {
             'Content-Type': video.thumbnail_path.includes('svg') ? 'image/svg+xml' : 'image/jpeg',
-            'Content-Encoding': 'base64',
             'Cache-Control': 'public, max-age=3600'
           }
         });
