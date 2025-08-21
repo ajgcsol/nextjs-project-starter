@@ -111,9 +111,11 @@ export default function VideoPlayerPage({ params }: { params: { id: string } }) 
   };
 
   const formatDuration = (seconds: number) => {
+    if (!seconds || seconds === 0) return 'Unknown';
+    
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
-    const secs = seconds % 60;
+    const secs = Math.floor(seconds % 60);
     
     if (hours > 0) {
       return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
@@ -122,6 +124,8 @@ export default function VideoPlayerPage({ params }: { params: { id: string } }) 
   };
 
   const formatFileSize = (bytes: number) => {
+    if (!bytes || bytes === 0) return 'Unknown';
+    
     const mb = bytes / (1024 * 1024);
     if (mb >= 1024) {
       return `${(mb / 1024).toFixed(1)} GB`;
@@ -304,7 +308,7 @@ export default function VideoPlayerPage({ params }: { params: { id: string } }) 
                       </span>
                       <span className="flex items-center gap-1">
                         <Calendar className="h-4 w-4" />
-                        {new Date(video.uploadDate).toLocaleDateString()}
+                        {video.uploadDate ? new Date(video.uploadDate).toLocaleDateString() : 'Unknown date'}
                       </span>
                       <span className="flex items-center gap-1">
                         {video.visibility === "public" ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
@@ -368,7 +372,7 @@ export default function VideoPlayerPage({ params }: { params: { id: string } }) 
                   
                   <div>
                     <label className="text-sm font-medium text-slate-600">Upload Date</label>
-                    <p className="text-sm">{new Date(video.uploadDate).toLocaleString()}</p>
+                    <p className="text-sm">{video.uploadDate ? new Date(video.uploadDate).toLocaleString() : 'Unknown date'}</p>
                   </div>
                 </CardContent>
               </Card>
