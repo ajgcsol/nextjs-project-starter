@@ -201,59 +201,73 @@ export default function VideoPlayerPage({ params }: { params: { id: string } }) 
           {/* Video Player */}
           <Card className="border-0 shadow-sm">
             <CardContent className="pt-6">
-              <div className="aspect-video bg-black rounded-lg overflow-hidden mb-4">
+              <div className="aspect-video bg-black rounded-lg overflow-hidden mb-4 relative">
                 {streamUrl ? (
-                  <video 
-                    controls 
-                    className="w-full h-full"
-                    poster={`/api/videos/thumbnail/${video.id}`}
-                    preload={video.size > 100 * 1024 * 1024 ? "none" : "metadata"} // Use "none" for large videos
-                    playsInline
-                    crossOrigin="anonymous"
-                    onLoadStart={() => {
-                      console.log('Video load started for:', video.id);
-                    }}
-                    onCanPlay={() => {
-                      console.log('Video can play:', video.id);
-                    }}
-                    onError={(e) => {
-                      const error = e.currentTarget.error;
-                      if (error) {
-                        console.error('Video error:', {
-                          code: error.code,
-                          message: error.message,
-                          videoId: video.id,
-                          fileSize: video.size
-                        });
-                        
-                        // Handle specific error codes
-                        switch (error.code) {
-                          case MediaError.MEDIA_ERR_NETWORK:
-                            console.log('Network error - video may be too large or connection issue');
-                            break;
-                          case MediaError.MEDIA_ERR_DECODE:
-                            console.log('Decode error - video format may be unsupported');
-                            break;
-                          case MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED:
-                            console.log('Source not supported - trying fallback');
-                            break;
-                          default:
-                            console.log('Unknown video error');
+                  <>
+                    <video 
+                      controls 
+                      className="w-full h-full"
+                      poster={`/api/videos/thumbnail/${video.id}`}
+                      preload="none" // Always use "none" to prevent initial loading issues
+                      playsInline
+                      crossOrigin="anonymous"
+                      onLoadStart={() => {
+                        console.log('Video load started for:', video.id);
+                      }}
+                      onLoadedMetadata={() => {
+                        console.log('Video metadata loaded for:', video.id);
+                      }}
+                      onCanPlay={() => {
+                        console.log('Video can play:', video.id);
+                      }}
+                      onError={(e) => {
+                        const error = e.currentTarget.error;
+                        if (error) {
+                          console.error('Video error:', {
+                            code: error.code,
+                            message: error.message,
+                            videoId: video.id,
+                            fileSize: video.size,
+                            src: e.currentTarget.src
+                          });
+                          
+                          // Handle specific error codes
+                          switch (error.code) {
+                            case MediaError.MEDIA_ERR_NETWORK:
+                              console.log('Network error - video may be too large or connection issue');
+                              break;
+                            case MediaError.MEDIA_ERR_DECODE:
+                              console.log('Decode error - video format may be unsupported');
+                              break;
+                            case MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED:
+                              console.log('Source not supported - trying fallback');
+                              break;
+                            default:
+                              console.log('Unknown video error');
+                          }
                         }
-                      }
-                    }}
-                    onWaiting={() => {
-                      console.log('Video buffering...');
-                    }}
-                    onPlaying={() => {
-                      console.log('Video playing');
-                    }}
-                  >
-                    <source src={streamUrl} type="video/mp4" />
-                    <source src={streamUrl} type="video/webm" />
-                    <source src={streamUrl} type="video/ogg" />
-                    Your browser does not support the video tag.
-                  </video>
+                      }}
+                      onWaiting={() => {
+                        console.log('Video buffering...');
+                      }}
+                      onPlaying={() => {
+                        console.log('Video playing');
+                      }}
+                      onProgress={() => {
+                        console.log('Video progress event');
+                      }}
+                    >
+                      <source src={streamUrl} type="video/mp4" />
+                      Your browser does not support the video tag.
+                    </video>
+                    
+                    {/* Debug overlay for large videos */}
+                    {video.size > 100 * 1024 * 1024 && (
+                      <div className="absolute top-2 right-2 bg-black bg-opacity-75 text-white text-xs px-2 py-1 rounded">
+                        {formatFileSize(video.size)} • CloudFront
+                      </div>
+                    )}
+                  </>
                 ) : (
                   <div className="w-full h-full flex items-center justify-center text-white">
                     <div className="text-center">

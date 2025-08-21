@@ -1,151 +1,153 @@
 # Implementation Plan
 
-## Overview
-Fix video streaming and thumbnail functionality by implementing robust fallback mechanisms that can dynamically discover and serve both S3 video files and thumbnails even when database records are incomplete or missing S3 key mappings.
+Optimize large video streaming performance and implement efficient hover previews for multi-gigabyte video files.
 
-The current system has a critical disconnect between the PostgreSQL database records and actual S3 file storage. Videos and thumbnails are successfully uploaded to S3 and accessible via CloudFront, but both the streaming API and thumbnail API fail because database records don't contain correct S3 key mappings. This implementation will create a multi-layered fallback system that can discover both video files and thumbnails through various methods, ensuring complete media functionality regardless of database inconsistencies.
+The current system experiences timeout issues with large videos (300MB to multi-GB) despite CloudFront integration. The streaming endpoint redirects large videos to CloudFront but still encounters timeouts, indicating issues with the streaming strategy, CloudFront configuration, and video delivery optimization. This implementation will establish a robust video streaming architecture that handles large files efficiently through adaptive streaming, proper CloudFront configuration, and optimized video processing.
 
 ## Types
-Define enhanced video streaming and thumbnail interfaces and error handling types.
+
+Enhanced video streaming and preview system with adaptive bitrate support.
 
 ```typescript
-interface VideoStreamResponse {
-  success: boolean;
-  videoUrl?: string;
-  method?: 'database' | 'cloudfront_discovery' | 'presigned_fallback';
-  error?: string;
-  metadata?: {
-    s3Key?: string;
-    cloudFrontUrl?: string;
-    directUrl?: string;
-    discoveryAttempts?: string[];
+// Enhanced video streaming types
+interface VideoStreamConfig {
+  quality: 'auto' | '240p' | '360p' | '480p' | '720p' | '1080p' | 'original';
+  adaptiveBitrate: boolean;
+  preload: 'none' | 'metadata' | 'auto';
+  bufferSize: number;
+}
+
+interface VideoPreviewConfig {
+  thumbnailCount: number;
+  previewDuration: number;
+  spriteSheetUrl?: string;
+  webVttUrl?: string;
+}
+
+interface CloudFrontConfig {
+  distributionId: string;
+  domain: string;
+  cacheBehaviors: {
+    videos: string;
+    thumbnails: string;
+    previews: string;
   };
 }
 
-interface ThumbnailResponse {
-  success: boolean;
-  thumbnailUrl?: string;
-  method?: 'database' | 'cloudfront_discovery' | 'placeholder_fallback';
-  error?: string;
-  metadata?: {
-    s3Key?: string;
-    cloudFrontUrl?: string;
-    discoveryAttempts?: string[];
+interface AdaptiveStreamingManifest {
+  videoId: string;
+  qualities: Array<{
+    quality: string;
+    url: string;
+    bitrate: number;
+    resolution: string;
+  }>;
+  thumbnails: {
+    spriteSheet: string;
+    webVtt: string;
+    interval: number;
   };
-}
-
-interface MediaDiscoveryResult {
-  found: boolean;
-  url?: string;
-  s3Key?: string;
-  method: string;
-  responseTime?: number;
-  mediaType: 'video' | 'thumbnail';
-}
-
-interface DatabaseVideoRecord {
-  id: string;
-  title: string;
-  filename: string;
-  file_path: string;
-  thumbnail_path?: string;
-  s3_key?: string;
-  s3_bucket?: string;
-  is_processed: boolean;
-  uploaded_at: string;
 }
 ```
 
 ## Files
-Modify existing streaming and thumbnail endpoints and create supporting utilities.
 
-**Modified Files:**
-- `src/app/api/videos/stream/[id]/route.ts` - Complete rewrite with robust fallback mechanism
-- `src/app/api/videos/thumbnail/[id]/route.ts` - Enhanced with thumbnail discovery fallbacks
-- `src/lib/videoDatabase.ts` - Add media discovery utilities (optional enhancement)
+Comprehensive video streaming optimization across multiple system components.
 
 **New Files:**
-- `src/lib/mediaDiscovery.ts` - Video and thumbnail file discovery utilities
-- `src/app/api/videos/repair-database/route.ts` - Database repair endpoint for fixing S3 key mappings
-- `src/app/api/videos/repair-thumbnails/route.ts` - Thumbnail repair endpoint for fixing thumbnail paths
+- `src/lib/adaptiveStreaming.ts` - Adaptive bitrate streaming logic and HLS/DASH support
+- `src/lib/videoOptimization.ts` - Video compression and quality optimization
+- `src/lib/cloudFrontOptimization.ts` - CloudFront configuration and cache optimization
+- `src/components/AdaptiveVideoPlayer.tsx` - Enhanced video player with adaptive streaming
+- `src/components/VideoPreviewHover.tsx` - Hover preview component with sprite sheets
+- `src/app/api/videos/manifest/[id]/route.ts` - Streaming manifest generation
+- `src/app/api/videos/quality/[id]/route.ts` - Quality-specific video serving
+- `src/app/api/videos/preview-sprites/[id]/route.ts` - Preview sprite sheet generation
 
-**Configuration Updates:**
-- Environment variables validation for CloudFront domain
-- S3 bucket policy validation for thumbnails folder access
-- Error logging enhancements in monitoring system
+**Modified Files:**
+- `src/app/api/videos/stream/[id]/route.ts` - Enhanced streaming with adaptive bitrate support
+- `src/lib/mediaDiscovery.ts` - Add quality-aware video discovery
+- `src/components/VideoPlayer.tsx` - Integration with adaptive streaming
+- `src/app/dashboard/videos/[id]/page.tsx` - Enhanced player integration
+- `vercel.json` - Optimized function configurations for video streaming
+- `next.config.ts` - Video optimization and streaming configurations
 
 ## Functions
-Implement comprehensive video and thumbnail discovery and streaming functions.
+
+Enhanced video streaming and processing functions for large file optimization.
 
 **New Functions:**
-- `discoverVideoByCloudFront(videoId: string): Promise<MediaDiscoveryResult>` - Test CloudFront URLs with common S3 key patterns for videos
-- `discoverThumbnailByCloudFront(videoId: string): Promise<MediaDiscoveryResult>` - Test CloudFront URLs with common S3 key patterns for thumbnails
-- `discoverMediaByS3Listing(videoId: string, mediaType: 'video' | 'thumbnail'): Promise<MediaDiscoveryResult>` - Query S3 bucket for matching files
-- `generatePresignedFallback(s3Key: string): Promise<string>` - Generate presigned URL as last resort
-- `validateMediaUrl(url: string): Promise<boolean>` - Test if media URL is accessible
-- `repairDatabaseRecord(videoId: string, videoS3Key?: string, thumbnailS3Key?: string): Promise<void>` - Update database with discovered S3 keys
-- `generatePlaceholderThumbnail(videoId: string): Response` - Enhanced placeholder thumbnail generation
+- `AdaptiveStreamingService.generateManifest()` - Create HLS/DASH manifests for adaptive streaming
+- `AdaptiveStreamingService.getOptimalQuality()` - Determine best quality based on connection
+- `VideoOptimizationService.processForStreaming()` - Convert videos to streaming-optimized formats
+- `VideoOptimizationService.generatePreviewSprites()` - Create thumbnail sprite sheets for hover previews
+- `CloudFrontOptimizer.configureCacheBehaviors()` - Optimize CloudFront for video delivery
+- `CloudFrontOptimizer.invalidateVideoCache()` - Selective cache invalidation for video updates
 
 **Modified Functions:**
-- `GET /api/videos/stream/[id]` - Complete rewrite with multi-stage fallback logic
-- `GET /api/videos/thumbnail/[id]` - Enhanced with thumbnail discovery fallbacks
-- `POST /api/videos/thumbnail/[id]` - Improved S3 key storage and CloudFront URL handling
-- Video and thumbnail monitoring and error logging functions
+- `MediaDiscoveryService.discoverVideo()` - Add quality-aware discovery with manifest support
+- `VideoPlayer.handleQualityChange()` - Seamless quality switching during playback
+- `VideoPlayer.handleHoverPreview()` - Sprite-based hover preview implementation
+- Stream endpoint functions - Enhanced with adaptive streaming and timeout prevention
 
 ## Classes
-Enhance existing video management classes with discovery capabilities for both videos and thumbnails.
 
-**Modified Classes:**
-- `VideoDB` class in `src/lib/database.ts` - Add methods for updating S3 keys and thumbnail paths
-- `AWSFileManager` class in `src/lib/aws-integration.ts` - Add S3 listing capabilities for media discovery
+Video streaming optimization and adaptive delivery system classes.
 
 **New Classes:**
-- `MediaDiscoveryService` - Centralized video and thumbnail file discovery and URL resolution
-- `VideoStreamingService` - High-level video streaming with automatic fallbacks
-- `ThumbnailService` - High-level thumbnail serving with automatic fallbacks and placeholder generation
+- `AdaptiveStreamingService` - Manages HLS/DASH streaming, quality adaptation, and manifest generation
+- `VideoOptimizationService` - Handles video compression, format conversion, and streaming preparation
+- `CloudFrontOptimizer` - Manages CloudFront configuration, cache behaviors, and performance optimization
+- `VideoPreviewGenerator` - Creates thumbnail sprites, WebVTT files, and hover preview assets
+- `StreamingAnalytics` - Tracks streaming performance, quality switches, and user engagement
+
+**Modified Classes:**
+- `MediaDiscoveryService` - Enhanced with quality-aware discovery and manifest support
+- `VideoPlayer` - Integration with adaptive streaming and preview systems
+- `AWSFileManager` - Optimized for large file handling and streaming uploads
 
 ## Dependencies
-No new external dependencies required.
 
-All functionality will use existing dependencies:
-- `@aws-sdk/client-s3` - Already installed for S3 operations
-- `pg` - Already installed for PostgreSQL operations
-- Next.js built-in fetch API for URL validation
-- Existing monitoring and logging infrastructure
+Enhanced video processing and streaming capabilities.
+
+```json
+{
+  "hls.js": "^1.4.12",
+  "dash.js": "^4.7.2", 
+  "ffmpeg-static": "^5.2.0",
+  "fluent-ffmpeg": "^2.1.2",
+  "@aws-sdk/client-mediaconvert": "^3.864.0",
+  "video-thumbnail-generator": "^1.1.0"
+}
+```
 
 ## Testing
-Comprehensive testing approach for video streaming and thumbnail reliability.
+
+Comprehensive testing strategy for video streaming performance.
 
 **Test Files:**
-- `src/app/api/videos/stream/[id]/route.test.ts` - Unit tests for streaming endpoint
-- `src/app/api/videos/thumbnail/[id]/route.test.ts` - Unit tests for thumbnail endpoint
-- `src/lib/mediaDiscovery.test.ts` - Tests for discovery mechanisms
-- Integration tests for end-to-end video playback and thumbnail display
+- `tests/streaming/adaptive-streaming.test.ts` - Adaptive streaming functionality
+- `tests/streaming/large-video-performance.test.ts` - Large file streaming performance
+- `tests/components/video-player-adaptive.test.ts` - Enhanced video player testing
+- `tests/api/video-streaming-endpoints.test.ts` - Streaming API endpoint validation
 
-**Existing Test Modifications:**
-- Update video upload tests to verify S3 key storage for both videos and thumbnails
-- Add video player component tests for error handling
-- Add thumbnail display tests for fallback scenarios
-- Database connection tests for video and thumbnail queries
-
-**Validation Strategies:**
-- Test with known working video IDs from S3 console (e.g., `1755747422456-n7j0zzbh069`)
-- Test with database records missing S3 keys and thumbnail paths
-- Test CloudFront URL construction and validation for both videos and thumbnails
-- Test thumbnail fallback to placeholder generation
-- Performance testing for discovery mechanisms
-- Test S3 bucket policy compliance for thumbnails folder access
+**Performance Tests:**
+- Load testing with multi-GB video files
+- CloudFront cache hit ratio validation
+- Adaptive streaming quality switching tests
+- Hover preview responsiveness testing
 
 ## Implementation Order
-Logical sequence to minimize conflicts and ensure successful integration.
 
-1. **Create Media Discovery Service** - Build core discovery utilities in `src/lib/mediaDiscovery.ts` for both videos and thumbnails
-2. **Enhance Database Layer** - Add S3 key and thumbnail path update methods to VideoDB class
-3. **Rewrite Streaming Endpoint** - Implement multi-stage fallback in `/api/videos/stream/[id]/route.ts`
-4. **Enhance Thumbnail Endpoint** - Implement discovery fallbacks in `/api/videos/thumbnail/[id]/route.ts`
-5. **Add Database Repair Endpoints** - Create repair endpoints for fixing existing video and thumbnail records
-6. **Update Error Handling** - Enhance monitoring and logging for media streaming failures
-7. **Test with Known Media** - Verify functionality with `1755747422456-n7j0zzbh069.mp4` and its thumbnail
-8. **Validate Component Integration** - Ensure VideoPlayer and thumbnail components handle new URLs
-9. **Performance Optimization** - Add caching and optimize discovery performance for both media types
-10. **S3 Policy Validation** - Ensure bucket policy allows access to both videos and thumbnails folders
+Systematic implementation to minimize disruption and ensure performance gains.
+
+1. **CloudFront Optimization Setup** - Configure CloudFront for optimal video delivery with proper cache behaviors and compression
+2. **Adaptive Streaming Infrastructure** - Implement HLS/DASH manifest generation and quality-aware video discovery
+3. **Video Optimization Pipeline** - Set up video processing for multiple qualities and streaming-optimized formats
+4. **Enhanced Streaming Endpoints** - Update video streaming APIs with adaptive bitrate support and timeout prevention
+5. **Preview Generation System** - Implement thumbnail sprite generation and hover preview functionality
+6. **Adaptive Video Player** - Integrate enhanced video player with quality switching and preview capabilities
+7. **Performance Monitoring** - Add streaming analytics and performance tracking
+8. **Testing and Validation** - Comprehensive testing with large video files and performance optimization
+9. **Vercel Configuration Updates** - Optimize function timeouts and memory allocation for video operations
+10. **Documentation and Deployment** - Document streaming architecture and deploy optimizations

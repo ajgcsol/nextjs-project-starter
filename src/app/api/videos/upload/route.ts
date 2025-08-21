@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import crypto from 'crypto';
 import { VideoDB } from '@/lib/database';
 import { videoMonitor, PerformanceMonitor } from '@/lib/monitoring';
+import { VideoConverter } from '@/lib/videoConverter';
 
 // For serverless environment, we'll skip local file storage
 // In production, files should be uploaded directly to S3
@@ -80,6 +81,48 @@ export async function POST(request: NextRequest) {
       // Generate unique ID early so it can be used in thumbnail processing
       const fileId = crypto.randomUUID();
       console.log('🎬 Generated file ID:', fileId);
+
+      // Check if video needs conversion for web compatibility
+      const needsConversion = VideoConverter.needsConversion(filename, mimeType);
+      console.log('🎬 Video conversion check:', {
+        filename,
+        mimeType,
+        needsConversion,
+        fileExtension: filename.toLowerCase().split('.').pop()
+      });
+
+      // Handle video conversion if needed
+      let finalS3Key = s3Key;
+      let conversionStatus = 'not-needed';
+      
+      if (needsConversion) {
+        try {
+          console.log('🎬 ⚙️ Starting video conversion for web compatibility...');
+          await videoMonitor.logUploadEvent('Video conversion started', {
+            originalFormat: filename.split('.').pop(),
+            inputS3Key: s3Key,
+            reason: 'web-compatibility'
+          });
+
+          // For now, we'll mark it as needing conversion but use the original file
+          // In production with MediaConvert configured, this would trigger actual conversion
+          conversionStatus = 'pending';
+          console.log('🎬 📝 Video marked for conversion (MediaConvert setup required)');
+          
+          await videoMonitor.logUploadEvent('Video conversion queued', {
+            status: 'pending',
+            note: 'MediaConvert configuration required for actual conversion'
+          });
+          
+        } catch (conversionError) {
+          console.error('🎬 ❌ Video conversion failed:', conversionError);
+          await videoMonitor.logUploadEvent('Video conversion failed', {
+            error: conversionError instanceof Error ? conversionError.message : 'Unknown error'
+          });
+          // Continue with original file
+          conversionStatus = 'failed';
+        }
+      }
 
       // Handle thumbnail upload to S3 if provided
       let thumbnailS3Key = null;

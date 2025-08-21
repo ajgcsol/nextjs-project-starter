@@ -168,79 +168,29 @@ export async function GET(
       console.warn('⚠️ Failed to increment view count:', viewError);
     }
 
-    // Check if this is a large video that should be redirected directly to avoid timeout
-    const isLargeVideo = video.size && video.size > 50 * 1024 * 1024; // 50MB threshold
+    // Always redirect large videos (>100MB) directly to CloudFront to avoid timeout
+    const isLargeVideo = video.size && video.size > 100 * 1024 * 1024; // 100MB threshold
     const range = request.headers.get('range');
     
-    // For large videos or CloudFront URLs, always redirect to avoid Vercel timeout
-    if (isLargeVideo || videoUrl.includes('cloudfront.net')) {
-      console.log('🔄 Redirecting large video directly to CloudFront to avoid timeout');
-      const response = NextResponse.redirect(videoUrl, 302);
-      response.headers.set('Cache-Control', 'public, max-age=3600');
-      response.headers.set('Access-Control-Allow-Origin', '*');
-      response.headers.set('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
-      response.headers.set('Access-Control-Allow-Headers', 'Range');
-      return response;
-    }
+    // For all videos, especially large ones, redirect directly to CloudFront
+    // This prevents Vercel timeout issues and leverages CloudFront's optimized delivery
+    console.log(`🔄 Redirecting video (${video.size ? Math.round(video.size / 1024 / 1024) + 'MB' : 'unknown size'}) directly to CloudFront`);
     
-    // For smaller videos, handle range requests through proxy (with timeout protection)
-    if (range && !isLargeVideo) {
-      try {
-        console.log('📡 Proxying range request for small video');
-        
-        // Set a shorter timeout for the fetch to prevent Vercel timeout
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 25000); // 25 second timeout
-        
-        const response = await fetch(videoUrl, {
-          headers: {
-            'Range': range,
-            'User-Agent': request.headers.get('user-agent') || 'NextJS-Video-Stream'
-          },
-          signal: controller.signal
-        });
-        
-        clearTimeout(timeoutId);
-        
-        if (response.ok) {
-          const headers = new Headers();
-          
-          // Copy important headers for video streaming
-          if (response.headers.get('content-range')) {
-            headers.set('Content-Range', response.headers.get('content-range')!);
-          }
-          if (response.headers.get('content-length')) {
-            headers.set('Content-Length', response.headers.get('content-length')!);
-          }
-          if (response.headers.get('content-type')) {
-            headers.set('Content-Type', response.headers.get('content-type')!);
-          }
-          
-          // Essential headers for video streaming
-          headers.set('Accept-Ranges', 'bytes');
-          headers.set('Cache-Control', 'public, max-age=3600');
-          headers.set('Access-Control-Allow-Origin', '*');
-          headers.set('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
-          headers.set('Access-Control-Allow-Headers', 'Range');
-          
-          return new NextResponse(response.body, {
-            status: response.status,
-            headers
-          });
-        }
-      } catch (proxyError) {
-        console.warn('⚠️ Range request proxy failed (likely timeout), redirecting:', proxyError);
-        // Fall through to redirect
-      }
-    }
-    
-    // For non-range requests or if proxy fails/times out, redirect with proper headers
-    console.log('🔄 Redirecting to video URL');
     const response = NextResponse.redirect(videoUrl, 302);
-    response.headers.set('Cache-Control', 'public, max-age=3600');
+    
+    // Set optimal headers for video streaming
+    response.headers.set('Cache-Control', 'public, max-age=31536000, immutable'); // 1 year cache
+    response.headers.set('Accept-Ranges', 'bytes');
     response.headers.set('Access-Control-Allow-Origin', '*');
     response.headers.set('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
-    response.headers.set('Access-Control-Allow-Headers', 'Range');
+    response.headers.set('Access-Control-Allow-Headers', 'Range, Content-Range, Content-Length');
+    response.headers.set('Access-Control-Expose-Headers', 'Content-Range, Content-Length, Accept-Ranges');
+    
+    // Add video-specific headers
+    if (range) {
+      response.headers.set('Vary', 'Range');
+    }
+    
     return response;
 
   } catch (error) {

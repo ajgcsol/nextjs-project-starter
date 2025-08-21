@@ -9,7 +9,7 @@
     },
     "src/app/api/videos/upload/route.ts": {
       "maxDuration": 300,
-      "memory": 512
+      "memory": 1024
     },
     "src/app/api/videos/presigned-url/route.ts": {
       "maxDuration": 60,
@@ -19,11 +19,25 @@
       "maxDuration": 300,
       "memory": 1024
     },
+    "src/app/api/videos/stream/*/route.ts": {
+      "maxDuration": 10,
+      "memory": 256
+    },
+    "src/app/api/videos/*/route.ts": {
+      "maxDuration": 60,
+      "memory": 512
+    },
+    "src/app/api/debug/cloudfront-test/route.ts": {
+      "maxDuration": 60,
+      "memory": 512
+    },
     "src/app/api/aws/upload/route.ts": {
-      "maxDuration": 300
+      "maxDuration": 300,
+      "memory": 1024
     },
     "src/app/api/files/upload/route.ts": {
-      "maxDuration": 180
+      "maxDuration": 180,
+      "memory": 512
     }
   },
   "build": {
@@ -36,6 +50,33 @@
     {
       "source": "/api/(.*)",
       "destination": "/api/$1"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/api/videos/stream/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        },
+        {
+          "key": "Accept-Ranges",
+          "value": "bytes"
+        },
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        },
+        {
+          "key": "Access-Control-Allow-Methods",
+          "value": "GET, HEAD, OPTIONS"
+        },
+        {
+          "key": "Access-Control-Allow-Headers",
+          "value": "Range, Content-Range"
+        }
+      ]
     }
   ]
 }
