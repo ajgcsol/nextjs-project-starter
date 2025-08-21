@@ -2,27 +2,75 @@ import { NextRequest, NextResponse } from 'next/server';
 import { S3Client, CreateMultipartUploadCommand, UploadPartCommand, CompleteMultipartUploadCommand, AbortMultipartUploadCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
-// Sanitize credentials helper
+// Advanced credential sanitization for Vercel + AWS SDK v3 compatibility
 const sanitizeCredential = (credential: string | undefined): string | undefined => {
   if (!credential) return undefined;
-  return credential.replace(/[\s\r\n\t\u0000-\u001f\u007f-\u009f]/g, '').trim();
+  
+  return credential
+    // Remove BOM (Byte Order Mark) characters
+    .replace(/^\uFEFF/, '')
+    // Remove all Unicode control characters (0x00-0x1F, 0x7F-0x9F)
+    .replace(/[\u0000-\u001F\u007F-\u009F]/g, '')
+    // Remove all whitespace characters (spaces, tabs, newlines, etc.)
+    .replace(/\s/g, '')
+    // Remove any non-ASCII characters that could cause header issues
+    .replace(/[^\x20-\x7E]/g, '')
+    // Trim any remaining whitespace
+    .trim();
 };
 
-// Create S3 client
+// Validate AWS credential format
+const validateCredential = (credential: string, type: 'accessKey' | 'secretKey'): boolean => {
+  if (!credential) return false;
+  
+  if (type === 'accessKey') {
+    // AWS Access Key format: AKIA followed by 16 alphanumeric characters
+    return /^AKIA[A-Z0-9]{16}$/.test(credential);
+  } else {
+    // AWS Secret Key: 40 characters, base64-like
+    return credential.length === 40 && /^[A-Za-z0-9+/]+$/.test(credential);
+  }
+};
+
+// Create S3 client with enhanced error handling
 const createS3Client = () => {
   const region = process.env.AWS_REGION || 'us-east-1';
-  const accessKeyId = sanitizeCredential(process.env.AWS_ACCESS_KEY_ID);
-  const secretAccessKey = sanitizeCredential(process.env.AWS_SECRET_ACCESS_KEY);
+  const rawAccessKeyId = process.env.AWS_ACCESS_KEY_ID;
+  const rawSecretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
   
+  // Sanitize credentials
+  const accessKeyId = sanitizeCredential(rawAccessKeyId);
+  const secretAccessKey = sanitizeCredential(rawSecretAccessKey);
+  
+  // Validate credentials
   if (!accessKeyId || !secretAccessKey) {
-    throw new Error('AWS credentials not configured');
+    console.error('AWS credentials missing from environment variables');
+    throw new Error('AWS credentials not found in environment variables');
   }
   
+  if (!validateCredential(accessKeyId, 'accessKey')) {
+    console.error('Invalid AWS Access Key format after sanitization');
+    throw new Error('Invalid AWS Access Key format');
+  }
+  
+  if (!validateCredential(secretAccessKey, 'secretKey')) {
+    console.error('Invalid AWS Secret Key format after sanitization');
+    throw new Error('Invalid AWS Secret Key format');
+  }
+  
+  console.log('Creating S3 Client for multipart upload with sanitized credentials');
+  console.log(`Access Key: ${accessKeyId.substring(0, 8)}...${accessKeyId.substring(accessKeyId.length - 4)}`);
+  
   return new S3Client({
-    region,
+    region: region,
     credentials: {
-      accessKeyId,
-      secretAccessKey
+      accessKeyId: accessKeyId,
+      secretAccessKey: secretAccessKey
+    },
+    // Additional configuration to handle large files and Vercel edge cases
+    requestHandler: {
+      requestTimeout: 300000, // 5 minutes for large file operations
+      connectionTimeout: 30000 // 30 seconds connection timeout
     }
   });
 };
@@ -127,8 +175,7 @@ export async function PUT(request: NextRequest) {
       Bucket: bucketName,
       Key: s3Key,
       PartNumber: partNumber,
-      UploadId: uploadId,
-      ContentType: contentType
+      UploadId: uploadId
     });
     
     // Generate presigned URL for this part (valid for 1 hour)
