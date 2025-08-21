@@ -209,8 +209,34 @@ export default function VideoManagementPage() {
   };
 
   const handlePlayVideo = (videoId: string) => {
-    // Open video in new tab/window for now
-    window.open(`/api/videos/stream/${videoId}`, '_blank');
+    // Navigate to the video player page instead of direct stream
+    router.push(`/dashboard/videos/${videoId}`);
+  };
+
+  const handleGenerateThumbnails = async () => {
+    try {
+      setIsLoadingVideos(true);
+      console.log('🖼️ Starting thumbnail generation...');
+      
+      const response = await fetch('/api/videos/generate-thumbnails/batch', {
+        method: 'POST',
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        alert(`Thumbnail generation completed! Processed ${data.processed} videos. ${data.successCount} successful, ${data.failureCount} failed.`);
+        // Refresh videos to show new thumbnails
+        await fetchVideos();
+      } else {
+        alert(`Thumbnail generation failed: ${data.error || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Error generating thumbnails:', error);
+      alert('Error generating thumbnails. Please try again.');
+    } finally {
+      setIsLoadingVideos(false);
+    }
   };
 
 
@@ -394,6 +420,14 @@ export default function VideoManagementPage() {
                     >
                       <RefreshCw className={`h-4 w-4 ${isLoadingVideos ? 'animate-spin' : ''}`} />
                     </Button>
+                    <Button 
+                      variant="outline"
+                      onClick={handleGenerateThumbnails}
+                      disabled={isLoadingVideos}
+                      title="Generate missing thumbnails"
+                    >
+                      Generate Thumbnails
+                    </Button>
                   </div>
                 </CardContent>
               </Card>
@@ -403,11 +437,14 @@ export default function VideoManagementPage() {
                 {publishedVideos.map(video => (
                   <Card key={video.id} className="border-0 shadow-sm hover:shadow-md transition-shadow">
                     <CardHeader className="pb-4">
-                      <div className="aspect-video bg-slate-100 rounded-lg overflow-hidden mb-4 relative group">
+                      <div 
+                        className="aspect-video bg-slate-100 rounded-lg overflow-hidden mb-4 relative group cursor-pointer"
+                        onClick={() => handlePlayVideo(video.id)}
+                      >
                         <img
                           src={`/api/videos/thumbnail/${video.id}`}
                           alt={`${video.title} thumbnail`}
-                          className="w-full h-full object-cover"
+                          className="w-full h-full object-cover transition-opacity duration-300 group-hover:opacity-0"
                           onError={(e) => {
                             const img = e.target as HTMLImageElement;
                             img.style.display = 'none';
@@ -417,13 +454,55 @@ export default function VideoManagementPage() {
                             }
                           }}
                         />
+                        
+                        {/* Video Preview on Hover */}
+                        <video
+                          className="absolute inset-0 w-full h-full object-cover opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+                          muted
+                          loop
+                          preload="none"
+                          onMouseEnter={(e) => {
+                            const videoEl = e.target as HTMLVideoElement;
+                            if (videoEl.src !== `/api/videos/stream/${video.id}`) {
+                              videoEl.src = `/api/videos/stream/${video.id}`;
+                              videoEl.load();
+                            }
+                            // Start at random time (between 10% and 70% of video duration)
+                            const randomStart = Math.floor(video.duration * (0.1 + Math.random() * 0.6));
+                            videoEl.currentTime = randomStart;
+                            videoEl.play().catch(() => {
+                              // Fallback if autoplay fails
+                              console.log('Preview autoplay failed for video:', video.id);
+                            });
+                          }}
+                          onMouseLeave={(e) => {
+                            const videoEl = e.target as HTMLVideoElement;
+                            videoEl.pause();
+                            videoEl.currentTime = 0;
+                          }}
+                          onLoadedData={(e) => {
+                            const videoEl = e.target as HTMLVideoElement;
+                            // Set random start time when video loads
+                            const randomStart = Math.floor(video.duration * (0.1 + Math.random() * 0.6));
+                            videoEl.currentTime = randomStart;
+                          }}
+                        />
+                        
                         <div className="thumbnail-placeholder w-full h-full flex items-center justify-center absolute inset-0" style={{display: 'none'}}>
                           <Video className="h-12 w-12 text-slate-400" />
                         </div>
-                        {/* Play overlay */}
-                        <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                          <div className="bg-white/90 rounded-full p-3">
+                        
+                        {/* Play overlay - only show when not hovering */}
+                        <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
+                          <div className="bg-white/90 rounded-full p-3 opacity-0 group-hover:opacity-100 transition-opacity delay-1000">
                             <Play className="h-6 w-6 text-slate-800" fill="currentColor" />
+                          </div>
+                        </div>
+                        
+                        {/* Preview indicator */}
+                        <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <div className="bg-black/70 text-white text-xs px-2 py-1 rounded">
+                            Preview
                           </div>
                         </div>
                       </div>
