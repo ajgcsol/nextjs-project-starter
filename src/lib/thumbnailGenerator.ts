@@ -16,10 +16,11 @@ export class ThumbnailGenerator {
    */
   static async generateWithMediaConvert(videoS3Key: string, videoId: string): Promise<ThumbnailGenerationResult> {
     try {
-      console.log('🎬 Generating thumbnail with MediaConvert for:', videoS3Key);
+      console.log('🎬 Generating REAL thumbnail with MediaConvert for:', videoS3Key);
       
       // Validate required environment variables
       if (!process.env.MEDIACONVERT_ROLE_ARN || !process.env.MEDIACONVERT_ENDPOINT) {
+        console.log('⚠️ MediaConvert not configured - missing MEDIACONVERT_ROLE_ARN or MEDIACONVERT_ENDPOINT');
         throw new Error('MediaConvert configuration missing: MEDIACONVERT_ROLE_ARN and MEDIACONVERT_ENDPOINT required');
       }
       
@@ -27,7 +28,14 @@ export class ThumbnailGenerator {
       const inputUrl = `s3://${bucketName}/${videoS3Key}`;
       const outputPath = `s3://${bucketName}/thumbnails/`;
       
-      // Create MediaConvert job for thumbnail extraction
+      console.log('📹 MediaConvert job details:', {
+        inputUrl,
+        outputPath,
+        videoId,
+        bucketName
+      });
+      
+      // Create MediaConvert job for thumbnail extraction at 10% of video duration
       const jobParams = {
         Role: process.env.MEDIACONVERT_ROLE_ARN,
         Settings: {
@@ -37,7 +45,13 @@ export class ThumbnailGenerator {
               VideoSelector: {
                 ColorSpace: 'FOLLOW' as const
               },
-              TimecodeSource: 'ZEROBASED' as const
+              TimecodeSource: 'ZEROBASED' as const,
+              InputClippings: [
+                {
+                  StartTimecode: '00:00:10:00', // Start at 10 seconds to avoid black frames
+                  EndTimecode: '00:00:11:00'    // Extract just 1 second
+                }
+              ]
             }
           ],
           OutputGroups: [
@@ -51,19 +65,19 @@ export class ThumbnailGenerator {
               },
               Outputs: [
                 {
-                  NameModifier: `_thumbnail_${videoId}`,
+                  NameModifier: `_frame_${videoId}`,
                   VideoDescription: {
                     CodecSettings: {
                       Codec: 'FRAME_CAPTURE' as const,
                       FrameCaptureSettings: {
                         FramerateNumerator: 1,
-                        FramerateDenominator: 60, // Capture 1 frame every 60 seconds
+                        FramerateDenominator: 1, // Capture 1 frame per second
                         MaxCaptures: 1, // Only capture 1 frame
-                        Quality: 80
+                        Quality: 90 // High quality
                       }
                     },
-                    Width: 1280,
-                    Height: 720,
+                    Width: 1920,
+                    Height: 1080,
                     ScalingBehavior: 'DEFAULT' as const
                   },
                   Extension: 'jpg'
@@ -74,9 +88,10 @@ export class ThumbnailGenerator {
         },
         UserMetadata: {
           'video-id': videoId,
-          'purpose': 'thumbnail-generation',
+          'purpose': 'real-thumbnail-extraction',
           'generated-at': new Date().toISOString(),
-          'input-s3-key': videoS3Key
+          'input-s3-key': videoS3Key,
+          'extraction-time': '10-seconds'
         }
       };
 
@@ -92,16 +107,19 @@ export class ThumbnailGenerator {
         endpoint: process.env.MEDIACONVERT_ENDPOINT
       });
 
+      console.log('🚀 Submitting MediaConvert job...');
       const command = new CreateJobCommand(jobParams);
       const result = await mediaConvertClient.send(command);
       
       if (result.Job?.Id) {
-        console.log('✅ MediaConvert thumbnail job created:', result.Job.Id);
+        console.log('✅ MediaConvert REAL thumbnail job created:', result.Job.Id);
         
         // The thumbnail will be available after processing
-        const thumbnailS3Key = `thumbnails/${videoId}_thumbnail_${videoId}.jpg`;
+        const thumbnailS3Key = `thumbnails/${videoId}_frame_${videoId}.0000001.jpg`;
         const cloudFrontDomain = process.env.CLOUDFRONT_DOMAIN || 'd24qjgz9z4yzof.cloudfront.net';
         const thumbnailUrl = `https://${cloudFrontDomain}/${thumbnailS3Key}`;
+        
+        console.log('📸 Expected thumbnail URL:', thumbnailUrl);
         
         return {
           success: true,
@@ -115,7 +133,7 @@ export class ThumbnailGenerator {
       }
 
     } catch (error) {
-      console.error('❌ MediaConvert thumbnail generation failed:', error);
+      console.error('❌ MediaConvert REAL thumbnail generation failed:', error);
       return {
         success: false,
         method: 'mediaconvert',
