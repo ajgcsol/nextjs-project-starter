@@ -7,27 +7,34 @@ async function generateThumbnailFromVideo(videoUrl: string, videoId: string): Pr
   try {
     console.log('🖼️ Generating thumbnail for video:', videoId);
     
-    // For now, we'll create a simple thumbnail with video info
-    // In a real implementation, you'd use ffmpeg or similar to extract a frame
-    const thumbnailS3Key = `thumbnails/${videoId}-${Date.now()}.jpg`;
+    // Create SVG thumbnail with proper S3 key
+    const thumbnailS3Key = `thumbnails/${videoId}-${Date.now()}.svg`;
     
     // Create a simple thumbnail image (placeholder for now)
     const thumbnailData = await createSimpleThumbnail(videoId);
     
-    // Upload to S3
+    // Upload to S3 as SVG
     const uploadResult = await AWSFileManager.uploadFile(
       thumbnailData,
       thumbnailS3Key,
-      'image/jpeg'
+      'image/svg+xml'
     );
+    
+    // Get CloudFront domain from environment
+    const cloudFrontDomain = process.env.CLOUDFRONT_DOMAIN;
+    
+    // Generate the final thumbnail URL (prefer CloudFront if available)
+    const thumbnailUrl = cloudFrontDomain 
+      ? `https://${cloudFrontDomain}/${thumbnailS3Key}`
+      : uploadResult.Location;
     
     // Update video record with thumbnail
     await VideoDB.update(videoId, {
-      thumbnail_path: uploadResult.Location
+      thumbnail_path: thumbnailUrl
     });
     
-    console.log('✅ Thumbnail generated and uploaded:', uploadResult.Location);
-    return uploadResult.Location;
+    console.log('✅ Thumbnail generated and uploaded:', thumbnailUrl);
+    return thumbnailUrl;
     
   } catch (error) {
     console.error('❌ Thumbnail generation failed:', error);
@@ -43,13 +50,27 @@ async function createSimpleThumbnail(videoId: string): Promise<Buffer> {
   const width = 1280;
   const height = 720;
   
+  // Create a colorful SVG thumbnail with video ID
+  const colors = [
+    ['#3b82f6', '#1e40af'], // Blue
+    ['#10b981', '#047857'], // Green  
+    ['#f59e0b', '#d97706'], // Orange
+    ['#ef4444', '#dc2626'], // Red
+    ['#8b5cf6', '#7c3aed'], // Purple
+    ['#06b6d4', '#0891b2'], // Cyan
+  ];
+  
+  // Use video ID to consistently pick a color
+  const colorIndex = parseInt(videoId.substring(0, 2), 16) % colors.length;
+  const [color1, color2] = colors[colorIndex];
+  
   // Create a simple SVG thumbnail
   const svg = `
     <svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
       <defs>
         <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" style="stop-color:#3b82f6;stop-opacity:1" />
-          <stop offset="100%" style="stop-color:#1e40af;stop-opacity:1" />
+          <stop offset="0%" style="stop-color:${color1};stop-opacity:1" />
+          <stop offset="100%" style="stop-color:${color2};stop-opacity:1" />
         </linearGradient>
       </defs>
       <rect width="${width}" height="${height}" fill="url(#bg)"/>
@@ -66,7 +87,7 @@ async function createSimpleThumbnail(videoId: string): Promise<Buffer> {
     </svg>
   `;
   
-  // Return SVG as buffer - we'll upload it as SVG, not JPEG
+  // Return SVG as buffer
   return Buffer.from(svg, 'utf-8');
 }
 
