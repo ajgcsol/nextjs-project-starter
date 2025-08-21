@@ -224,23 +224,78 @@ export async function GET(
       console.warn('⚠️ Failed to increment view count:', viewError);
     }
 
-    // Always redirect large videos (>100MB) directly to CloudFront to avoid timeout
-    const isLargeVideo = video.size && video.size > 100 * 1024 * 1024; // 100MB threshold
+    // Check if this is a range request (for video seeking/progressive loading)
     const range = request.headers.get('range');
     
-    // For all videos, especially large ones, redirect directly to CloudFront
-    // This prevents Vercel timeout issues and leverages CloudFront's optimized delivery
-    console.log(`🔄 Redirecting video (${video.size ? Math.round(video.size / 1024 / 1024) + 'MB' : 'unknown size'}) directly to CloudFront`);
+    // For small videos (<50MB), proxy through our API to avoid CORS issues
+    // For large videos, still redirect but with better CORS handling
+    const isSmallVideo = !video.size || video.size < 50 * 1024 * 1024; // 50MB threshold
+    
+    if (isSmallVideo || range) {
+      console.log(`🔄 Proxying video (${video.size ? Math.round(video.size / 1024 / 1024) + 'MB' : 'unknown size'}) through API to avoid CORS issues`);
+      
+      try {
+        // Fetch the video from CloudFront
+        const videoResponse = await fetch(videoUrl, {
+          headers: range ? { 'Range': range } : {}
+        });
+        
+        if (!videoResponse.ok) {
+          throw new Error(`CloudFront fetch failed: ${videoResponse.status}`);
+        }
+        
+        // Get the video stream
+        const videoStream = videoResponse.body;
+        
+        if (!videoStream) {
+          throw new Error('No video stream available');
+        }
+        
+        // Create response with proper headers
+        const response = new NextResponse(videoStream, {
+          status: range ? 206 : 200,
+          headers: {
+            'Content-Type': videoResponse.headers.get('content-type') || 'video/mp4',
+            'Content-Length': videoResponse.headers.get('content-length') || '',
+            'Accept-Ranges': 'bytes',
+            'Cache-Control': 'public, max-age=3600', // 1 hour cache for proxied content
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+            'Access-Control-Allow-Headers': 'Range, Content-Range, Content-Length',
+            'Access-Control-Expose-Headers': 'Content-Range, Content-Length, Accept-Ranges',
+            'Access-Control-Allow-Credentials': 'false'
+          }
+        });
+        
+        // Add range-specific headers if this is a partial content request
+        if (range && videoResponse.status === 206) {
+          const contentRange = videoResponse.headers.get('content-range');
+          if (contentRange) {
+            response.headers.set('Content-Range', contentRange);
+          }
+        }
+        
+        return response;
+        
+      } catch (proxyError) {
+        console.error('❌ Video proxy failed, falling back to redirect:', proxyError);
+        // Fall through to redirect logic below
+      }
+    }
+    
+    // For large videos or when proxy fails, redirect with proper CORS headers
+    console.log(`🔄 Redirecting large video (${video.size ? Math.round(video.size / 1024 / 1024) + 'MB' : 'unknown size'}) to CloudFront`);
     
     const response = NextResponse.redirect(videoUrl, 302);
     
-    // Set optimal headers for video streaming
+    // Set optimal headers for video streaming with correct CORS
     response.headers.set('Cache-Control', 'public, max-age=31536000, immutable'); // 1 year cache
     response.headers.set('Accept-Ranges', 'bytes');
     response.headers.set('Access-Control-Allow-Origin', '*');
     response.headers.set('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
     response.headers.set('Access-Control-Allow-Headers', 'Range, Content-Range, Content-Length');
     response.headers.set('Access-Control-Expose-Headers', 'Content-Range, Content-Length, Accept-Ranges');
+    response.headers.set('Access-Control-Allow-Credentials', 'false');
     
     // Add video-specific headers
     if (range) {
