@@ -10,6 +10,23 @@ export interface ThumbnailGenerationResult {
   jobId?: string;
 }
 
+// Advanced credential sanitization for Vercel + AWS SDK v3 compatibility (same as AWS upload route)
+const sanitizeCredential = (credential: string | undefined): string | undefined => {
+  if (!credential) return undefined;
+  
+  return credential
+    // Remove BOM (Byte Order Mark) characters
+    .replace(/^\uFEFF/, '')
+    // Remove all Unicode control characters (0x00-0x1F, 0x7F-0x9F)
+    .replace(/[\u0000-\u001F\u007F-\u009F]/g, '')
+    // Remove all whitespace characters (spaces, tabs, newlines, etc.)
+    .replace(/\s/g, '')
+    // Remove any non-ASCII characters that could cause header issues
+    .replace(/[^\x20-\x7E]/g, '')
+    // Trim any remaining whitespace
+    .trim();
+};
+
 export class ThumbnailGenerator {
   /**
    * Generate thumbnail from video using AWS MediaConvert with smart filename matching
@@ -18,20 +35,24 @@ export class ThumbnailGenerator {
     try {
       console.log('🎬 Generating REAL thumbnail with MediaConvert for:', videoS3Key);
       
-      // Validate and clean required environment variables
-      const roleArn = process.env.MEDIACONVERT_ROLE_ARN?.trim();
-      const endpoint = process.env.MEDIACONVERT_ENDPOINT?.trim();
+      // Sanitize MediaConvert environment variables (same fix as AWS upload route)
+      const rawRoleArn = process.env.MEDIACONVERT_ROLE_ARN;
+      const rawEndpoint = process.env.MEDIACONVERT_ENDPOINT;
+      
+      const roleArn = sanitizeCredential(rawRoleArn);
+      const endpoint = sanitizeCredential(rawEndpoint);
+      
+      console.log('🔧 MediaConvert config after sanitization:', {
+        roleArn: roleArn ? `${roleArn.substring(0, 20)}...` : 'MISSING',
+        endpoint: endpoint ? `${endpoint.substring(0, 30)}...` : 'MISSING',
+        rawRoleArnHasCarriageReturns: rawRoleArn?.includes('\r') || rawRoleArn?.includes('\n'),
+        rawEndpointHasCarriageReturns: rawEndpoint?.includes('\r') || rawEndpoint?.includes('\n')
+      });
       
       if (!roleArn || !endpoint) {
-        console.log('⚠️ MediaConvert not configured - missing MEDIACONVERT_ROLE_ARN or MEDIACONVERT_ENDPOINT');
-        throw new Error('MediaConvert configuration missing: MEDIACONVERT_ROLE_ARN and MEDIACONVERT_ENDPOINT required');
+        console.error('❌ MediaConvert environment variables missing after sanitization');
+        throw new Error('MediaConvert configuration missing');
       }
-      
-      console.log('🔧 MediaConvert configuration:', {
-        roleArn: roleArn.substring(0, 50) + '...',
-        endpoint: endpoint,
-        hasCarriageReturn: endpoint.includes('\r') || roleArn.includes('\r')
-      });
       
       const bucketName = process.env.S3_BUCKET_NAME || 'law-school-repository-content';
       const inputUrl = `s3://${bucketName}/${videoS3Key}`;
@@ -130,11 +151,23 @@ export class ThumbnailGenerator {
       // Import MediaConvert client directly for better error handling
       const { MediaConvertClient, CreateJobCommand } = await import('@aws-sdk/client-mediaconvert');
       
+      // Sanitize AWS credentials too (same as upload route)
+      const rawAccessKeyId = process.env.AWS_ACCESS_KEY_ID;
+      const rawSecretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
+      
+      const accessKeyId = sanitizeCredential(rawAccessKeyId);
+      const secretAccessKey = sanitizeCredential(rawSecretAccessKey);
+      
+      if (!accessKeyId || !secretAccessKey) {
+        console.error('❌ AWS credentials missing after sanitization');
+        throw new Error('AWS credentials not found');
+      }
+      
       const mediaConvertClient = new MediaConvertClient({
         region: process.env.AWS_REGION || 'us-east-1',
         credentials: {
-          accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-          secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+          accessKeyId: accessKeyId,
+          secretAccessKey: secretAccessKey,
         },
         endpoint: endpoint
       });
