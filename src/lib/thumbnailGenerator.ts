@@ -250,6 +250,71 @@ export class ThumbnailGenerator {
   }
 
   /**
+   * Generate SVG thumbnail as fallback when other methods fail
+   */
+  static async generateSVGThumbnail(videoId: string, videoTitle?: string): Promise<ThumbnailGenerationResult> {
+    try {
+      console.log('🎨 Generating SVG thumbnail for video:', videoId);
+      
+      // Create a beautiful SVG thumbnail with video info
+      const colors = [
+        '#3B82F6', '#8B5CF6', '#10B981', '#F59E0B', 
+        '#EF4444', '#06B6D4', '#84CC16', '#F97316'
+      ];
+      const color = colors[videoId.length % colors.length];
+      
+      const svg = `
+        <svg width="1280" height="720" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="bg-${videoId}" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" style="stop-color:${color};stop-opacity:0.8" />
+              <stop offset="100%" style="stop-color:${color};stop-opacity:0.4" />
+            </linearGradient>
+            <filter id="shadow">
+              <feDropShadow dx="2" dy="2" stdDeviation="3" flood-opacity="0.3"/>
+            </filter>
+          </defs>
+          <rect width="1280" height="720" fill="url(#bg-${videoId})"/>
+          <circle cx="640" cy="300" r="60" fill="rgba(255,255,255,0.9)" filter="url(#shadow)"/>
+          <polygon points="620,270 620,330 670,300" fill="${color}"/>
+          <text x="640" y="420" font-family="Arial, sans-serif" font-size="32" font-weight="bold"
+                fill="white" text-anchor="middle" filter="url(#shadow)">
+            ${videoTitle || 'Video Thumbnail'}
+          </text>
+          <text x="640" y="460" font-family="Arial, sans-serif" font-size="18" 
+                fill="rgba(255,255,255,0.8)" text-anchor="middle">
+            Generated Thumbnail
+          </text>
+          <rect x="40" y="40" width="200" height="40" rx="20" fill="rgba(255,255,255,0.2)"/>
+          <text x="140" y="65" font-family="Arial, sans-serif" font-size="16" 
+                fill="white" text-anchor="middle" font-weight="bold">
+            ${videoId.substring(0, 8).toUpperCase()}
+          </text>
+        </svg>
+      `;
+      
+      // Convert SVG to base64 data URL
+      const base64SVG = Buffer.from(svg).toString('base64');
+      const dataUrl = `data:image/svg+xml;base64,${base64SVG}`;
+      
+      return {
+        success: true,
+        thumbnailUrl: dataUrl,
+        method: 'placeholder',
+        s3Key: undefined
+      };
+      
+    } catch (error) {
+      console.error('❌ SVG thumbnail generation failed:', error);
+      return {
+        success: false,
+        method: 'placeholder',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
+  /**
    * Comprehensive thumbnail generation with fallbacks
    */
   static async generateThumbnail(videoId: string, videoS3Key?: string, videoUrl?: string): Promise<ThumbnailGenerationResult> {
@@ -295,14 +360,26 @@ export class ThumbnailGenerator {
       }
     }
 
-    // Method 3: Return client-side generation script
-    if (videoUrl) {
-      console.log('🌐 Providing client-side thumbnail generation script...');
-      return {
-        success: true,
-        method: 'client_side',
-        thumbnailUrl: videoUrl // The client will use this to generate thumbnail
-      };
+    // Method 3: Generate SVG thumbnail as fallback
+    console.log('🎨 Generating SVG thumbnail as fallback...');
+    try {
+      const svgResult = await this.generateSVGThumbnail(videoId);
+      
+      if (svgResult.success) {
+        // Update database with SVG thumbnail
+        try {
+          await VideoDB.update(videoId, {
+            thumbnail_path: svgResult.thumbnailUrl
+          });
+          console.log('✅ Database updated with SVG thumbnail');
+        } catch (dbError) {
+          console.warn('⚠️ Failed to update database with SVG thumbnail:', dbError);
+        }
+        
+        return svgResult;
+      }
+    } catch (error) {
+      console.error('❌ SVG thumbnail generation failed:', error);
     }
 
     // Method 4: Generate placeholder thumbnail
