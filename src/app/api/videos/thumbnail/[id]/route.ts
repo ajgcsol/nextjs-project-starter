@@ -21,19 +21,35 @@ export async function GET(
     let shouldRepairDatabase = false;
     let discoveredThumbnailS3Key = '';
 
-    // Priority 1: Use existing thumbnail_path if it's a valid URL
-    if (video?.thumbnail_path && video.thumbnail_path.startsWith('http')) {
-      thumbnailUrl = video.thumbnail_path;
-      discoveryMethod = 'database_thumbnail_path';
-      discoveryAttempts.push(`database_thumbnail_path: ${thumbnailUrl}`);
-      console.log('🔗 Using stored thumbnail path:', thumbnailUrl);
-      
-      // Validate the URL works
-      const isValid = await MediaDiscoveryService.validateMediaUrl(thumbnailUrl);
-      if (!isValid) {
-        console.log('⚠️ Database thumbnail path is invalid, falling back to discovery');
-        thumbnailUrl = '';
-        discoveryAttempts.push(`database_thumbnail_path_invalid: ${thumbnailUrl}`);
+    // Priority 1: Use existing thumbnail_path if it's a valid URL or data URL
+    if (video?.thumbnail_path) {
+      if (video.thumbnail_path.startsWith('data:image/')) {
+        // Handle data URL thumbnails (enhanced SVG thumbnails)
+        console.log('🎨 Using stored data URL thumbnail');
+        discoveryMethod = 'database_data_url';
+        discoveryAttempts.push(`database_data_url: ${video.thumbnail_path.substring(0, 50)}...`);
+        
+        // Return the data URL directly
+        return new Response(video.thumbnail_path.split(',')[1], {
+          headers: {
+            'Content-Type': video.thumbnail_path.includes('svg') ? 'image/svg+xml' : 'image/jpeg',
+            'Content-Encoding': 'base64',
+            'Cache-Control': 'public, max-age=3600'
+          }
+        });
+      } else if (video.thumbnail_path.startsWith('http')) {
+        thumbnailUrl = video.thumbnail_path;
+        discoveryMethod = 'database_thumbnail_path';
+        discoveryAttempts.push(`database_thumbnail_path: ${thumbnailUrl}`);
+        console.log('🔗 Using stored thumbnail path:', thumbnailUrl);
+
+        // Validate the URL works
+        const isValid = await MediaDiscoveryService.validateMediaUrl(thumbnailUrl);
+        if (!isValid) {
+          console.log('⚠️ Database thumbnail path is invalid, falling back to discovery');
+          thumbnailUrl = '';
+          discoveryAttempts.push(`database_thumbnail_path_invalid: ${thumbnailUrl}`);
+        }
       }
     }
 
