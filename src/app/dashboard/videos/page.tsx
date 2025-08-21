@@ -461,6 +461,7 @@ export default function VideoManagementPage() {
                           muted
                           loop
                           preload="none"
+                          playsInline
                           onMouseEnter={(e) => {
                             const videoEl = e.target as HTMLVideoElement;
                             if (videoEl.src !== `/api/videos/stream/${video.id}`) {
@@ -470,10 +471,18 @@ export default function VideoManagementPage() {
                             // Start at random time (between 10% and 70% of video duration)
                             const randomStart = Math.floor(video.duration * (0.1 + Math.random() * 0.6));
                             videoEl.currentTime = randomStart;
-                            videoEl.play().catch(() => {
-                              // Fallback if autoplay fails
-                              console.log('Preview autoplay failed for video:', video.id);
-                            });
+                            
+                            // Try to play with better error handling
+                            const playPromise = videoEl.play();
+                            if (playPromise !== undefined) {
+                              playPromise.catch((error) => {
+                                // Autoplay was prevented - this is normal browser behavior
+                                // Don't log as error since it's expected
+                                if (error.name !== 'NotAllowedError') {
+                                  console.log('Preview play failed for video:', video.id, error.name);
+                                }
+                              });
+                            }
                           }}
                           onMouseLeave={(e) => {
                             const videoEl = e.target as HTMLVideoElement;
@@ -485,6 +494,18 @@ export default function VideoManagementPage() {
                             // Set random start time when video loads
                             const randomStart = Math.floor(video.duration * (0.1 + Math.random() * 0.6));
                             videoEl.currentTime = randomStart;
+                          }}
+                          onCanPlay={(e) => {
+                            const videoEl = e.target as HTMLVideoElement;
+                            // Try to play when video is ready
+                            if (videoEl.matches(':hover')) {
+                              const playPromise = videoEl.play();
+                              if (playPromise !== undefined) {
+                                playPromise.catch(() => {
+                                  // Silently handle autoplay prevention
+                                });
+                              }
+                            }
                           }}
                         />
                         
