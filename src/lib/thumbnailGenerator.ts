@@ -5,7 +5,7 @@ export interface ThumbnailGenerationResult {
   success: boolean;
   thumbnailUrl?: string;
   s3Key?: string;
-  method: 'mediaconvert' | 'ffmpeg' | 'client_side' | 'placeholder';
+  method: 'mediaconvert' | 'ffmpeg' | 'enhanced_svg' | 'client_side' | 'placeholder';
   error?: string;
   jobId?: string;
 }
@@ -378,7 +378,7 @@ export class ThumbnailGenerator {
       return {
         success: true,
         thumbnailUrl: dataUrl,
-        method: 'placeholder',
+        method: 'enhanced_svg',
         s3Key: undefined
       };
       
@@ -386,7 +386,7 @@ export class ThumbnailGenerator {
       console.error('❌ Enhanced SVG thumbnail generation failed:', error);
       return {
         success: false,
-        method: 'placeholder',
+        method: 'enhanced_svg',
         error: error instanceof Error ? error.message : 'Unknown error'
       };
     }
@@ -397,6 +397,8 @@ export class ThumbnailGenerator {
    */
   static async generateThumbnail(videoId: string, videoS3Key?: string, videoUrl?: string): Promise<ThumbnailGenerationResult> {
     console.log('🖼️ Starting thumbnail generation for video:', videoId);
+    console.log('🔍 Video S3 Key:', videoS3Key || 'NONE');
+    console.log('🔍 Video URL:', videoUrl || 'NONE');
 
     // Method 1: Try MediaConvert if we have S3 key and MediaConvert is configured
     if (videoS3Key && process.env.MEDIACONVERT_ROLE_ARN && process.env.MEDIACONVERT_ENDPOINT) {
@@ -415,7 +417,15 @@ export class ThumbnailGenerator {
         }
         
         return mediaConvertResult;
+      } else {
+        console.log('⚠️ MediaConvert failed:', mediaConvertResult.error);
       }
+    } else {
+      console.log('⚠️ MediaConvert not available - Missing:', {
+        s3Key: !videoS3Key,
+        roleArn: !process.env.MEDIACONVERT_ROLE_ARN,
+        endpoint: !process.env.MEDIACONVERT_ENDPOINT
+      });
     }
 
     // Method 2: Try FFmpeg fallback if we have S3 key
@@ -435,11 +445,15 @@ export class ThumbnailGenerator {
         }
         
         return ffmpegResult;
+      } else {
+        console.log('⚠️ FFmpeg failed:', ffmpegResult.error);
       }
+    } else {
+      console.log('⚠️ FFmpeg not available - No S3 key provided');
     }
 
-    // Method 3: Generate enhanced SVG thumbnail as fallback
-    console.log('🎨 Generating enhanced SVG thumbnail as fallback...');
+    // Method 3: Generate enhanced SVG thumbnail (primary method for most cases)
+    console.log('🎨 Generating enhanced SVG thumbnail...');
     try {
       // Get video title from database for better thumbnails
       let videoTitle = videoId;
@@ -471,8 +485,8 @@ export class ThumbnailGenerator {
       console.error('❌ Enhanced SVG thumbnail generation failed:', error);
     }
 
-    // Method 4: Generate placeholder thumbnail
-    console.log('🎨 Generating placeholder thumbnail...');
+    // Method 4: Generate basic placeholder thumbnail (last resort)
+    console.log('🎨 Generating basic placeholder thumbnail...');
     try {
       const placeholderResult = await this.generatePlaceholderThumbnail(videoId);
       
@@ -482,15 +496,15 @@ export class ThumbnailGenerator {
           await VideoDB.update(videoId, {
             thumbnail_path: placeholderResult.thumbnailUrl
           });
-          console.log('✅ Database updated with placeholder thumbnail');
+          console.log('✅ Database updated with basic placeholder thumbnail');
         } catch (dbError) {
-          console.warn('⚠️ Failed to update database with placeholder thumbnail:', dbError);
+          console.warn('⚠️ Failed to update database with thumbnail:', dbError);
         }
       }
       
       return placeholderResult;
     } catch (error) {
-      console.error('❌ Failed to generate placeholder thumbnail:', error);
+      console.error('❌ Failed to generate basic placeholder thumbnail:', error);
       return {
         success: false,
         method: 'placeholder',
