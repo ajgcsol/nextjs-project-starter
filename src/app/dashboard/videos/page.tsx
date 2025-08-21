@@ -455,59 +455,82 @@ export default function VideoManagementPage() {
                           }}
                         />
                         
-                        {/* Video Preview on Hover */}
-                        <video
-                          className="absolute inset-0 w-full h-full object-cover opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-                          muted
-                          loop
-                          preload="none"
-                          playsInline
-                          onMouseEnter={(e) => {
-                            const videoEl = e.target as HTMLVideoElement;
-                            if (videoEl.src !== `/api/videos/stream/${video.id}`) {
-                              videoEl.src = `/api/videos/stream/${video.id}`;
-                              videoEl.load();
-                            }
-                            // Start at random time (between 10% and 70% of video duration)
-                            const randomStart = Math.floor(video.duration * (0.1 + Math.random() * 0.6));
-                            videoEl.currentTime = randomStart;
-                            
-                            // Try to play with better error handling
-                            const playPromise = videoEl.play();
-                            if (playPromise !== undefined) {
-                              playPromise.catch((error) => {
-                                // Autoplay was prevented - this is normal browser behavior
-                                // Don't log as error since it's expected
-                                if (error.name !== 'NotAllowedError') {
-                                  console.log('Preview play failed for video:', video.id, error.name);
-                                }
-                              });
-                            }
-                          }}
-                          onMouseLeave={(e) => {
-                            const videoEl = e.target as HTMLVideoElement;
-                            videoEl.pause();
-                            videoEl.currentTime = 0;
-                          }}
-                          onLoadedData={(e) => {
-                            const videoEl = e.target as HTMLVideoElement;
-                            // Set random start time when video loads
-                            const randomStart = Math.floor(video.duration * (0.1 + Math.random() * 0.6));
-                            videoEl.currentTime = randomStart;
-                          }}
-                          onCanPlay={(e) => {
-                            const videoEl = e.target as HTMLVideoElement;
-                            // Try to play when video is ready
-                            if (videoEl.matches(':hover')) {
+                        {/* Video Preview on Hover - Only for smaller videos */}
+                        {video.size < 100 * 1024 * 1024 && ( // Only show preview for videos under 100MB
+                          <video
+                            className="absolute inset-0 w-full h-full object-cover opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+                            muted
+                            loop
+                            preload="none"
+                            playsInline
+                            onMouseEnter={(e) => {
+                              const videoEl = e.target as HTMLVideoElement;
+                              if (videoEl.src !== `/api/videos/stream/${video.id}`) {
+                                videoEl.src = `/api/videos/stream/${video.id}`;
+                                videoEl.load();
+                              }
+                              // Start at random time (between 10% and 70% of video duration)
+                              const randomStart = Math.floor(video.duration * (0.1 + Math.random() * 0.6));
+                              videoEl.currentTime = randomStart;
+                              
+                              // Try to play with better error handling
                               const playPromise = videoEl.play();
                               if (playPromise !== undefined) {
-                                playPromise.catch(() => {
-                                  // Silently handle autoplay prevention
+                                playPromise.catch((error) => {
+                                  // Only log unexpected errors, not autoplay prevention
+                                  if (error.name !== 'NotAllowedError' && error.name !== 'AbortError') {
+                                    console.log('Preview play failed for video:', video.id, error.name);
+                                  }
                                 });
                               }
-                            }
-                          }}
-                        />
+                            }}
+                            onMouseLeave={(e) => {
+                              const videoEl = e.target as HTMLVideoElement;
+                              videoEl.pause();
+                              videoEl.currentTime = 0;
+                              // Clear src to stop any ongoing loading
+                              videoEl.src = '';
+                            }}
+                            onLoadedData={(e) => {
+                              const videoEl = e.target as HTMLVideoElement;
+                              // Set random start time when video loads
+                              const randomStart = Math.floor(video.duration * (0.1 + Math.random() * 0.6));
+                              videoEl.currentTime = randomStart;
+                            }}
+                            onCanPlay={(e) => {
+                              const videoEl = e.target as HTMLVideoElement;
+                              // Try to play when video is ready
+                              if (videoEl.matches(':hover')) {
+                                const playPromise = videoEl.play();
+                                if (playPromise !== undefined) {
+                                  playPromise.catch(() => {
+                                    // Silently handle autoplay prevention
+                                  });
+                                }
+                              }
+                            }}
+                            onError={(e) => {
+                              // Silently handle preview errors - they're not critical
+                              const error = e.currentTarget.error;
+                              if (error && error.code !== MediaError.MEDIA_ERR_ABORTED) {
+                                console.log('Preview error for video:', video.id, 'Error code:', error.code);
+                              }
+                            }}
+                          />
+                        )}
+                        
+                        {/* Large Video Indicator - Show for videos over 100MB */}
+                        {video.size >= 100 * 1024 * 1024 && (
+                          <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                            <div className="bg-black/70 text-white px-3 py-2 rounded-lg text-sm">
+                              <div className="flex items-center gap-2">
+                                <Video className="h-4 w-4" />
+                                <span>Large Video ({formatFileSize(video.size)})</span>
+                              </div>
+                              <div className="text-xs opacity-75 mt-1">Click to play</div>
+                            </div>
+                          </div>
+                        )}
                         
                         <div className="thumbnail-placeholder w-full h-full flex items-center justify-center absolute inset-0" style={{display: 'none'}}>
                           <Video className="h-12 w-12 text-slate-400" />

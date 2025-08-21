@@ -213,7 +213,30 @@ export default function VideoPlayerPage({ params }: { params: { id: string } }) 
                       console.log('Video can play:', video.id);
                     }}
                     onError={(e) => {
-                      console.error('Video error:', e);
+                      const error = e.currentTarget.error;
+                      if (error) {
+                        console.error('Video error:', {
+                          code: error.code,
+                          message: error.message,
+                          videoId: video.id,
+                          fileSize: video.size
+                        });
+                        
+                        // Handle specific error codes
+                        switch (error.code) {
+                          case MediaError.MEDIA_ERR_NETWORK:
+                            console.log('Network error - video may be too large or connection issue');
+                            break;
+                          case MediaError.MEDIA_ERR_DECODE:
+                            console.log('Decode error - video format may be unsupported');
+                            break;
+                          case MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED:
+                            console.log('Source not supported - trying fallback');
+                            break;
+                          default:
+                            console.log('Unknown video error');
+                        }
+                      }
                     }}
                     onWaiting={() => {
                       console.log('Video buffering...');
