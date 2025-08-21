@@ -203,7 +203,24 @@ export default function VideoPlayerPage({ params }: { params: { id: string } }) 
                     controls 
                     className="w-full h-full"
                     poster={`/api/videos/thumbnail/${video.id}`}
-                    preload="metadata"
+                    preload={video.size > 100 * 1024 * 1024 ? "none" : "metadata"} // Use "none" for large videos
+                    playsInline
+                    crossOrigin="anonymous"
+                    onLoadStart={() => {
+                      console.log('Video load started for:', video.id);
+                    }}
+                    onCanPlay={() => {
+                      console.log('Video can play:', video.id);
+                    }}
+                    onError={(e) => {
+                      console.error('Video error:', e);
+                    }}
+                    onWaiting={() => {
+                      console.log('Video buffering...');
+                    }}
+                    onPlaying={() => {
+                      console.log('Video playing');
+                    }}
                   >
                     <source src={streamUrl} type="video/mp4" />
                     <source src={streamUrl} type="video/webm" />
@@ -219,6 +236,19 @@ export default function VideoPlayerPage({ params }: { params: { id: string } }) 
                   </div>
                 )}
               </div>
+              
+              {/* Large Video Notice */}
+              {video.size > 100 * 1024 * 1024 && (
+                <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <div className="flex items-center gap-2 text-blue-800">
+                    <Play className="h-4 w-4" />
+                    <span className="text-sm font-medium">Large Video ({formatFileSize(video.size)})</span>
+                  </div>
+                  <p className="text-xs text-blue-600 mt-1">
+                    This video will stream on-demand to optimize loading time. Click play to start.
+                  </p>
+                </div>
+              )}
             </CardContent>
           </Card>
 
