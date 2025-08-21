@@ -261,22 +261,41 @@ export class MediaDiscoveryService {
       const command = new ListObjectsV2Command({
         Bucket: this.s3BucketName,
         Prefix: prefix,
-        MaxKeys: 100
+        MaxKeys: 1000 // Increased to handle more files
       });
 
       const response = await s3Client.send(command);
       
       if (response.Contents) {
-        // Look for files that contain the video ID
-        const matchingFile = response.Contents.find(obj => 
-          obj.Key && obj.Key.includes(videoId)
-        );
+        console.log(`🔍 S3 listing found ${response.Contents.length} objects in ${prefix}`);
+        
+        // Enhanced matching logic for multipart uploads and various naming patterns
+        const matchingFiles = response.Contents.filter(obj => {
+          if (!obj.Key) return false;
+          
+          // Direct UUID match (original pattern)
+          if (obj.Key.includes(videoId)) {
+            console.log(`📁 Direct UUID match: ${obj.Key}`);
+            return true;
+          }
+          
+          return false;
+        });
 
-        if (matchingFile && matchingFile.Key) {
+        // Sort by LastModified (newest first) to get the most recent upload
+        matchingFiles.sort((a, b) => {
+          const dateA = a.LastModified ? new Date(a.LastModified).getTime() : 0;
+          const dateB = b.LastModified ? new Date(b.LastModified).getTime() : 0;
+          return dateB - dateA;
+        });
+
+        if (matchingFiles.length > 0) {
+          const matchingFile = matchingFiles[0];
           const cloudFrontUrl = `https://${this.cloudFrontDomain}/${matchingFile.Key}`;
           const responseTime = Date.now() - startTime;
           
           console.log(`✅ Found ${mediaType} via S3 listing: ${cloudFrontUrl} (${responseTime}ms)`);
+          console.log(`📊 File details: Size=${matchingFile.Size}, Modified=${matchingFile.LastModified}`);
           
           return {
             found: true,
@@ -286,6 +305,39 @@ export class MediaDiscoveryService {
             responseTime,
             mediaType
           };
+        }
+
+        // If no direct match, try to find by database lookup
+        console.log(`🔍 No direct match found, checking database for s3_key mapping...`);
+        
+        try {
+          const videos = await VideoDB.searchByFilename(`%${videoId}%`);
+          if (videos.length > 0) {
+            const video = videos[0];
+            console.log(`📋 Found video in database: ${video.filename}, s3_key: ${video.s3_key}`);
+            
+            if (video.s3_key) {
+              // Look for the exact s3_key in our S3 listing
+              const exactMatch = response.Contents.find(obj => obj.Key === video.s3_key);
+              if (exactMatch) {
+                const cloudFrontUrl = `https://${this.cloudFrontDomain}/${video.s3_key}`;
+                const responseTime = Date.now() - startTime;
+                
+                console.log(`✅ Found ${mediaType} via database s3_key lookup: ${cloudFrontUrl} (${responseTime}ms)`);
+                
+                return {
+                  found: true,
+                  url: cloudFrontUrl,
+                  s3Key: video.s3_key,
+                  method: 's3_listing_with_database',
+                  responseTime,
+                  mediaType
+                };
+              }
+            }
+          }
+        } catch (dbError) {
+          console.log(`⚠️ Database lookup failed: ${dbError}`);
         }
       }
 
