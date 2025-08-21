@@ -38,41 +38,51 @@ const createS3Client = () => {
   const rawAccessKeyId = process.env.AWS_ACCESS_KEY_ID;
   const rawSecretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
   
+  // Check if credentials exist
+  if (!rawAccessKeyId || !rawSecretAccessKey) {
+    console.error('AWS credentials missing from environment variables');
+    console.error('Available env vars:', Object.keys(process.env).filter(key => key.startsWith('AWS')));
+    throw new Error('AWS credentials not configured. Please set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment variables.');
+  }
+  
   // Sanitize credentials
   const accessKeyId = sanitizeCredential(rawAccessKeyId);
   const secretAccessKey = sanitizeCredential(rawSecretAccessKey);
   
-  // Validate credentials
+  // Validate credentials exist after sanitization
   if (!accessKeyId || !secretAccessKey) {
-    console.error('AWS credentials missing from environment variables');
-    throw new Error('AWS credentials not found in environment variables');
+    console.error('AWS credentials became empty after sanitization');
+    throw new Error('AWS credentials are invalid or contain unsupported characters');
   }
   
-  if (!validateCredential(accessKeyId, 'accessKey')) {
-    console.error('Invalid AWS Access Key format after sanitization');
-    throw new Error('Invalid AWS Access Key format');
-  }
-  
-  if (!validateCredential(secretAccessKey, 'secretKey')) {
-    console.error('Invalid AWS Secret Key format after sanitization');
-    throw new Error('Invalid AWS Secret Key format');
+  // More lenient validation - just check basic format
+  if (accessKeyId.length < 16 || secretAccessKey.length < 20) {
+    console.error('AWS credentials appear to be too short');
+    console.error(`Access Key length: ${accessKeyId.length}, Secret Key length: ${secretAccessKey.length}`);
+    throw new Error('AWS credentials appear to be invalid (too short)');
   }
   
   console.log('Creating S3 Client for multipart upload with sanitized credentials');
-  console.log(`Access Key: ${accessKeyId.substring(0, 8)}...${accessKeyId.substring(accessKeyId.length - 4)}`);
+  console.log(`Access Key: ${accessKeyId.substring(0, 4)}...${accessKeyId.substring(accessKeyId.length - 4)}`);
+  console.log(`Secret Key length: ${secretAccessKey.length}`);
   
-  return new S3Client({
-    region: region,
-    credentials: {
-      accessKeyId: accessKeyId,
-      secretAccessKey: secretAccessKey
-    },
-    // Additional configuration to handle large files and Vercel edge cases
-    requestHandler: {
-      requestTimeout: 300000, // 5 minutes for large file operations
-      connectionTimeout: 30000 // 30 seconds connection timeout
-    }
-  });
+  try {
+    return new S3Client({
+      region: region,
+      credentials: {
+        accessKeyId: accessKeyId,
+        secretAccessKey: secretAccessKey
+      },
+      // Additional configuration to handle large files and Vercel edge cases
+      requestHandler: {
+        requestTimeout: 300000, // 5 minutes for large file operations
+        connectionTimeout: 30000 // 30 seconds connection timeout
+      }
+    });
+  } catch (s3Error) {
+    console.error('Failed to create S3 client:', s3Error);
+    throw new Error(`Failed to initialize S3 client: ${s3Error instanceof Error ? s3Error.message : 'Unknown error'}`);
+  }
 };
 
 // Initialize multipart upload
