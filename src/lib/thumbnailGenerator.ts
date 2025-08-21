@@ -414,64 +414,58 @@ export class ThumbnailGenerator {
    * Comprehensive thumbnail generation with fallbacks
    */
   static async generateThumbnail(videoId: string, videoS3Key?: string, videoUrl?: string): Promise<ThumbnailGenerationResult> {
-    console.log('🖼️ Starting thumbnail generation for video:', videoId);
+    console.log('🖼️ Starting REAL thumbnail generation for video:', videoId);
     console.log('🔍 Video S3 Key:', videoS3Key || 'NONE');
     console.log('🔍 Video URL:', videoUrl || 'NONE');
 
-    // Method 1: Try MediaConvert if we have S3 key and MediaConvert is configured
-    if (videoS3Key && process.env.MEDIACONVERT_ROLE_ARN && process.env.MEDIACONVERT_ENDPOINT) {
-      console.log('🎬 Attempting MediaConvert thumbnail generation...');
-      const mediaConvertResult = await this.generateWithMediaConvert(videoS3Key, videoId);
-      
-      if (mediaConvertResult.success) {
-        // Update database with the new thumbnail info
-        try {
-          await VideoDB.update(videoId, {
-            thumbnail_path: mediaConvertResult.thumbnailUrl
-          });
-          console.log('✅ Database updated with MediaConvert thumbnail');
-        } catch (dbError) {
-          console.warn('⚠️ Failed to update database with thumbnail:', dbError);
-        }
-        
-        return mediaConvertResult;
-      } else {
-        console.log('⚠️ MediaConvert failed:', mediaConvertResult.error);
-      }
-    } else {
-      console.log('⚠️ MediaConvert not available - Missing:', {
-        s3Key: !videoS3Key,
-        roleArn: !process.env.MEDIACONVERT_ROLE_ARN,
-        endpoint: !process.env.MEDIACONVERT_ENDPOINT
-      });
-    }
-
-    // Method 2: Try FFmpeg fallback if we have S3 key
+    // PRIORITY: Only try MediaConvert if we have proper AWS configuration
     if (videoS3Key) {
-      console.log('🎬 Attempting FFmpeg thumbnail generation...');
-      const ffmpegResult = await this.generateWithFFmpeg(videoS3Key, videoId);
-      
-      if (ffmpegResult.success) {
-        // Update database with the new thumbnail info
-        try {
-          await VideoDB.update(videoId, {
-            thumbnail_path: ffmpegResult.thumbnailUrl
-          });
-          console.log('✅ Database updated with FFmpeg thumbnail');
-        } catch (dbError) {
-          console.warn('⚠️ Failed to update database with thumbnail:', dbError);
-        }
+      console.log('🎬 Checking MediaConvert configuration...');
+      console.log('🔧 MEDIACONVERT_ROLE_ARN:', process.env.MEDIACONVERT_ROLE_ARN ? 'SET' : 'MISSING');
+      console.log('🔧 MEDIACONVERT_ENDPOINT:', process.env.MEDIACONVERT_ENDPOINT ? 'SET' : 'MISSING');
+      console.log('🔧 AWS_ACCESS_KEY_ID:', process.env.AWS_ACCESS_KEY_ID ? 'SET' : 'MISSING');
+      console.log('🔧 AWS_SECRET_ACCESS_KEY:', process.env.AWS_SECRET_ACCESS_KEY ? 'SET' : 'MISSING');
+
+      if (process.env.MEDIACONVERT_ROLE_ARN && process.env.MEDIACONVERT_ENDPOINT) {
+        console.log('✅ MediaConvert is configured - attempting REAL thumbnail generation...');
+        const mediaConvertResult = await this.generateWithMediaConvert(videoS3Key, videoId);
         
-        return ffmpegResult;
+        if (mediaConvertResult.success) {
+          console.log('🎉 SUCCESS: MediaConvert job created for REAL thumbnail!');
+          console.log('📸 Job ID:', mediaConvertResult.jobId);
+          console.log('🔗 Expected thumbnail URL:', mediaConvertResult.thumbnailUrl);
+          
+          // Update database with the new thumbnail info
+          try {
+            await VideoDB.update(videoId, {
+              thumbnail_path: mediaConvertResult.thumbnailUrl
+            });
+            console.log('✅ Database updated with MediaConvert thumbnail URL');
+          } catch (dbError) {
+            console.warn('⚠️ Failed to update database with thumbnail:', dbError);
+          }
+          
+          return mediaConvertResult;
+        } else {
+          console.log('❌ MediaConvert failed:', mediaConvertResult.error);
+          console.log('🔄 Will fall back to placeholder until MediaConvert is fixed');
+        }
       } else {
-        console.log('⚠️ FFmpeg failed:', ffmpegResult.error);
+        console.log('❌ MediaConvert NOT configured properly');
+        console.log('📋 Missing environment variables:');
+        if (!process.env.MEDIACONVERT_ROLE_ARN) console.log('   - MEDIACONVERT_ROLE_ARN');
+        if (!process.env.MEDIACONVERT_ENDPOINT) console.log('   - MEDIACONVERT_ENDPOINT');
+        console.log('🔄 Cannot generate real thumbnails without MediaConvert setup');
       }
     } else {
-      console.log('⚠️ FFmpeg not available - No S3 key provided');
+      console.log('❌ No S3 key provided - cannot extract video frames');
+      console.log('📋 Need S3 key to access video file for frame extraction');
     }
 
-    // Method 3: Generate enhanced SVG thumbnail (primary method for most cases)
-    console.log('🎨 Generating enhanced SVG thumbnail...');
+    // FALLBACK: Only use SVG if MediaConvert is not available
+    console.log('⚠️ FALLBACK: Generating temporary SVG placeholder...');
+    console.log('📋 This is NOT a real video frame - MediaConvert setup needed for real thumbnails');
+    
     try {
       // Get video title from database for better thumbnails
       let videoTitle = videoId;
@@ -492,7 +486,8 @@ export class ThumbnailGenerator {
           await VideoDB.update(videoId, {
             thumbnail_path: svgResult.thumbnailUrl
           });
-          console.log('✅ Database updated with enhanced SVG thumbnail');
+          console.log('✅ Database updated with TEMPORARY SVG thumbnail');
+          console.log('⚠️ NOTE: This is a placeholder, not a real video frame');
         } catch (dbError) {
           console.warn('⚠️ Failed to update database with thumbnail:', dbError);
         }
@@ -500,16 +495,15 @@ export class ThumbnailGenerator {
         return svgResult;
       }
     } catch (error) {
-      console.error('❌ Enhanced SVG thumbnail generation failed:', error);
+      console.error('❌ SVG thumbnail generation failed:', error);
     }
 
-    // Method 4: Generate basic placeholder thumbnail (last resort)
+    // Last resort: Basic placeholder
     console.log('🎨 Generating basic placeholder thumbnail...');
     try {
       const placeholderResult = await this.generatePlaceholderThumbnail(videoId);
       
       if (placeholderResult.success) {
-        // Update database with placeholder thumbnail
         try {
           await VideoDB.update(videoId, {
             thumbnail_path: placeholderResult.thumbnailUrl
