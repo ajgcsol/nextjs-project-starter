@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 import { VideoUploadLarge } from "./VideoUploadLarge";
 
@@ -75,6 +76,20 @@ export function ContentEditor({
   const [isSaving, setIsSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [wordCount, setWordCount] = useState(0);
+  const [uploadProgress, setUploadProgress] = useState<{
+    isUploading: boolean;
+    currentStep: string;
+    percentage: number;
+    currentPart?: number;
+    totalParts?: number;
+    bytesUploaded?: number;
+    totalBytes?: number;
+    estimatedTimeRemaining?: string;
+  }>({
+    isUploading: false,
+    currentStep: '',
+    percentage: 0
+  });
 
   // Auto-save functionality
   useEffect(() => {
@@ -394,6 +409,15 @@ export function ContentEditor({
   const uploadMultipartFile = async (file: File) => {
     console.log('🎬 Starting multipart upload for large file:', file.name, file.size);
     
+    // Initialize progress tracking
+    setUploadProgress({
+      isUploading: true,
+      currentStep: 'Initializing multipart upload...',
+      percentage: 0,
+      totalBytes: file.size,
+      bytesUploaded: 0
+    });
+    
     // Initialize multipart upload
     const initResponse = await fetch('/api/videos/multipart-upload', {
       method: 'POST',
@@ -406,19 +430,50 @@ export function ContentEditor({
     });
 
     if (!initResponse.ok) {
+      setUploadProgress(prev => ({ ...prev, isUploading: false }));
       throw new Error('Failed to initialize multipart upload');
     }
 
     const { uploadId, s3Key, bucketName, partSize, totalParts, publicUrl } = await initResponse.json();
     console.log('🎬 Multipart upload initialized:', { uploadId: uploadId.substring(0, 20) + '...', totalParts });
 
+    setUploadProgress(prev => ({
+      ...prev,
+      currentStep: `Uploading ${totalParts} parts...`,
+      totalParts,
+      currentPart: 0,
+      percentage: 5
+    }));
+
     const parts = [];
+    let bytesUploaded = 0;
+    const startTime = Date.now();
     
     // Upload each part
     for (let partNumber = 1; partNumber <= totalParts; partNumber++) {
       const start = (partNumber - 1) * partSize;
       const end = Math.min(start + partSize, file.size);
       const partData = file.slice(start, end);
+      
+      // Calculate estimated time remaining
+      const elapsedTime = Date.now() - startTime;
+      const avgTimePerPart = elapsedTime / (partNumber - 1 || 1);
+      const remainingParts = totalParts - partNumber + 1;
+      const estimatedTimeRemaining = remainingParts * avgTimePerPart;
+      const timeRemainingStr = estimatedTimeRemaining > 60000 
+        ? `${Math.ceil(estimatedTimeRemaining / 60000)}m` 
+        : `${Math.ceil(estimatedTimeRemaining / 1000)}s`;
+      
+      const partPercentage = 5 + ((partNumber - 1) / totalParts) * 85; // 5% for init, 85% for upload, 10% for completion
+      
+      setUploadProgress(prev => ({
+        ...prev,
+        currentStep: `Uploading part ${partNumber}/${totalParts} (${(partData.size / (1024*1024)).toFixed(1)}MB)`,
+        percentage: Math.round(partPercentage),
+        currentPart: partNumber,
+        bytesUploaded,
+        estimatedTimeRemaining: partNumber > 1 ? timeRemainingStr : undefined
+      }));
       
       console.log(`🎬 Uploading part ${partNumber}/${totalParts} (${(partData.size / (1024*1024)).toFixed(1)}MB)`);
       
@@ -435,6 +490,7 @@ export function ContentEditor({
       });
 
       if (!partUrlResponse.ok) {
+        setUploadProgress(prev => ({ ...prev, isUploading: false }));
         throw new Error(`Failed to get upload URL for part ${partNumber}`);
       }
 
@@ -447,11 +503,13 @@ export function ContentEditor({
       });
 
       if (!uploadResponse.ok) {
+        setUploadProgress(prev => ({ ...prev, isUploading: false }));
         throw new Error(`Failed to upload part ${partNumber}`);
       }
 
       const etag = uploadResponse.headers.get('ETag');
       if (!etag) {
+        setUploadProgress(prev => ({ ...prev, isUploading: false }));
         throw new Error(`No ETag received for part ${partNumber}`);
       }
 
@@ -459,9 +517,18 @@ export function ContentEditor({
         partNumber,
         etag: etag.replace(/"/g, '') // Remove quotes from ETag
       });
+
+      bytesUploaded += partData.size;
     }
 
     console.log('🎬 All parts uploaded, completing multipart upload...');
+
+    setUploadProgress(prev => ({
+      ...prev,
+      currentStep: 'Finalizing upload...',
+      percentage: 95,
+      bytesUploaded: file.size
+    }));
 
     // Complete multipart upload
     const completeResponse = await fetch('/api/videos/multipart-upload', {
@@ -475,11 +542,27 @@ export function ContentEditor({
     });
 
     if (!completeResponse.ok) {
+      setUploadProgress(prev => ({ ...prev, isUploading: false }));
       throw new Error('Failed to complete multipart upload');
     }
 
     const result = await completeResponse.json();
     console.log('🎬 ✅ Multipart upload completed successfully');
+
+    setUploadProgress(prev => ({
+      ...prev,
+      currentStep: 'Upload completed successfully!',
+      percentage: 100
+    }));
+
+    // Clear progress after a short delay
+    setTimeout(() => {
+      setUploadProgress({
+        isUploading: false,
+        currentStep: '',
+        percentage: 0
+      });
+    }, 2000);
 
     return {
       s3Key,
@@ -977,7 +1060,47 @@ export function ContentEditor({
             </div>
           </div>
           
-          {content.metadata.pendingFile && (
+          {/* Upload Progress Indicator */}
+          {uploadProgress.isUploading && (
+            <div className="mt-4 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 bg-blue-500 rounded-full animate-pulse"></div>
+                  <span className="text-sm font-medium text-blue-900">Uploading Video</span>
+                </div>
+                <span className="text-sm font-bold text-blue-700">{uploadProgress.percentage}%</span>
+              </div>
+              
+              <Progress value={uploadProgress.percentage} className="mb-3 h-2" />
+              
+              <div className="space-y-1">
+                <p className="text-sm text-blue-700 font-medium">
+                  {uploadProgress.currentStep}
+                </p>
+                
+                {uploadProgress.currentPart && uploadProgress.totalParts && (
+                  <div className="flex items-center justify-between text-xs text-blue-600">
+                    <span>Part {uploadProgress.currentPart} of {uploadProgress.totalParts}</span>
+                    {uploadProgress.estimatedTimeRemaining && (
+                      <span>~{uploadProgress.estimatedTimeRemaining} remaining</span>
+                    )}
+                  </div>
+                )}
+                
+                {uploadProgress.bytesUploaded && uploadProgress.totalBytes && (
+                  <div className="text-xs text-blue-600">
+                    {(uploadProgress.bytesUploaded / (1024*1024*1024)).toFixed(2)}GB / {(uploadProgress.totalBytes / (1024*1024*1024)).toFixed(2)}GB uploaded
+                  </div>
+                )}
+              </div>
+              
+              <div className="mt-3 text-xs text-blue-600 bg-blue-100 p-2 rounded">
+                💡 <strong>Please don't close this page or click publish again.</strong> Your large video is being uploaded in parts for reliability.
+              </div>
+            </div>
+          )}
+
+          {content.metadata.pendingFile && !uploadProgress.isUploading && (
             <div className="mt-4 p-3 bg-blue-50 rounded-lg">
               <p className="text-sm text-blue-700">
                 ✅ Video ready: {(content.metadata.pendingFile as File)?.name || 'Unknown'} ({(content.metadata.pendingFile as File)?.size ? ((content.metadata.pendingFile as File).size / (1024*1024)).toFixed(1) : '0'}MB)
