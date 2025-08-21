@@ -168,8 +168,56 @@ export async function GET(
       console.warn('⚠️ Failed to increment view count:', viewError);
     }
 
-    // Return redirect to the video URL
-    return NextResponse.redirect(videoUrl);
+    // For video playback, we need to handle range requests and stream properly
+    // Check if this is a range request (for video seeking/streaming)
+    const range = request.headers.get('range');
+    
+    if (range) {
+      // For range requests, we need to proxy the request to maintain streaming capability
+      try {
+        const response = await fetch(videoUrl, {
+          headers: {
+            'Range': range,
+            'User-Agent': request.headers.get('user-agent') || 'NextJS-Video-Stream'
+          }
+        });
+        
+        if (response.ok) {
+          const headers = new Headers();
+          
+          // Copy important headers for video streaming
+          if (response.headers.get('content-range')) {
+            headers.set('Content-Range', response.headers.get('content-range')!);
+          }
+          if (response.headers.get('content-length')) {
+            headers.set('Content-Length', response.headers.get('content-length')!);
+          }
+          if (response.headers.get('content-type')) {
+            headers.set('Content-Type', response.headers.get('content-type')!);
+          }
+          
+          // Essential headers for video streaming
+          headers.set('Accept-Ranges', 'bytes');
+          headers.set('Cache-Control', 'public, max-age=3600');
+          headers.set('Access-Control-Allow-Origin', '*');
+          headers.set('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+          headers.set('Access-Control-Allow-Headers', 'Range');
+          
+          return new NextResponse(response.body, {
+            status: response.status,
+            headers
+          });
+        }
+      } catch (proxyError) {
+        console.warn('⚠️ Range request proxy failed, falling back to redirect:', proxyError);
+      }
+    }
+    
+    // For non-range requests or if proxy fails, redirect with proper headers
+    const response = NextResponse.redirect(videoUrl);
+    response.headers.set('Cache-Control', 'public, max-age=3600');
+    response.headers.set('Access-Control-Allow-Origin', '*');
+    return response;
 
   } catch (error) {
     console.error('❌ Video stream error:', error);
