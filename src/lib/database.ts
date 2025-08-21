@@ -644,6 +644,18 @@ export const VideoDB = {
       [id]
     );
     return rows[0];
+  },
+
+  async findVideosWithoutThumbnails(limit: number = 10) {
+    const { rows } = await query(
+      `SELECT * FROM videos 
+       WHERE (thumbnail_path IS NULL OR thumbnail_path = '' OR thumbnail_path LIKE '%Video Thumbnail%')
+       AND file_path IS NOT NULL 
+       ORDER BY created_at DESC 
+       LIMIT $1`,
+      [limit]
+    );
+    return rows;
   }
 };
 
