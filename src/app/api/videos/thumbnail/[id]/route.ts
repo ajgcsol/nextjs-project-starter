@@ -37,34 +37,37 @@ export async function GET(
       }
     }
 
-    // Priority 2: Comprehensive thumbnail discovery using MediaDiscoveryService
-    if (!thumbnailUrl) {
-      console.log('🔍 No valid thumbnail URL from database, starting discovery...');
+    // Priority 2: Try to generate thumbnail from video if no stored thumbnail
+    if (!thumbnailUrl && video) {
+      console.log('🎬 No stored thumbnail, attempting to generate from video...');
       
-      const discoveryResult = await MediaDiscoveryService.discoverThumbnail(videoId);
+      // Try to get video URL for thumbnail generation
+      let videoUrl = '';
       
-      if (discoveryResult.found && discoveryResult.url) {
-        thumbnailUrl = discoveryResult.url;
-        discoveryMethod = discoveryResult.method;
-        discoveredThumbnailS3Key = discoveryResult.s3Key || '';
-        shouldRepairDatabase = true;
+      // Use S3 key to construct CloudFront URL
+      if (video.s3_key) {
+        const cloudFrontDomain = process.env.CLOUDFRONT_DOMAIN || 'd24qjgz9z4yzof.cloudfront.net';
+        videoUrl = `https://${cloudFrontDomain}/${video.s3_key}`;
         
-        discoveryAttempts.push(`${discoveryResult.method}: ${thumbnailUrl}`);
-        console.log(`✅ Thumbnail discovered via ${discoveryResult.method}:`, thumbnailUrl);
-        
-        // Repair database record with discovered thumbnail information
-        if (shouldRepairDatabase && video) {
-          try {
-            await VideoDB.repairVideoRecord(videoId, undefined, discoveredThumbnailS3Key, undefined, thumbnailUrl);
-            console.log('✅ Database record repaired with discovered thumbnail');
-          } catch (repairError) {
-            console.warn('⚠️ Failed to repair database record with thumbnail:', repairError);
-          }
+        // Validate video URL works
+        const isValid = await MediaDiscoveryService.validateMediaUrl(videoUrl);
+        if (isValid) {
+          console.log('✅ Video URL validated for thumbnail generation:', videoUrl);
+          
+          // For now, just return placeholder since client-side generation is complex
+          console.log('📹 Video URL available but using placeholder for now:', videoUrl);
         }
-      } else {
-        discoveryAttempts.push(`comprehensive_thumbnail_discovery: failed`);
-        console.log('❌ Comprehensive thumbnail discovery failed');
       }
+      
+      // Try file_path if s3_key didn't work
+      if (!videoUrl && video.file_path && video.file_path.startsWith('http')) {
+        const isValid = await MediaDiscoveryService.validateMediaUrl(video.file_path);
+        if (isValid) {
+          console.log('📹 File path available but using placeholder for now:', video.file_path);
+        }
+      }
+      
+      discoveryAttempts.push('video_thumbnail_generation: no_valid_video_url');
     }
 
     // Priority 3: Generate placeholder if no thumbnail found

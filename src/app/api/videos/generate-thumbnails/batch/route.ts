@@ -66,7 +66,7 @@ async function createSimpleThumbnail(videoId: string): Promise<Buffer> {
     </svg>
   `;
   
-  // Convert SVG to buffer (in a real implementation, you'd convert to JPEG)
+  // Return SVG as buffer - we'll upload it as SVG, not JPEG
   return Buffer.from(svg, 'utf-8');
 }
 
