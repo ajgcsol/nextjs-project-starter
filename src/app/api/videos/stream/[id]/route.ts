@@ -168,19 +168,39 @@ export async function GET(
       console.warn('⚠️ Failed to increment view count:', viewError);
     }
 
-    // For video playback, we need to handle range requests and stream properly
-    // Check if this is a range request (for video seeking/streaming)
+    // Check if this is a large video that should be redirected directly to avoid timeout
+    const isLargeVideo = video.size && video.size > 50 * 1024 * 1024; // 50MB threshold
     const range = request.headers.get('range');
     
-    if (range) {
-      // For range requests, we need to proxy the request to maintain streaming capability
+    // For large videos or CloudFront URLs, always redirect to avoid Vercel timeout
+    if (isLargeVideo || videoUrl.includes('cloudfront.net')) {
+      console.log('🔄 Redirecting large video directly to CloudFront to avoid timeout');
+      const response = NextResponse.redirect(videoUrl, 302);
+      response.headers.set('Cache-Control', 'public, max-age=3600');
+      response.headers.set('Access-Control-Allow-Origin', '*');
+      response.headers.set('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+      response.headers.set('Access-Control-Allow-Headers', 'Range');
+      return response;
+    }
+    
+    // For smaller videos, handle range requests through proxy (with timeout protection)
+    if (range && !isLargeVideo) {
       try {
+        console.log('📡 Proxying range request for small video');
+        
+        // Set a shorter timeout for the fetch to prevent Vercel timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 25000); // 25 second timeout
+        
         const response = await fetch(videoUrl, {
           headers: {
             'Range': range,
             'User-Agent': request.headers.get('user-agent') || 'NextJS-Video-Stream'
-          }
+          },
+          signal: controller.signal
         });
+        
+        clearTimeout(timeoutId);
         
         if (response.ok) {
           const headers = new Headers();
@@ -209,14 +229,18 @@ export async function GET(
           });
         }
       } catch (proxyError) {
-        console.warn('⚠️ Range request proxy failed, falling back to redirect:', proxyError);
+        console.warn('⚠️ Range request proxy failed (likely timeout), redirecting:', proxyError);
+        // Fall through to redirect
       }
     }
     
-    // For non-range requests or if proxy fails, redirect with proper headers
-    const response = NextResponse.redirect(videoUrl);
+    // For non-range requests or if proxy fails/times out, redirect with proper headers
+    console.log('🔄 Redirecting to video URL');
+    const response = NextResponse.redirect(videoUrl, 302);
     response.headers.set('Cache-Control', 'public, max-age=3600');
     response.headers.set('Access-Control-Allow-Origin', '*');
+    response.headers.set('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+    response.headers.set('Access-Control-Allow-Headers', 'Range');
     return response;
 
   } catch (error) {
