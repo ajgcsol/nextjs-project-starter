@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { VideoDB } from '@/lib/database';
 import { videoMonitor } from '@/lib/monitoring';
 import { MediaDiscoveryService, VideoStreamResponse } from '@/lib/mediaDiscovery';
+import { VideoConverter } from '@/lib/videoConverter';
 
 export async function GET(
   request: NextRequest,
@@ -34,8 +35,68 @@ export async function GET(
       title: video.title,
       s3_key: video.s3_key,
       file_path: video.file_path,
-      is_processed: video.is_processed
+      is_processed: video.is_processed,
+      filename: video.filename
     });
+
+    // Check if this is a WMV file that needs conversion
+    const isWMVFile = video.filename && (
+      video.filename.toLowerCase().endsWith('.wmv') ||
+      video.s3_key?.toLowerCase().includes('.wmv')
+    );
+
+    if (isWMVFile) {
+      console.log('🎬 WMV file detected, checking for converted version...');
+      
+      // Check if converted MP4 version exists
+      const convertedS3Key = video.s3_key ? 
+        video.s3_key.replace(/\.wmv$/i, '.mp4') : 
+        `videos/${videoId}.mp4`;
+      
+      const cloudFrontDomain = process.env.CLOUDFRONT_DOMAIN || 'd24qjgz9z4yzof.cloudfront.net';
+      const convertedUrl = `https://${cloudFrontDomain}/${convertedS3Key}`;
+      
+      // Check if converted version exists
+      const convertedExists = await MediaDiscoveryService.validateMediaUrl(convertedUrl);
+      
+      if (convertedExists) {
+        console.log('✅ Found converted MP4 version, serving that instead');
+        
+        // Update database with converted path
+        try {
+          await VideoDB.updateVideoPath(videoId, convertedS3Key, convertedUrl);
+          console.log('📝 Updated database with converted MP4 path');
+        } catch (updateError) {
+          console.warn('⚠️ Failed to update database with converted path:', updateError);
+        }
+        
+        // Redirect to converted version
+        const response = NextResponse.redirect(convertedUrl, 302);
+        response.headers.set('Cache-Control', 'public, max-age=3600');
+        response.headers.set('Access-Control-Allow-Origin', '*');
+        response.headers.set('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+        response.headers.set('Access-Control-Allow-Headers', 'Range');
+        return response;
+      } else {
+        console.log('🔄 Converted version not found, initiating conversion...');
+        
+        // Trigger conversion if not already in progress
+        try {
+          const conversionResult = await VideoConverter.convertVideo(videoId, video.s3_key || '', video.filename || '');
+          
+          if (conversionResult.success) {
+            console.log('✅ Conversion initiated successfully');
+            console.log('🎬 Conversion initiated, but serving original file for now');
+          } else {
+            console.error('❌ Conversion failed:', conversionResult.error);
+            console.log('⚠️ Attempting to serve original WMV file as fallback...');
+          }
+        } catch (conversionError) {
+          console.error('❌ Conversion error:', conversionError);
+          // Fall through to original logic
+        }
+      }
+    }
 
     let videoUrl = '';
     let discoveryMethod = 'database';

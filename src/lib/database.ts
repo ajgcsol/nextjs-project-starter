@@ -656,6 +656,52 @@ export const VideoDB = {
       [limit]
     );
     return rows;
+  },
+
+  async findVideosWithBrokenThumbnails(limit: number = 10) {
+    const { rows } = await query(
+      `SELECT * FROM videos 
+       WHERE (
+         thumbnail_path IS NULL 
+         OR thumbnail_path = '' 
+         OR thumbnail_path LIKE '%Video Thumbnail%'
+         OR thumbnail_path LIKE '/api/videos/thumbnail/%'
+         OR thumbnail_path LIKE '%placeholder%'
+         OR thumbnail_path LIKE '%error%'
+         OR thumbnail_path LIKE '%404%'
+         OR thumbnail_path LIKE '%broken%'
+         OR thumbnail_path LIKE '%missing%'
+       )
+       AND file_path IS NOT NULL 
+       ORDER BY uploaded_at DESC 
+       LIMIT $1`,
+      [limit]
+    );
+    return rows;
+  },
+
+  async findAllVideosForThumbnailRegeneration(limit: number = 50) {
+    const { rows } = await query(
+      `SELECT * FROM videos 
+       WHERE file_path IS NOT NULL 
+       ORDER BY uploaded_at DESC 
+       LIMIT $1`,
+      [limit]
+    );
+    return rows;
+  },
+
+  async updateVideoPath(videoId: string, s3Key: string, filePath: string) {
+    const { rows } = await query(
+      `UPDATE videos 
+       SET s3_key = $2, 
+           file_path = $3,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1
+       RETURNING *`,
+      [videoId, s3Key, filePath]
+    );
+    return rows[0];
   }
 };
 

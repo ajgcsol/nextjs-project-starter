@@ -5,6 +5,7 @@ import crypto from 'crypto';
 import { VideoDB } from '@/lib/database';
 import { videoMonitor, PerformanceMonitor } from '@/lib/monitoring';
 import { VideoConverter } from '@/lib/videoConverter';
+import { ThumbnailGenerator } from '@/lib/thumbnailGenerator';
 
 // For serverless environment, we'll skip local file storage
 // In production, files should be uploaded directly to S3
@@ -290,6 +291,39 @@ export async function POST(request: NextRequest) {
           title: savedVideo.title,
           duration: dbSaveTime
         });
+
+        // Generate comprehensive thumbnail if no client-side thumbnail was provided
+        if (!autoThumbnail) {
+          console.log('🖼️ No client thumbnail provided, generating comprehensive thumbnail...');
+          try {
+            const thumbnailResult = await ThumbnailGenerator.generateThumbnail(
+              savedVideo.id,
+              s3Key,
+              videoRecord.streamUrl
+            );
+            
+            if (thumbnailResult.success && thumbnailResult.thumbnailUrl) {
+              console.log('🖼️ ✅ Comprehensive thumbnail generated:', thumbnailResult.method);
+              await videoMonitor.logUploadEvent('Comprehensive thumbnail generated', {
+                method: thumbnailResult.method,
+                thumbnailUrl: thumbnailResult.thumbnailUrl,
+                s3Key: thumbnailResult.s3Key,
+                jobId: thumbnailResult.jobId
+              });
+            } else {
+              console.log('🖼️ ⚠️ Comprehensive thumbnail generation failed:', thumbnailResult.error);
+              await videoMonitor.logUploadEvent('Comprehensive thumbnail failed', {
+                method: thumbnailResult.method,
+                error: thumbnailResult.error
+              });
+            }
+          } catch (thumbnailError) {
+            console.error('🖼️ ❌ Comprehensive thumbnail generation error:', thumbnailError);
+            await videoMonitor.logUploadEvent('Comprehensive thumbnail error', {
+              error: thumbnailError instanceof Error ? thumbnailError.message : 'Unknown error'
+            });
+          }
+        }
         
         // Track upload completion
         const uploadDuration = uploadTimer();

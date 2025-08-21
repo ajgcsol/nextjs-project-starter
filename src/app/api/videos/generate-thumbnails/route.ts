@@ -5,13 +5,13 @@ import { VideoDB } from '@/lib/database';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { videoId, batchMode = false, limit = 10 } = body;
+    const { videoId, batchMode = false, limit = 10, forceRegenerate = false } = body;
 
     if (batchMode) {
       // Batch generate thumbnails for multiple videos
-      console.log(`🔄 Starting batch thumbnail generation (limit: ${limit})...`);
+      console.log(`🔄 Starting batch thumbnail generation (limit: ${limit}, force: ${forceRegenerate})...`);
       
-      const result = await ThumbnailGenerator.batchGenerateThumbnails(limit);
+      const result = await ThumbnailGenerator.batchGenerateThumbnails(limit, forceRegenerate);
       
       return NextResponse.json({
         success: true,
@@ -19,7 +19,8 @@ export async function POST(request: NextRequest) {
         processed: result.processed,
         successful: result.successful,
         failed: result.failed,
-        results: result.results
+        results: result.results,
+        forceRegenerate
       });
 
     } else if (videoId) {
