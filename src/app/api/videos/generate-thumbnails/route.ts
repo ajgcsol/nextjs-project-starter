@@ -105,7 +105,8 @@ export async function GET(request: NextRequest) {
     } else if (action === 'list-videos-without-thumbnails') {
       // List videos that need thumbnails
       const limit = parseInt(searchParams.get('limit') || '20');
-      const videos = await VideoDB.findVideosWithoutThumbnails(limit);
+      const offset = parseInt(searchParams.get('offset') || '0');
+      const videos = await VideoDB.findVideosWithBrokenThumbnails(limit, offset);
       
       return NextResponse.json({
         success: true,

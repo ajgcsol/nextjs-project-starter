@@ -1,5 +1,5 @@
 import { S3Client, HeadBucketCommand, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
-import { MediaConvertClient, CreateJobCommand, GetJobCommand, ListJobsCommand, ListJobTemplatesCommand } from '@aws-sdk/client-mediaconvert';
+import { MediaConvertClient, CreateJobCommand, GetJobCommand, ListJobsCommand, ListJobTemplatesCommand, DescribeEndpointsCommand } from '@aws-sdk/client-mediaconvert';
 import { CloudFrontClient, CreateInvalidationCommand, GetDistributionCommand } from '@aws-sdk/client-cloudfront';
 import { RDSClient, DescribeDBInstancesCommand } from '@aws-sdk/client-rds';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
@@ -66,6 +66,18 @@ export const mediaconvert = new Proxy({} as MediaConvertClient, {
       });
     }
     return (_mediaconvert as any)[prop];
+  }
+});
+
+// Auto-discovery MediaConvert client for endpoint discovery
+let _mediaconvertDiscovery: MediaConvertClient | null = null;
+export const mediaconvertDiscovery = new Proxy({} as MediaConvertClient, {
+  get(target, prop) {
+    if (!_mediaconvertDiscovery) {
+      const config = getAWSConfig();
+      _mediaconvertDiscovery = new MediaConvertClient(config); // No endpoint for discovery
+    }
+    return (_mediaconvertDiscovery as any)[prop];
   }
 });
 
@@ -177,41 +189,137 @@ export class AWSFileManager {
 
 // MediaConvert Video Processing
 export class AWSVideoProcessor {
+  
+  /**
+   * Auto-discover MediaConvert endpoint for the current AWS account
+   */
+  static async discoverEndpoint(): Promise<string> {
+    try {
+      console.log('🔍 Auto-discovering MediaConvert endpoint...');
+      const command = new DescribeEndpointsCommand({});
+      const response = await mediaconvertDiscovery.send(command);
+      
+      if (response.Endpoints && response.Endpoints.length > 0) {
+        const endpoint = response.Endpoints[0].Url;
+        console.log('✅ MediaConvert endpoint discovered:', endpoint);
+        return endpoint!;
+      } else {
+        throw new Error('No MediaConvert endpoints found');
+      }
+    } catch (error) {
+      console.error('❌ Failed to discover MediaConvert endpoint:', error);
+      throw new Error(`MediaConvert endpoint discovery failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Get MediaConvert client with auto-discovered endpoint
+   */
+  static async getMediaConvertClient(): Promise<MediaConvertClient> {
+    try {
+      // If endpoint is already configured, use existing client
+      if (process.env.MEDIACONVERT_ENDPOINT) {
+        return mediaconvert;
+      }
+
+      // Auto-discover endpoint
+      const endpoint = await this.discoverEndpoint();
+      
+      // Create new client with discovered endpoint
+      const config = getAWSConfig();
+      return new MediaConvertClient({
+        ...config,
+        endpoint
+      });
+    } catch (error) {
+      console.error('❌ Failed to get MediaConvert client:', error);
+      throw error;
+    }
+  }
+
   static async processVideo(inputUrl: string, outputPath: string, title: string): Promise<any> {
-    if (!process.env.MEDIACONVERT_ROLE_ARN || !process.env.MEDIACONVERT_TEMPLATE) {
-      throw new Error('MediaConvert configuration missing');
+    if (!process.env.MEDIACONVERT_ROLE_ARN) {
+      throw new Error('MediaConvert role ARN missing. Please set MEDIACONVERT_ROLE_ARN environment variable.');
     }
 
-    const jobParams: any = {
-      Role: process.env.MEDIACONVERT_ROLE_ARN,
-      JobTemplate: process.env.MEDIACONVERT_TEMPLATE,
-      Settings: {
-        Inputs: [
-          {
-            FileInput: inputUrl,
-            AudioSelectors: {
-              'Audio Selector 1': {
-                Offset: 0,
-                DefaultSelection: 'DEFAULT' as const,
-                ProgramSelection: 1
-              }
-            },
-            VideoSelector: {
-              ColorSpace: 'FOLLOW' as const
-            }
-          }
-        ]
-      },
-      UserMetadata: {
-        title: title,
-        'processed-by': 'law-school-system',
-        'processed-at': new Date().toISOString()
-      }
-    };
-
     try {
+      const mediaConvertClient = await this.getMediaConvertClient();
+
+      const jobParams: any = {
+        Role: process.env.MEDIACONVERT_ROLE_ARN,
+        Settings: {
+          Inputs: [
+            {
+              FileInput: inputUrl,
+              AudioSelectors: {
+                'Audio Selector 1': {
+                  Offset: 0,
+                  DefaultSelection: 'DEFAULT' as const,
+                  ProgramSelection: 1
+                }
+              },
+              VideoSelector: {
+                ColorSpace: 'FOLLOW' as const
+              }
+            }
+          ],
+          OutputGroups: [
+            {
+              Name: 'File Group',
+              OutputGroupSettings: {
+                Type: 'FILE_GROUP_SETTINGS',
+                FileGroupSettings: {
+                  Destination: outputPath
+                }
+              },
+              Outputs: [
+                {
+                  NameModifier: '_processed',
+                  ContainerSettings: {
+                    Container: 'MP4',
+                    Mp4Settings: {
+                      CslgAtom: 'INCLUDE' as const,
+                      FreeSpaceBox: 'EXCLUDE' as const,
+                      MoovPlacement: 'PROGRESSIVE_DOWNLOAD' as const
+                    }
+                  },
+                  VideoDescription: {
+                    CodecSettings: {
+                      Codec: 'H_264',
+                      H264Settings: {
+                        RateControlMode: 'QVBR',
+                        QvbrSettings: {
+                          QvbrQualityLevel: 8
+                        }
+                      }
+                    }
+                  },
+                  AudioDescriptions: [
+                    {
+                      CodecSettings: {
+                        Codec: 'AAC',
+                        AacSettings: {
+                          Bitrate: 128000,
+                          CodingMode: 'CODING_MODE_2_0',
+                          SampleRate: 48000
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        UserMetadata: {
+          title: title,
+          'processed-by': 'law-school-system',
+          'processed-at': new Date().toISOString()
+        }
+      };
+
       const command = new CreateJobCommand(jobParams);
-      const result = await mediaconvert.send(command);
+      const result = await mediaConvertClient.send(command);
       return result.Job!;
     } catch (error) {
       console.error('MediaConvert job creation error:', error);
@@ -221,8 +329,9 @@ export class AWSVideoProcessor {
 
   static async getJobStatus(jobId: string): Promise<any> {
     try {
+      const mediaConvertClient = await this.getMediaConvertClient();
       const command = new GetJobCommand({ Id: jobId });
-      const result = await mediaconvert.send(command);
+      const result = await mediaConvertClient.send(command);
       return result.Job!;
     } catch (error) {
       console.error('MediaConvert job status error:', error);
@@ -241,12 +350,60 @@ export class AWSVideoProcessor {
     }
 
     try {
+      const mediaConvertClient = await this.getMediaConvertClient();
       const command = new ListJobsCommand(params);
-      const result = await mediaconvert.send(command);
+      const result = await mediaConvertClient.send(command);
       return result.Jobs || [];
     } catch (error) {
       console.error('MediaConvert list jobs error:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Test MediaConvert configuration and auto-discovery
+   */
+  static async testConfiguration(): Promise<{
+    status: 'success' | 'error';
+    message: string;
+    endpoint?: string;
+    roleArn?: string;
+  }> {
+    try {
+      // Check if role ARN is configured
+      if (!process.env.MEDIACONVERT_ROLE_ARN) {
+        return {
+          status: 'error',
+          message: 'MEDIACONVERT_ROLE_ARN environment variable is not set'
+        };
+      }
+
+      // Try to discover or use existing endpoint
+      let endpoint: string;
+      if (process.env.MEDIACONVERT_ENDPOINT) {
+        endpoint = process.env.MEDIACONVERT_ENDPOINT;
+        console.log('✅ Using configured MediaConvert endpoint:', endpoint);
+      } else {
+        endpoint = await this.discoverEndpoint();
+        console.log('✅ Auto-discovered MediaConvert endpoint:', endpoint);
+      }
+
+      // Test the connection by listing jobs
+      const mediaConvertClient = await this.getMediaConvertClient();
+      await mediaConvertClient.send(new ListJobsCommand({ MaxResults: 1 }));
+
+      return {
+        status: 'success',
+        message: 'MediaConvert configuration is working',
+        endpoint,
+        roleArn: process.env.MEDIACONVERT_ROLE_ARN
+      };
+
+    } catch (error) {
+      return {
+        status: 'error',
+        message: `MediaConvert configuration failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+      };
     }
   }
 }
@@ -353,11 +510,10 @@ export class AWSHealthCheck {
 
   static async checkMediaConvert(): Promise<{ status: string; message: string }> {
     try {
-      const command = new ListJobTemplatesCommand({ MaxResults: 1 });
-      await mediaconvert.send(command);
+      const testResult = await AWSVideoProcessor.testConfiguration();
       return {
-        status: 'healthy',
-        message: 'MediaConvert is accessible'
+        status: testResult.status === 'success' ? 'healthy' : 'error',
+        message: testResult.message
       };
     } catch (error) {
       return {

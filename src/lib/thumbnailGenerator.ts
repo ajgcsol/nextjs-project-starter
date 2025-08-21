@@ -12,32 +12,60 @@ export interface ThumbnailGenerationResult {
 
 export class ThumbnailGenerator {
   /**
-   * Generate thumbnail from video using AWS MediaConvert
+   * Generate thumbnail from video using AWS MediaConvert with smart filename matching
    */
-  static async generateWithMediaConvert(videoS3Key: string, videoId: string): Promise<ThumbnailGenerationResult> {
+  static async generateWithMediaConvert(videoS3Key: string, videoId: string, videoRecord?: any): Promise<ThumbnailGenerationResult> {
     try {
       console.log('🎬 Generating REAL thumbnail with MediaConvert for:', videoS3Key);
       
-      // Validate required environment variables
-      if (!process.env.MEDIACONVERT_ROLE_ARN || !process.env.MEDIACONVERT_ENDPOINT) {
+      // Validate and clean required environment variables
+      const roleArn = process.env.MEDIACONVERT_ROLE_ARN?.trim();
+      const endpoint = process.env.MEDIACONVERT_ENDPOINT?.trim();
+      
+      if (!roleArn || !endpoint) {
         console.log('⚠️ MediaConvert not configured - missing MEDIACONVERT_ROLE_ARN or MEDIACONVERT_ENDPOINT');
         throw new Error('MediaConvert configuration missing: MEDIACONVERT_ROLE_ARN and MEDIACONVERT_ENDPOINT required');
       }
+      
+      console.log('🔧 MediaConvert configuration:', {
+        roleArn: roleArn.substring(0, 50) + '...',
+        endpoint: endpoint,
+        hasCarriageReturn: endpoint.includes('\r') || roleArn.includes('\r')
+      });
       
       const bucketName = process.env.S3_BUCKET_NAME || 'law-school-repository-content';
       const inputUrl = `s3://${bucketName}/${videoS3Key}`;
       const outputPath = `s3://${bucketName}/thumbnails/`;
       
+      // Generate smart thumbnail filename based on video record
+      let thumbnailBaseName = videoId;
+      if (videoRecord) {
+        // Extract base filename without extension and timestamp
+        const originalFilename = videoRecord.filename || videoRecord.title || videoId;
+        const baseFilename = originalFilename.replace(/\.[^/.]+$/, ''); // Remove extension
+        const uploadTime = videoRecord.uploaded_at ? new Date(videoRecord.uploaded_at).getTime() : Date.now();
+        
+        // Create consistent naming pattern: basefilename_timestamp_videoid
+        thumbnailBaseName = `${baseFilename}_${uploadTime}_${videoId}`;
+        console.log('📝 Smart thumbnail naming:', {
+          originalFilename,
+          baseFilename,
+          uploadTime,
+          thumbnailBaseName
+        });
+      }
+      
       console.log('📹 MediaConvert job details:', {
         inputUrl,
         outputPath,
         videoId,
+        thumbnailBaseName,
         bucketName
       });
       
       // Create MediaConvert job for thumbnail extraction at 10% of video duration
       const jobParams = {
-        Role: process.env.MEDIACONVERT_ROLE_ARN,
+        Role: roleArn,
         Settings: {
           Inputs: [
             {
@@ -65,7 +93,7 @@ export class ThumbnailGenerator {
               },
               Outputs: [
                 {
-                  NameModifier: `_frame_${videoId}`,
+                  NameModifier: `_thumb_${thumbnailBaseName}`,
                   VideoDescription: {
                     CodecSettings: {
                       Codec: 'FRAME_CAPTURE' as const,
@@ -88,9 +116,13 @@ export class ThumbnailGenerator {
         },
         UserMetadata: {
           'video-id': videoId,
+          'video-filename': videoRecord?.filename || 'unknown',
+          'video-title': videoRecord?.title || 'unknown',
+          'upload-time': videoRecord?.uploaded_at || new Date().toISOString(),
           'purpose': 'real-thumbnail-extraction',
           'generated-at': new Date().toISOString(),
           'input-s3-key': videoS3Key,
+          'thumbnail-basename': thumbnailBaseName,
           'extraction-time': '10-seconds'
         }
       };
@@ -104,7 +136,7 @@ export class ThumbnailGenerator {
           accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
           secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
         },
-        endpoint: process.env.MEDIACONVERT_ENDPOINT
+        endpoint: endpoint
       });
 
       console.log('🚀 Submitting MediaConvert job...');
@@ -114,12 +146,13 @@ export class ThumbnailGenerator {
       if (result.Job?.Id) {
         console.log('✅ MediaConvert REAL thumbnail job created:', result.Job.Id);
         
-        // The thumbnail will be available after processing
-        const thumbnailS3Key = `thumbnails/${videoId}_frame_${videoId}.0000001.jpg`;
+        // The thumbnail will be available after processing with smart naming
+        const thumbnailS3Key = `thumbnails/${thumbnailBaseName}_thumb_${thumbnailBaseName}.0000001.jpg`;
         const cloudFrontDomain = process.env.CLOUDFRONT_DOMAIN || 'd24qjgz9z4yzof.cloudfront.net';
         const thumbnailUrl = `https://${cloudFrontDomain}/${thumbnailS3Key}`;
         
         console.log('📸 Expected thumbnail URL:', thumbnailUrl);
+        console.log('📸 Expected S3 key:', thumbnailS3Key);
         
         return {
           success: true,
@@ -411,71 +444,93 @@ export class ThumbnailGenerator {
   }
 
   /**
-   * Comprehensive thumbnail generation with fallbacks
+   * Comprehensive thumbnail generation with fallbacks and smart matching
+   * Now waits for actual MediaConvert failure before falling back
    */
-  static async generateThumbnail(videoId: string, videoS3Key?: string, videoUrl?: string): Promise<ThumbnailGenerationResult> {
+  static async generateThumbnail(videoId: string, videoS3Key?: string, videoUrl?: string, videoRecord?: any): Promise<ThumbnailGenerationResult> {
     console.log('🖼️ Starting REAL thumbnail generation for video:', videoId);
     console.log('🔍 Video S3 Key:', videoS3Key || 'NONE');
     console.log('🔍 Video URL:', videoUrl || 'NONE');
 
-    // PRIORITY: Only try MediaConvert if we have proper AWS configuration
-    if (videoS3Key) {
-      console.log('🎬 Checking MediaConvert configuration...');
-      console.log('🔧 MEDIACONVERT_ROLE_ARN:', process.env.MEDIACONVERT_ROLE_ARN ? 'SET' : 'MISSING');
-      console.log('🔧 MEDIACONVERT_ENDPOINT:', process.env.MEDIACONVERT_ENDPOINT ? 'SET' : 'MISSING');
-      console.log('🔧 AWS_ACCESS_KEY_ID:', process.env.AWS_ACCESS_KEY_ID ? 'SET' : 'MISSING');
-      console.log('🔧 AWS_SECRET_ACCESS_KEY:', process.env.AWS_SECRET_ACCESS_KEY ? 'SET' : 'MISSING');
+    // Get video record if not provided for smart matching
+    let videoData = videoRecord;
+    if (!videoData) {
+      try {
+        videoData = await VideoDB.findById(videoId);
+        console.log('📋 Retrieved video record for smart matching:', {
+          filename: videoData?.filename,
+          title: videoData?.title,
+          uploadTime: videoData?.uploaded_at
+        });
+      } catch (dbError) {
+        console.warn('⚠️ Could not fetch video record for smart matching:', dbError);
+      }
+    }
 
-      if (process.env.MEDIACONVERT_ROLE_ARN && process.env.MEDIACONVERT_ENDPOINT) {
-        console.log('✅ MediaConvert is configured - attempting REAL thumbnail generation...');
-        const mediaConvertResult = await this.generateWithMediaConvert(videoS3Key, videoId);
+    // PRIORITY: Try MediaConvert if we have S3 key and configuration
+    if (videoS3Key && process.env.MEDIACONVERT_ROLE_ARN && process.env.MEDIACONVERT_ENDPOINT) {
+      console.log('🎬 MediaConvert is configured - attempting REAL thumbnail generation with smart matching...');
+      console.log('🔧 Configuration check:');
+      console.log('   - MEDIACONVERT_ROLE_ARN: SET');
+      console.log('   - MEDIACONVERT_ENDPOINT: SET');
+      console.log('   - AWS_ACCESS_KEY_ID:', process.env.AWS_ACCESS_KEY_ID ? 'SET' : 'MISSING');
+      console.log('   - AWS_SECRET_ACCESS_KEY:', process.env.AWS_SECRET_ACCESS_KEY ? 'SET' : 'MISSING');
+      
+      const mediaConvertResult = await this.generateWithMediaConvert(videoS3Key, videoId, videoData);
+      
+      if (mediaConvertResult.success) {
+        console.log('🎉 SUCCESS: MediaConvert job created for REAL thumbnail with smart naming!');
+        console.log('📸 Job ID:', mediaConvertResult.jobId);
+        console.log('🔗 Expected thumbnail URL:', mediaConvertResult.thumbnailUrl);
+        console.log('🔗 Expected S3 key:', mediaConvertResult.s3Key);
         
-        if (mediaConvertResult.success) {
-          console.log('🎉 SUCCESS: MediaConvert job created for REAL thumbnail!');
-          console.log('📸 Job ID:', mediaConvertResult.jobId);
-          console.log('🔗 Expected thumbnail URL:', mediaConvertResult.thumbnailUrl);
-          
-          // Update database with the new thumbnail info
-          try {
-            await VideoDB.update(videoId, {
-              thumbnail_path: mediaConvertResult.thumbnailUrl
-            });
-            console.log('✅ Database updated with MediaConvert thumbnail URL');
-          } catch (dbError) {
-            console.warn('⚠️ Failed to update database with thumbnail:', dbError);
-          }
-          
-          return mediaConvertResult;
-        } else {
-          console.log('❌ MediaConvert failed:', mediaConvertResult.error);
-          console.log('🔄 Will fall back to placeholder until MediaConvert is fixed');
+        // Update database with the new thumbnail info
+        try {
+          await VideoDB.update(videoId, {
+            thumbnail_path: mediaConvertResult.thumbnailUrl
+          });
+          console.log('✅ Database updated with MediaConvert thumbnail URL');
+        } catch (dbError) {
+          console.warn('⚠️ Failed to update database with thumbnail:', dbError);
         }
+        
+        return mediaConvertResult;
+      } else {
+        console.log('❌ MediaConvert FAILED with error:', mediaConvertResult.error);
+        console.log('🔄 MediaConvert job creation failed - proceeding to fallback methods');
+        // Continue to fallback methods only after actual MediaConvert failure
+      }
+    } else {
+      // Log why MediaConvert is not being attempted
+      if (!videoS3Key) {
+        console.log('❌ No S3 key provided - cannot extract video frames from S3');
       } else {
         console.log('❌ MediaConvert NOT configured properly');
         console.log('📋 Missing environment variables:');
         if (!process.env.MEDIACONVERT_ROLE_ARN) console.log('   - MEDIACONVERT_ROLE_ARN');
         if (!process.env.MEDIACONVERT_ENDPOINT) console.log('   - MEDIACONVERT_ENDPOINT');
-        console.log('🔄 Cannot generate real thumbnails without MediaConvert setup');
       }
-    } else {
-      console.log('❌ No S3 key provided - cannot extract video frames');
-      console.log('📋 Need S3 key to access video file for frame extraction');
+      console.log('🔄 Skipping MediaConvert, proceeding to fallback methods');
     }
 
-    // FALLBACK: Only use SVG if MediaConvert is not available
-    console.log('⚠️ FALLBACK: Generating temporary SVG placeholder...');
-    console.log('📋 This is NOT a real video frame - MediaConvert setup needed for real thumbnails');
+    // FALLBACK: Only use SVG after MediaConvert has actually failed or is unavailable
+    console.log('⚠️ FALLBACK: Generating enhanced SVG placeholder...');
+    console.log('📋 This is a temporary placeholder - MediaConvert will generate real thumbnails when available');
     
     try {
-      // Get video title from database for better thumbnails
+      // Use video title from record or fetch from database
       let videoTitle = videoId;
-      try {
-        const video = await VideoDB.findById(videoId);
-        if (video?.title) {
-          videoTitle = video.title;
+      if (videoData?.title) {
+        videoTitle = videoData.title;
+      } else {
+        try {
+          const video = await VideoDB.findById(videoId);
+          if (video?.title) {
+            videoTitle = video.title;
+          }
+        } catch (dbError) {
+          console.warn('⚠️ Could not fetch video title, using ID:', dbError);
         }
-      } catch (dbError) {
-        console.warn('⚠️ Could not fetch video title, using ID:', dbError);
       }
       
       const svgResult = await this.generateSVGThumbnail(videoId, videoTitle);
@@ -487,7 +542,7 @@ export class ThumbnailGenerator {
             thumbnail_path: svgResult.thumbnailUrl
           });
           console.log('✅ Database updated with TEMPORARY SVG thumbnail');
-          console.log('⚠️ NOTE: This is a placeholder, not a real video frame');
+          console.log('⚠️ NOTE: This is a placeholder - real thumbnails will be generated by MediaConvert');
         } catch (dbError) {
           console.warn('⚠️ Failed to update database with thumbnail:', dbError);
         }
@@ -522,6 +577,32 @@ export class ThumbnailGenerator {
         method: 'placeholder',
         error: 'All thumbnail generation methods failed'
       };
+    }
+  }
+
+  /**
+   * Background thumbnail generation - runs after upload completion
+   * This is the method that should be called asynchronously after video upload
+   */
+  static async generateThumbnailBackground(videoId: string, videoS3Key?: string, videoRecord?: any): Promise<void> {
+    console.log('🔄 Starting background thumbnail generation for:', videoId);
+    
+    try {
+      // Wait a moment to ensure upload is fully complete
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      const result = await this.generateThumbnail(videoId, videoS3Key, undefined, videoRecord);
+      
+      if (result.success) {
+        console.log('✅ Background thumbnail generation completed:', result.method);
+        if (result.method === 'mediaconvert') {
+          console.log('📸 MediaConvert job created, thumbnail will be available after processing');
+        }
+      } else {
+        console.log('❌ Background thumbnail generation failed:', result.error);
+      }
+    } catch (error) {
+      console.error('❌ Background thumbnail generation error:', error);
     }
   }
 
@@ -643,7 +724,8 @@ export class ThumbnailGenerator {
         const result = await this.generateThumbnail(
           video.id,
           video.s3_key || undefined,
-          video.file_path || undefined
+          video.file_path || undefined,
+          video // Pass the video record for smart matching
         );
         
         results.push({

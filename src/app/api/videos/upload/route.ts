@@ -292,37 +292,30 @@ export async function POST(request: NextRequest) {
           duration: dbSaveTime
         });
 
-        // Generate comprehensive thumbnail if no client-side thumbnail was provided
+        // Start background thumbnail generation if no client-side thumbnail was provided
         if (!autoThumbnail) {
-          console.log('🖼️ No client thumbnail provided, generating comprehensive thumbnail...');
-          try {
-            const thumbnailResult = await ThumbnailGenerator.generateThumbnail(
-              savedVideo.id,
-              s3Key,
-              videoRecord.streamUrl
-            );
-            
-            if (thumbnailResult.success && thumbnailResult.thumbnailUrl) {
-              console.log('🖼️ ✅ Comprehensive thumbnail generated:', thumbnailResult.method);
-              await videoMonitor.logUploadEvent('Comprehensive thumbnail generated', {
-                method: thumbnailResult.method,
-                thumbnailUrl: thumbnailResult.thumbnailUrl,
-                s3Key: thumbnailResult.s3Key,
-                jobId: thumbnailResult.jobId
-              });
-            } else {
-              console.log('🖼️ ⚠️ Comprehensive thumbnail generation failed:', thumbnailResult.error);
-              await videoMonitor.logUploadEvent('Comprehensive thumbnail failed', {
-                method: thumbnailResult.method,
-                error: thumbnailResult.error
-              });
+          console.log('🖼️ No client thumbnail provided, starting background thumbnail generation...');
+          
+          // Don't await this - let it run in the background after upload completion
+          ThumbnailGenerator.generateThumbnailBackground(
+            savedVideo.id,
+            s3Key,
+            {
+              id: savedVideo.id,
+              filename: savedVideo.filename,
+              title: savedVideo.title,
+              uploaded_at: savedVideo.uploaded_at
             }
-          } catch (thumbnailError) {
-            console.error('🖼️ ❌ Comprehensive thumbnail generation error:', thumbnailError);
-            await videoMonitor.logUploadEvent('Comprehensive thumbnail error', {
-              error: thumbnailError instanceof Error ? thumbnailError.message : 'Unknown error'
-            });
-          }
+          ).catch(error => {
+            console.error('🖼️ ❌ Background thumbnail generation error:', error);
+          });
+          
+          console.log('🖼️ ✅ Background thumbnail generation started (will complete asynchronously)');
+          await videoMonitor.logUploadEvent('Background thumbnail generation started', {
+            videoId: savedVideo.id,
+            s3Key: s3Key,
+            note: 'Thumbnail generation running in background'
+          });
         }
         
         // Track upload completion
