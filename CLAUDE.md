@@ -1,0 +1,1 @@
+- we are using vercel to run in prod btw that is where the cloudfront errors are coming from

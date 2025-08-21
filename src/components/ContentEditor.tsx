@@ -36,6 +36,11 @@ interface ContentData {
     thumbnailUrl?: string;
     fileSize?: number;
     originalFilename?: string;
+    pendingFile?: File;
+    autoThumbnail?: string;
+    customThumbnail?: File;
+    uploadMethod?: string;
+    monitorSessionId?: string;
     [key: string]: unknown;
   };
 }
@@ -92,7 +97,7 @@ export function ContentEditor({
     setIsSaving(true);
     try {
       if (onSave) {
-        await onSave({ ...content, status: "draft" });
+        onSave({ ...content, status: "draft" });
       }
       setLastSaved(new Date());
     } catch (error) {
@@ -103,38 +108,62 @@ export function ContentEditor({
   };
 
   const handlePublish = async () => {
+    console.log('🎬 Publishing content:', { 
+      title: content.title, 
+      hasPendingFile: !!content.metadata.pendingFile,
+      metadata: content.metadata 
+    });
+    
     setIsSaving(true);
     try {
       // If there's a pending video file, upload it first
       if (content.metadata.pendingFile) {
+        console.log('🎬 Starting video upload before publish...');
         await handleActualVideoUpload();
+        console.log('🎬 Video upload completed, proceeding with publish...');
       }
       
       if (onPublish) {
-        await onPublish({ ...content, status: "published" });
+        onPublish({ ...content, status: "published" });
+      } else {
+        console.log('🎬 No onPublish handler provided, content published locally');
       }
       setLastSaved(new Date());
+      console.log('🎬 ✅ Publish completed successfully');
     } catch (error) {
-      console.error('Publish failed:', error);
+      console.error('🎬 ❌ Publish failed:', error);
+      alert(`Publish failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setIsSaving(false);
     }
   };
 
   const handleSaveAsDraft = async () => {
+    console.log('🎬 Saving as draft:', { 
+      title: content.title, 
+      hasPendingFile: !!content.metadata.pendingFile,
+      metadata: content.metadata 
+    });
+    
     setIsSaving(true);
     try {
       // If there's a pending video file, upload it first
       if (content.metadata.pendingFile) {
+        console.log('🎬 Starting video upload before save...');
         await handleActualVideoUpload();
+        console.log('🎬 Video upload completed, proceeding with save...');
       }
       
       if (onSave) {
-        await onSave({ ...content, status: "draft" });
+        onSave({ ...content, status: "draft" });
+      } else {
+        console.log('🎬 No onSave handler provided, content saved locally');
       }
       setLastSaved(new Date());
+      console.log('🎬 ✅ Save as draft completed successfully');
     } catch (error) {
-      console.error('Save draft failed:', error);
+      console.error('🎬 ❌ Save draft failed:', error);
+      alert(`Save failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setIsSaving(false);
     }
@@ -526,25 +555,29 @@ export function ContentEditor({
               {config.showVideoUrl && (
                 <div className="space-y-4">
                   <VideoUploadLarge
-                    onUploadComplete={(video) => {
+                    onUploadComplete={(videoData) => {
+                      // Store the video data for later upload when saving/publishing
                       setContent({
                         ...content,
-                        title: content.title || video.title,
-                        description: content.description || video.description,
-                        category: video.category,
+                        title: content.title || videoData.title,
+                        description: content.description || videoData.description,
+                        category: videoData.category,
                         metadata: {
                           ...content.metadata,
-                          videoId: video.id,
-                          videoUrl: `/api/videos/stream/${video.id}`,
-                          thumbnailUrl: video.thumbnailPath,
-                          duration: video.duration,
-                          fileSize: video.size,
-                          originalFilename: video.originalFilename
+                          // Store pending file data instead of creating video immediately
+                          pendingFile: videoData.pendingFile,
+                          autoThumbnail: videoData.autoThumbnail,
+                          customThumbnail: videoData.customThumbnail,
+                          uploadMethod: videoData.uploadMethod,
+                          monitorSessionId: videoData.monitorSessionId,
+                          duration: videoData.duration,
+                          fileSize: videoData.size,
+                          originalFilename: videoData.originalFilename
                         }
                       });
                     }}
                     onUploadError={(error) => {
-                      console.error("Video upload failed:", error);
+                      console.error("Video upload preparation failed:", error);
                     }}
                   />
                 </div>
@@ -614,7 +647,7 @@ export function ContentEditor({
                     value={currentTag}
                     onChange={(e) => setCurrentTag(e.target.value)}
                     placeholder="Add tag..."
-                    onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addTag())}
+                    onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addTag())}
                   />
                   <Button onClick={addTag} type="button">Add</Button>
                 </div>
@@ -824,8 +857,12 @@ export function ContentEditor({
         <CardContent className="pt-6">
           <div className="flex items-center justify-between">
             <div className="flex gap-2">
-              <Button variant="outline" onClick={handleSaveAsDraft}>
-                Save Draft
+              <Button 
+                variant="outline" 
+                onClick={handleSaveAsDraft}
+                disabled={isSaving || !content.title.trim()}
+              >
+                {isSaving ? 'Saving...' : 'Save Draft'}
               </Button>
               <Button variant="outline">
                 Preview
@@ -835,11 +872,25 @@ export function ContentEditor({
               <Button variant="outline">
                 Schedule
               </Button>
-              <Button onClick={handlePublish}>
-                Publish Now
+              <Button 
+                onClick={handlePublish}
+                disabled={isSaving || !content.title.trim()}
+              >
+                {isSaving ? 'Publishing...' : 'Publish Now'}
               </Button>
             </div>
           </div>
+          
+          {content.metadata.pendingFile && (
+            <div className="mt-4 p-3 bg-blue-50 rounded-lg">
+              <p className="text-sm text-blue-700">
+                ✅ Video ready: {(content.metadata.pendingFile as File)?.name || 'Unknown'} ({(content.metadata.pendingFile as File)?.size ? ((content.metadata.pendingFile as File).size / (1024*1024)).toFixed(1) : '0'}MB)
+              </p>
+              <p className="text-xs text-blue-600 mt-1">
+                Click "Save Draft" or "Publish Now" to upload and save your video content.
+              </p>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

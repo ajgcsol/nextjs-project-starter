@@ -3,6 +3,7 @@ import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import crypto from 'crypto';
 import { VideoDB } from '@/lib/database';
+import { videoMonitor, PerformanceMonitor } from '@/lib/monitoring';
 
 // For serverless environment, we'll skip local file storage
 // In production, files should be uploaded directly to S3
@@ -16,14 +17,27 @@ const isProduction = process.env.NODE_ENV === 'production';
 // Configure runtime for memory efficiency
 // Configure to handle large files (5GB max)
 export async function POST(request: NextRequest) {
-  console.log('🎬 VIDEO UPLOAD: Starting POST request');
-  console.log('🎬 Environment:', process.env.NODE_ENV);
-  console.log('🎬 Has S3 Bucket:', !!process.env.S3_BUCKET_NAME);
-  console.log('🎬 Has AWS Credentials:', !!(process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY));
+  const uploadTimer = PerformanceMonitor.startTimer('video-upload-request');
+  await videoMonitor.logUploadEvent('VIDEO UPLOAD: Starting POST request', {
+    method: 'POST',
+    timestamp: new Date().toISOString()
+  });
+  await videoMonitor.logUploadEvent('Environment check', {
+    environment: process.env.NODE_ENV,
+    hasS3Bucket: !!process.env.S3_BUCKET_NAME,
+    hasAWSCredentials: !!(process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY),
+    isProduction
+  });
   
   if (isProduction) {
-    console.log('🎬 Production mode - optimized for S3 uploads');
+    await videoMonitor.logUploadEvent('Production mode - optimized for S3 uploads', {});
   }
+  
+  await videoMonitor.logUploadEvent('Upload request started', {
+    environment: process.env.NODE_ENV,
+    hasS3Bucket: !!process.env.S3_BUCKET_NAME,
+    hasAWSCredentials: !!(process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY)
+  });
   
   try {
     const contentType = request.headers.get('content-type');
@@ -63,12 +77,17 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      // Generate unique ID early so it can be used in thumbnail processing
+      const fileId = crypto.randomUUID();
+      console.log('🎬 Generated file ID:', fileId);
+
       // Handle thumbnail upload to S3 if provided
       let thumbnailS3Key = null;
       let thumbnailCloudFrontUrl = null;
       
       if (autoThumbnail) {
         try {
+          const thumbnailTimer = PerformanceMonitor.startTimer('thumbnail-upload');
           console.log('🎬 Processing auto-generated thumbnail...');
           
           // Convert base64 thumbnail to buffer
@@ -91,7 +110,7 @@ export async function POST(request: NextRequest) {
           });
 
           // Upload thumbnail to S3
-          const thumbnailUpload = await s3Client.send(
+          await s3Client.send(
             new PutObjectCommand({
               Bucket: process.env.S3_BUCKET_NAME!,
               Key: thumbnailS3Key,
@@ -101,21 +120,37 @@ export async function POST(request: NextRequest) {
             })
           );
 
+          // Define cloudFrontDomain here to avoid scoping issues
           const cloudFrontDomain = process.env.CLOUDFRONT_DOMAIN;
           thumbnailCloudFrontUrl = cloudFrontDomain 
             ? `https://${cloudFrontDomain}/${thumbnailS3Key}`
             : `https://${process.env.S3_BUCKET_NAME}.s3.${process.env.AWS_REGION || 'us-east-1'}.amazonaws.com/${thumbnailS3Key}`;
           
+          const thumbnailLoadTime = thumbnailTimer();
           console.log('🎬 ✅ Thumbnail uploaded to S3:', thumbnailS3Key);
+          
+          await videoMonitor.logUploadEvent('Thumbnail uploaded', {
+            thumbnailS3Key,
+            thumbnailUrl: thumbnailCloudFrontUrl,
+            uploadDuration: thumbnailLoadTime
+          });
+          
+          // Track thumbnail upload completion
+          await videoMonitor.logUploadEvent('Thumbnail tracking', {
+            fileId: fileId,
+            thumbnailUrl: thumbnailCloudFrontUrl,
+            loadTime: thumbnailLoadTime
+          });
         } catch (thumbnailError) {
           console.error('🎬 ⚠️ Thumbnail upload failed:', thumbnailError);
+          await videoMonitor.logUploadEvent('Thumbnail upload failed', {
+            error: thumbnailError instanceof Error ? thumbnailError.message : 'Unknown error'
+          });
           // Continue without thumbnail - don't fail the entire upload
         }
       }
 
-      // Generate unique ID
-      const fileId = crypto.randomUUID();
-      console.log('🎬 Generated file ID:', fileId);
+      // File ID already generated above for thumbnail processing
       
       // Extract basic metadata
       const estimatedDuration = Math.floor(Math.random() * 3600) + 600; // Random duration for demo
@@ -161,24 +196,26 @@ export async function POST(request: NextRequest) {
         width,
         height,
         bitrate: Math.round((size * 8) / estimatedDuration),
-        status: 'ready' as 'processing' | 'ready' | 'failed' | 'draft', // Mark as ready since upload is complete
+        status: 'processing' as 'processing' | 'ready' | 'failed' | 'draft', // Mark as processing - needs transcoding
         uploadDate: new Date().toISOString(),
         views: 0,
         streamUrl: optimizedStreamUrl, // Use CloudFront URL if available
         createdBy: 'Current User',
         metadata: {
-          mimeType: mimeType || 'video/mp4',
+          mimeType: 'video/mp4', // Force MP4 for web compatibility
           originalName: filename,
           s3Key: s3Key,
           publicUrl: publicUrl,
           cloudFrontUrl: optimizedStreamUrl,
           uploadMethod: 'presigned-url',
-          processingComplete: true
+          processingComplete: false, // Needs transcoding
+          needsTranscoding: true
         }
       };
 
       // Save to database - use persistent PostgreSQL storage
       try {
+        const dbTimer = PerformanceMonitor.startTimer('database-save');
         console.log('🎬 Attempting to save to database...');
         console.log('🎬 DATABASE_URL exists:', !!process.env.DATABASE_URL);
         
@@ -202,7 +239,22 @@ export async function POST(request: NextRequest) {
           is_processed: true, // Mark as processed since S3 upload is complete
           is_public: visibility === 'public'
         });
+        const dbSaveTime = dbTimer();
         console.log('🎬 Video saved to persistent database:', savedVideo.id);
+        
+        await videoMonitor.logDatabaseEvent('video_insert', true, {
+          videoId: savedVideo.id,
+          title: savedVideo.title,
+          duration: dbSaveTime
+        });
+        
+        // Track upload completion
+        const uploadDuration = uploadTimer();
+        await videoMonitor.logUploadEvent('Upload completed', {
+          filename,
+          videoId: savedVideo.id,
+          duration: uploadDuration
+        });
         
         // Return the video in the expected format
         const formattedVideo = {
@@ -223,9 +275,12 @@ export async function POST(request: NextRequest) {
           status: savedVideo.is_processed ? 'ready' : 'processing',
           uploadDate: savedVideo.uploaded_at,
           views: savedVideo.view_count || 0,
-          streamUrl: savedVideo.file_path,
+          streamUrl: `/api/videos/stream/${savedVideo.id}`, // Use streaming endpoint
           createdBy: 'Current User',
-          metadata: videoRecord.metadata
+          metadata: {
+            ...videoRecord.metadata,
+            directUrl: savedVideo.file_path // Keep direct URL as backup
+          }
         };
         
         return NextResponse.json({
@@ -235,6 +290,16 @@ export async function POST(request: NextRequest) {
         });
       } catch (dbError) {
         console.error('🎬 Database save failed:', dbError);
+        
+        await videoMonitor.logDatabaseEvent('video_insert', false, {
+          error: dbError instanceof Error ? dbError.message : 'Unknown error'
+        });
+        
+        // Track upload error
+        await videoMonitor.logUploadEvent('Upload error', {
+          filename,
+          error: dbError instanceof Error ? dbError.message : 'Unknown error'
+        });
         
         // Don't fallback - fail the upload if database is unreachable
         return NextResponse.json({
@@ -420,6 +485,10 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     console.error('🎬 Upload error:', error);
+    
+    await videoMonitor.logUploadEvent('Upload failed', {
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
     return NextResponse.json(
       { 
         error: 'Upload failed', 
@@ -491,13 +560,14 @@ export async function GET(request: NextRequest) {
       status: v.is_processed ? 'ready' : 'processing',
       uploadDate: v.uploaded_at,
       views: v.view_count || 0,
-      streamUrl: v.file_path,
+      streamUrl: `/api/videos/stream/${v.id}`, // Use streaming endpoint instead of direct URL
       createdBy: 'Current User',
       metadata: {
         mimeType: 'video/mp4',
         originalName: v.filename,
         s3Key: v.s3_key,
-        cloudFrontUrl: v.file_path
+        cloudFrontUrl: v.file_path, // Keep direct URL as backup
+        directUrl: v.file_path
       }
     }));
     
@@ -551,7 +621,7 @@ export async function GET(request: NextRequest) {
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json();
-    const { id, title, description, category, tags, visibility, status } = body;
+    const { id, title, description } = body;
     
     if (!id) {
       return NextResponse.json(

@@ -409,7 +409,7 @@ export const VideoDB = {
     const { rows } = await query(
       `SELECT v.*, u.name as uploader_name 
        FROM videos v 
-       LEFT JOIN users u ON v.uploaded_by = u.id 
+       LEFT JOIN users u ON v.uploaded_by = CAST(u.id AS TEXT)
        ORDER BY v.uploaded_at DESC 
        LIMIT $1 OFFSET $2`,
       [limit, offset]
@@ -421,7 +421,7 @@ export const VideoDB = {
     const { rows } = await query(
       `SELECT v.*, u.name as uploader_name 
        FROM videos v 
-       LEFT JOIN users u ON v.uploaded_by = u.id 
+       LEFT JOIN users u ON v.uploaded_by = CAST(u.id AS TEXT)
        WHERE v.is_public = true AND v.is_processed = true
        ORDER BY v.uploaded_at DESC 
        LIMIT $1 OFFSET $2`,
@@ -471,7 +471,7 @@ export const VideoDB = {
       `SELECT v.*, u.name as uploader_name,
               ts_rank(to_tsvector('english', v.title || ' ' || COALESCE(v.description, '')), plainto_tsquery('english', $1)) as rank
        FROM videos v
-       LEFT JOIN users u ON v.uploaded_by = u.id
+       LEFT JOIN users u ON v.uploaded_by = CAST(u.id AS TEXT)
        WHERE to_tsvector('english', v.title || ' ' || COALESCE(v.description, '')) @@ plainto_tsquery('english', $1)
        AND v.is_public = true AND v.is_processed = true
        ORDER BY rank DESC

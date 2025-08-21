@@ -56,7 +56,7 @@ export function VideoUploadLarge({
   onUploadComplete, 
   onUploadError, 
   className 
-}: VideoUploadLargeProps) {
+}: VideoUploadLargeProps): React.ReactElement {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const thumbnailInputRef = useRef<HTMLInputElement>(null);
   const videoPreviewRef = useRef<HTMLVideoElement>(null);
@@ -422,217 +422,46 @@ export function VideoUploadLarge({
     return { s3Key, publicUrl: completeResult.publicUrl };
   };
 
-  // Main upload handler - ACTUALLY UPLOAD THE VIDEO
-  const handleUpload = async (publishStatus: 'draft' | 'published' = 'draft') => {
-    if (!selectedFile) return;
-
-    // Start monitoring session
-    let monitorSessionId: string | null = null;
-    
-    try {
-      // Initialize upload monitoring
-      const monitorResponse = await fetch('/api/debug/upload-monitor', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'start',
-          data: {
-            filename: selectedFile.name,
-            fileSize: selectedFile.size,
-            mimeType: selectedFile.type,
-            userAgent: navigator.userAgent,
-            publishStatus
-          }
-        })
-      });
-      
-      if (monitorSessionId) {
-        const monitorData = await monitorResponse.json();
-        monitorSessionId = monitorData.sessionId;
-        console.log('🔍 MONITOR: Started session', monitorSessionId);
-      }
-
-      const logStep = async (step: string, status: 'success' | 'error' | 'pending', details: any = {}, error?: string) => {
-        if (monitorSessionId) {
-          try {
-            await fetch('/api/debug/upload-monitor', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                action: 'log',
-                sessionId: monitorSessionId,
-                data: { step, status, details, error }
-              })
-            });
-          } catch (e) {
-            console.warn('Failed to log step:', e);
-          }
-        }
-      };
-
-      // Validate form data
-      if (!formData.title.trim()) {
-        throw new Error('Title is required');
-      }
-
-      setUploadProgress({
-        loaded: 0,
-        total: selectedFile.size,
-        percentage: 0,
-        stage: 'preparing',
-        message: publishStatus === 'draft' ? 'Uploading video as draft...' : 'Uploading and publishing video...'
-      });
-
-      await logStep('upload_start', 'pending', {
-        filename: selectedFile.name,
-        fileSize: selectedFile.size,
-        publishStatus,
-        uploadMethod: getUploadMethod(selectedFile.size)
-      });
-
-      // Step 1: Upload to S3
-      const uploadMethod = getUploadMethod(selectedFile.size);
-      let uploadResult;
-
-      if (uploadMethod === 'multipart') {
-        uploadResult = await uploadMultipartFile();
-      } else {
-        uploadResult = await uploadSingleFile();
-      }
-
-      if (!uploadResult) {
-        throw new Error('Upload failed - no result returned');
-      }
-
-      await logStep('s3_upload_complete', 'success', {
-        s3Key: uploadResult.s3Key,
-        publicUrl: uploadResult.publicUrl
-      });
-
-      // Step 2: Save video metadata to database
-      setUploadProgress(prev => prev ? {
-        ...prev,
-        stage: 'processing',
-        percentage: 90,
-        message: 'Saving video information...'
-      } : null);
-
-      const videoResponse = await fetch('/api/videos/upload', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: formData.title,
-          description: formData.description,
-          category: formData.category,
-          tags: formData.tags,
-          visibility: publishStatus === 'published' ? 'public' : 'private',
-          s3Key: uploadResult.s3Key,
-          publicUrl: uploadResult.publicUrl,
-          filename: selectedFile.name,
-          size: selectedFile.size,
-          mimeType: selectedFile.type,
-          autoThumbnail: autoThumbnail,
-          status: publishStatus === 'published' ? 'ready' : 'draft'
-        }),
-      });
-
-      if (!videoResponse.ok) {
-        throw new Error('Failed to save video metadata');
-      }
-
-      const videoData = await videoResponse.json();
-
-      await logStep('database_save_complete', 'success', {
-        videoId: videoData.video?.id,
-        status: publishStatus
-      });
-
-      // Step 3: Handle custom thumbnail if provided
-      if (customThumbnail && videoData.video?.id) {
-        setUploadProgress(prev => prev ? {
-          ...prev,
-          percentage: 95,
-          message: 'Uploading custom thumbnail...'
-        } : null);
-
-        try {
-          const thumbnailFormData = new FormData();
-          thumbnailFormData.append('thumbnail', customThumbnail);
-
-          await fetch(`/api/videos/thumbnail/${videoData.video.id}`, {
-            method: 'POST',
-            body: thumbnailFormData,
-          });
-
-          await logStep('thumbnail_upload_complete', 'success');
-        } catch (thumbnailError) {
-          console.warn('Custom thumbnail upload failed:', thumbnailError);
-          await logStep('thumbnail_upload_failed', 'error', {}, thumbnailError instanceof Error ? thumbnailError.message : 'Unknown error');
-        }
-      }
-
-      // Complete
-      setUploadProgress(prev => prev ? {
-        ...prev,
-        stage: 'complete',
-        percentage: 100,
-        message: publishStatus === 'published' ? 'Video uploaded and published!' : 'Video saved as draft!'
-      } : null);
-
-      await logStep('upload_complete', 'success', {
-        finalStatus: publishStatus,
-        message: publishStatus === 'published' ? 'Video is now live and public' : 'Video saved as draft - you can publish it later'
-      });
-
-      onUploadComplete?.(videoData.video);
-      
-      // Reset form after successful upload
-      setTimeout(() => {
-        resetForm();
-      }, 2000);
-
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Upload failed';
-      
-      if (monitorSessionId) {
-        await fetch('/api/debug/upload-monitor', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'error',
-            sessionId: monitorSessionId,
-            data: {
-              error: errorMessage,
-              details: {
-                stack: error instanceof Error ? error.stack : undefined,
-                filename: selectedFile?.name,
-                fileSize: selectedFile?.size
-              }
-            }
-          })
-        });
-      }
-
-      setUploadProgress(prev => prev ? {
-        ...prev,
-        stage: 'error',
-        message: errorMessage
-      } : null);
-      onUploadError?.(errorMessage);
+  // Prepare video data for ContentEditor to handle upload
+  const handlePrepareVideo = () => {
+    if (!selectedFile || !formData.title.trim()) {
+      onUploadError?.('Please fill in the title and select a video file');
+      return;
     }
-  };
 
-  // Auto-save as draft when component unmounts (user leaves page)
-  React.useEffect(() => {
-    return () => {
-      // If there's a selected file with filled form but no upload in progress, auto-save as draft
-      if (selectedFile && formData.title.trim() && !uploadProgress) {
-        console.log('🔄 Auto-saving video as draft before page leave...');
-        handleUpload('draft').catch(console.error);
-      }
-    };
-  }, [selectedFile, formData.title, uploadProgress]);
-    // Start monitoring session
+    // Generate a monitoring session ID
+    const monitorSessionId = crypto.randomUUID();
+
+    // Return prepared data to ContentEditor
+    onUploadComplete?.({
+      title: formData.title,
+      description: formData.description,
+      category: formData.category,
+      tags: formData.tags,
+      visibility: formData.visibility,
+      size: selectedFile.size,
+      originalFilename: selectedFile.name,
+      duration: previewInfo?.duration || 0,
+      // Store the file and data for later upload by ContentEditor
+      pendingFile: selectedFile,
+      autoThumbnail: autoThumbnail,
+      customThumbnail: customThumbnail,
+      uploadMethod: getUploadMethod(selectedFile.size),
+      monitorSessionId: monitorSessionId
+    });
+
+    // Show success message but DON'T reset the form automatically
+    setUploadProgress({
+      loaded: selectedFile.size,
+      total: selectedFile.size,
+      percentage: 100,
+      stage: 'complete',
+      message: 'Video prepared! Use "Save Draft" or "Publish Now" buttons below to upload.'
+    });
+
+    // Don't auto-reset the form - let the user manually reset or keep the video for publishing
+    // The form will only reset when the user clicks "Cancel" or manually removes the file
+  };
 
   const resetForm = () => {
     setSelectedFile(null);
@@ -979,25 +808,17 @@ export function VideoUploadLarge({
                 />
               </div>
 
-              {/* Upload Buttons */}
+              {/* Prepare Button */}
               <div className="flex justify-end gap-2 pt-4">
                 <Button variant="outline" onClick={resetForm}>
                   Cancel
                 </Button>
                 <Button
-                  variant="outline"
-                  onClick={() => handleUpload('draft')}
+                  onClick={handlePrepareVideo}
                   disabled={!formData.title.trim()}
                 >
                   <Upload className="h-4 w-4 mr-2" />
-                  Save as Draft
-                </Button>
-                <Button
-                  onClick={() => handleUpload('published')}
-                  disabled={!formData.title.trim()}
-                >
-                  <Upload className="h-4 w-4 mr-2" />
-                  Upload & Publish
+                  Prepare Video
                 </Button>
               </div>
             </div>
