@@ -37,29 +37,69 @@ export default function FixThumbnailsPage() {
     setResult(null);
 
     try {
-      const response = await fetch('/api/videos/generate-thumbnails', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          batchMode: true,
-          limit: 50,
+      // Process in smaller chunks to avoid timeout
+      const chunkSize = 5; // Process 5 videos at a time
+      let totalProcessed = 0;
+      let totalSuccessful = 0;
+      let totalFailed = 0;
+      let allResults: ThumbnailResult[] = [];
+      let hasMoreVideos = true;
+      let currentOffset = 0;
+
+      while (hasMoreVideos) {
+        console.log(`Processing chunk starting at offset ${currentOffset}...`);
+        
+        const response = await fetch('/api/videos/generate-thumbnails', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            batchMode: true,
+            limit: chunkSize,
+            forceRegenerate,
+            offset: currentOffset
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        
+        if (!data.success) {
+          throw new Error(data.error || 'Unknown error occurred');
+        }
+
+        // Accumulate results
+        totalProcessed += data.processed;
+        totalSuccessful += data.successful;
+        totalFailed += data.failed;
+        allResults = [...allResults, ...data.results];
+
+        // Update UI with progress
+        setResult({
+          success: true,
+          processed: totalProcessed,
+          successful: totalSuccessful,
+          failed: totalFailed,
+          results: allResults,
           forceRegenerate
-        })
-      });
+        });
 
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        // Check if we should continue
+        if (data.processed < chunkSize) {
+          // We got fewer results than requested, so we're done
+          hasMoreVideos = false;
+        } else {
+          currentOffset += chunkSize;
+          // Add a small delay between chunks to be nice to the server
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
       }
 
-      const data = await response.json();
-      
-      if (data.success) {
-        setResult(data);
-      } else {
-        setError(data.error || 'Unknown error occurred');
-      }
+      console.log(`Thumbnail processing complete: ${totalSuccessful} successful, ${totalFailed} failed out of ${totalProcessed} processed`);
 
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fix thumbnails');

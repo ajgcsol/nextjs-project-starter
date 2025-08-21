@@ -486,7 +486,7 @@ export class ThumbnailGenerator {
   /**
    * Batch generate thumbnails for videos that don't have them
    */
-  static async batchGenerateThumbnails(limit: number = 10, forceRegenerate: boolean = false): Promise<{
+  static async batchGenerateThumbnails(limit: number = 10, forceRegenerate: boolean = false, offset: number = 0): Promise<{
     processed: number;
     successful: number;
     failed: number;
