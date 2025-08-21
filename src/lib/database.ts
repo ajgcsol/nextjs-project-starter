@@ -651,7 +651,7 @@ export const VideoDB = {
       `SELECT * FROM videos 
        WHERE (thumbnail_path IS NULL OR thumbnail_path = '' OR thumbnail_path LIKE '%Video Thumbnail%')
        AND file_path IS NOT NULL 
-       ORDER BY created_at DESC 
+       ORDER BY uploaded_at DESC 
        LIMIT $1`,
       [limit]
     );
