@@ -90,6 +90,7 @@ export function ContentEditor({
     currentStep: '',
     percentage: 0
   });
+  const [hasUploadedVideo, setHasUploadedVideo] = useState(false);
 
   // Auto-save functionality
   useEffect(() => {
@@ -109,6 +110,12 @@ export function ContentEditor({
   }, [content.body]);
 
   const handleAutoSave = async () => {
+    // Skip auto-save if there's a pending video file to prevent duplicate uploads
+    if (content.metadata.pendingFile && !hasUploadedVideo) {
+      console.log('🎬 ⚠️ Skipping auto-save - pending video file detected');
+      return;
+    }
+
     setIsSaving(true);
     try {
       if (onSave) {
@@ -199,6 +206,12 @@ export function ContentEditor({
     const monitorSessionId = content.metadata.monitorSessionId as string;
 
     if (!pendingFile) return;
+
+    // Prevent duplicate uploads
+    if (hasUploadedVideo) {
+      console.log('🎬 ⚠️ Video already uploaded, skipping duplicate upload');
+      return;
+    }
 
     const logStep = async (step: string, status: 'success' | 'error' | 'pending', details: any = {}, error?: string) => {
       if (monitorSessionId) {
@@ -341,6 +354,9 @@ export function ContentEditor({
         });
       }
 
+      // Mark video as uploaded to prevent duplicates
+      setHasUploadedVideo(true);
+      
       console.log('🎬 ✅ Video upload completed successfully');
 
     } catch (error) {

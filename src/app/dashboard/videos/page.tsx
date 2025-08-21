@@ -183,6 +183,36 @@ export default function VideoManagementPage() {
     }
   };
 
+  const handleDeleteVideo = async (videoId: string, videoTitle: string) => {
+    if (!confirm(`Are you sure you want to delete "${videoTitle}"? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/videos/${videoId}`, {
+        method: 'DELETE',
+      });
+
+      if (response.ok) {
+        console.log('Video deleted successfully');
+        // Refresh the video list
+        await fetchVideos();
+      } else {
+        const errorData = await response.json();
+        console.error('Failed to delete video:', errorData);
+        alert(`Failed to delete video: ${errorData.error || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Error deleting video:', error);
+      alert('Error deleting video. Please try again.');
+    }
+  };
+
+  const handlePlayVideo = (videoId: string) => {
+    // Open video in new tab/window for now
+    window.open(`/api/videos/stream/${videoId}`, '_blank');
+  };
+
 
   const filteredVideos = videos.filter(video => {
     const matchesSearch = video.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -445,19 +475,39 @@ export default function VideoManagementPage() {
                             {new Date(video.uploadDate).toLocaleDateString()}
                           </span>
                           <div className="flex gap-1">
-                            <Link href={`/dashboard/videos/${video.id}`}>
-                              <Button variant="ghost" size="icon" className="h-8 w-8">
-                                <Play className="h-4 w-4" />
-                              </Button>
-                            </Link>
-                            <Button variant="ghost" size="icon" className="h-8 w-8">
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-8 w-8"
+                              onClick={() => handlePlayVideo(video.id)}
+                              title="Play video"
+                            >
+                              <Play className="h-4 w-4" />
+                            </Button>
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-8 w-8"
+                              title="Edit video"
+                            >
                               <Edit className="h-4 w-4" />
                             </Button>
-                            <Button variant="ghost" size="icon" className="h-8 w-8">
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-8 w-8"
+                              title="Share video"
+                            >
                               <Share className="h-4 w-4" />
                             </Button>
-                            <Button variant="ghost" size="icon" className="h-8 w-8">
-                              <MoreHorizontal className="h-4 w-4" />
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-8 w-8 text-red-600 hover:text-red-700 hover:bg-red-50"
+                              onClick={() => handleDeleteVideo(video.id, video.title)}
+                              title="Delete video"
+                            >
+                              <Trash2 className="h-4 w-4" />
                             </Button>
                           </div>
                         </div>
