@@ -108,6 +108,12 @@ export function ContentEditor({
   };
 
   const handlePublish = async () => {
+    // Prevent multiple simultaneous publish attempts
+    if (isSaving) {
+      console.log('🎬 ⚠️ Publish already in progress, ignoring duplicate request');
+      return;
+    }
+
     console.log('🎬 Publishing content:', { 
       title: content.title, 
       hasPendingFile: !!content.metadata.pendingFile,
@@ -386,9 +392,99 @@ export function ContentEditor({
   };
 
   const uploadMultipartFile = async (file: File) => {
-    // This is a simplified version - in production you'd want the full multipart logic
-    // For now, fall back to single file upload for large files
-    return await uploadSingleFile(file);
+    console.log('🎬 Starting multipart upload for large file:', file.name, file.size);
+    
+    // Initialize multipart upload
+    const initResponse = await fetch('/api/videos/multipart-upload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        filename: file.name,
+        contentType: file.type,
+        fileSize: file.size,
+      }),
+    });
+
+    if (!initResponse.ok) {
+      throw new Error('Failed to initialize multipart upload');
+    }
+
+    const { uploadId, s3Key, bucketName, partSize, totalParts, publicUrl } = await initResponse.json();
+    console.log('🎬 Multipart upload initialized:', { uploadId: uploadId.substring(0, 20) + '...', totalParts });
+
+    const parts = [];
+    
+    // Upload each part
+    for (let partNumber = 1; partNumber <= totalParts; partNumber++) {
+      const start = (partNumber - 1) * partSize;
+      const end = Math.min(start + partSize, file.size);
+      const partData = file.slice(start, end);
+      
+      console.log(`🎬 Uploading part ${partNumber}/${totalParts} (${(partData.size / (1024*1024)).toFixed(1)}MB)`);
+      
+      // Get presigned URL for this part
+      const partUrlResponse = await fetch('/api/videos/multipart-upload', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uploadId,
+          s3Key,
+          partNumber,
+          contentType: file.type
+        }),
+      });
+
+      if (!partUrlResponse.ok) {
+        throw new Error(`Failed to get upload URL for part ${partNumber}`);
+      }
+
+      const { presignedUrl } = await partUrlResponse.json();
+
+      // Upload the part
+      const uploadResponse = await fetch(presignedUrl, {
+        method: 'PUT',
+        body: partData,
+      });
+
+      if (!uploadResponse.ok) {
+        throw new Error(`Failed to upload part ${partNumber}`);
+      }
+
+      const etag = uploadResponse.headers.get('ETag');
+      if (!etag) {
+        throw new Error(`No ETag received for part ${partNumber}`);
+      }
+
+      parts.push({
+        partNumber,
+        etag: etag.replace(/"/g, '') // Remove quotes from ETag
+      });
+    }
+
+    console.log('🎬 All parts uploaded, completing multipart upload...');
+
+    // Complete multipart upload
+    const completeResponse = await fetch('/api/videos/multipart-upload', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        uploadId,
+        s3Key,
+        parts
+      }),
+    });
+
+    if (!completeResponse.ok) {
+      throw new Error('Failed to complete multipart upload');
+    }
+
+    const result = await completeResponse.json();
+    console.log('🎬 ✅ Multipart upload completed successfully');
+
+    return {
+      s3Key,
+      publicUrl: result.publicUrl || publicUrl
+    };
   };
 
   const addTag = () => {
