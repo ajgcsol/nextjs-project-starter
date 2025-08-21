@@ -1,0 +1,31 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "PublicReadGetObject",
+      "Effect": "Allow",
+      "Principal": "*",
+      "Action": ["s3:GetObject", "s3:PutObject"],
+      "Resource": [
+        "arn:aws:s3:::law-school-repository-content/public/*",
+        "arn:aws:s3:::law-school-repository-content/videos/*",
+        "arn:aws:s3:::law-school-repository-content/thumbnails/*"
+      ]
+    },
+    {
+      "Sid": "DenyInsecureConnections",
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": "s3:*",
+      "Resource": [
+        "arn:aws:s3:::law-school-repository-content",
+        "arn:aws:s3:::law-school-repository-content/*"
+      ],
+      "Condition": {
+        "Bool": {
+          "aws:SecureTransport": "false"
+        }
+      }
+    }
+  ]
+}

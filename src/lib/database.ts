@@ -461,6 +461,128 @@ export const VideoDB = {
     return rows[0];
   },
 
+  // Enhanced update method for S3 keys and media paths
+  async updateMediaPaths(id: string, updates: {
+    s3_key?: string;
+    s3_bucket?: string;
+    file_path?: string;
+    thumbnail_path?: string;
+    thumbnail_s3_key?: string;
+  }) {
+    const fields = Object.keys(updates).filter(key => updates[key as keyof typeof updates] !== undefined);
+    const values = fields.map(key => updates[key as keyof typeof updates]);
+    const setClause = fields.map((field, index) => `${field} = $${index + 2}`).join(', ');
+    
+    if (fields.length === 0) return null;
+
+    console.log(`🔧 Updating media paths for video ${id}:`, updates);
+
+    const { rows } = await query(
+      `UPDATE videos SET ${setClause}, updated_at = CURRENT_TIMESTAMP WHERE id = $1 RETURNING *`,
+      [id, ...values]
+    );
+    
+    if (rows[0]) {
+      console.log(`✅ Successfully updated media paths for video ${id}`);
+    }
+    
+    return rows[0];
+  },
+
+  // Repair database record with discovered S3 keys
+  async repairVideoRecord(videoId: string, videoS3Key?: string, thumbnailS3Key?: string, videoUrl?: string, thumbnailUrl?: string) {
+    const updates: any = {};
+    
+    if (videoS3Key) {
+      updates.s3_key = videoS3Key;
+    }
+    
+    if (videoUrl) {
+      updates.file_path = videoUrl;
+    }
+    
+    if (thumbnailUrl) {
+      updates.thumbnail_path = thumbnailUrl;
+    }
+    
+    // Store thumbnail S3 key in a JSON metadata field if the column doesn't exist
+    // For now, we'll just log it since the schema doesn't have a thumbnail_s3_key column
+    if (thumbnailS3Key) {
+      console.log(`📝 Thumbnail S3 key for video ${videoId}: ${thumbnailS3Key}`);
+    }
+
+    if (Object.keys(updates).length === 0) {
+      console.log(`⚠️ No updates to apply for video ${videoId}`);
+      return null;
+    }
+
+    console.log(`🔧 Repairing video record ${videoId} with:`, updates);
+
+    try {
+      const result = await this.updateMediaPaths(videoId, updates);
+      
+      if (result) {
+        console.log(`✅ Successfully repaired video record ${videoId}`);
+      } else {
+        console.log(`❌ Failed to repair video record ${videoId} - video not found`);
+      }
+      
+      return result;
+    } catch (error) {
+      console.error(`❌ Error repairing video record ${videoId}:`, error);
+      throw error;
+    }
+  },
+
+  // Find videos with missing S3 keys or media paths
+  async findVideosNeedingRepair() {
+    const { rows } = await query(
+      `SELECT id, title, filename, file_path, thumbnail_path, s3_key, s3_bucket, uploaded_at
+       FROM videos 
+       WHERE s3_key IS NULL 
+          OR file_path IS NULL 
+          OR file_path = '' 
+          OR file_path LIKE '#placeholder-%'
+          OR thumbnail_path IS NULL
+          OR thumbnail_path LIKE '/api/videos/thumbnail/%'
+       ORDER BY uploaded_at DESC`,
+      []
+    );
+    return rows;
+  },
+
+  // Batch repair multiple video records
+  async batchRepairVideos(repairs: Array<{
+    videoId: string;
+    videoS3Key?: string;
+    thumbnailS3Key?: string;
+    videoUrl?: string;
+    thumbnailUrl?: string;
+  }>) {
+    const results = [];
+    
+    for (const repair of repairs) {
+      try {
+        const result = await this.repairVideoRecord(
+          repair.videoId,
+          repair.videoS3Key,
+          repair.thumbnailS3Key,
+          repair.videoUrl,
+          repair.thumbnailUrl
+        );
+        results.push({ videoId: repair.videoId, success: !!result, result });
+      } catch (error) {
+        results.push({ 
+          videoId: repair.videoId, 
+          success: false, 
+          error: error instanceof Error ? error.message : 'Unknown error' 
+        });
+      }
+    }
+    
+    return results;
+  },
+
   async delete(id: string) {
     const { rows } = await query('DELETE FROM videos WHERE id = $1 RETURNING *', [id]);
     return rows[0];
@@ -477,6 +599,19 @@ export const VideoDB = {
        ORDER BY rank DESC
        LIMIT $2`,
       [searchTerm, limit]
+    );
+    return rows;
+  },
+
+  async searchByFilename(pattern: string, limit = 10) {
+    const { rows } = await query(
+      `SELECT * FROM videos 
+       WHERE filename ILIKE $1 
+          OR file_path ILIKE $1
+          OR s3_key ILIKE $1
+       ORDER BY uploaded_at DESC
+       LIMIT $2`,
+      [pattern, limit]
     );
     return rows;
   },

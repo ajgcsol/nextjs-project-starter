@@ -1,33 +1,96 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { VideoDB } from '@/lib/database';
 import { AWSFileManager } from '@/lib/aws-integration';
+import { MediaDiscoveryService, ThumbnailResponse } from '@/lib/mediaDiscovery';
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = await params;
+    const { id: videoId } = await params;
+    
+    console.log('🖼️ Thumbnail request for video ID:', videoId);
     
     // Check if video exists and has custom thumbnail
-    const video = await VideoDB.findById(id);
+    const video = await VideoDB.findById(videoId);
     
-    // Check if video has a thumbnail path
+    let thumbnailUrl = '';
+    let discoveryMethod = 'database';
+    let discoveryAttempts: string[] = [];
+    let shouldRepairDatabase = false;
+    let discoveredThumbnailS3Key = '';
+
+    // Priority 1: Use existing thumbnail_path if it's a valid URL
     if (video?.thumbnail_path && video.thumbnail_path.startsWith('http')) {
-      // Redirect to external thumbnail URL (CloudFront or S3)
-      return NextResponse.redirect(video.thumbnail_path);
+      thumbnailUrl = video.thumbnail_path;
+      discoveryMethod = 'database_thumbnail_path';
+      discoveryAttempts.push(`database_thumbnail_path: ${thumbnailUrl}`);
+      console.log('🔗 Using stored thumbnail path:', thumbnailUrl);
+      
+      // Validate the URL works
+      const isValid = await MediaDiscoveryService.validateMediaUrl(thumbnailUrl);
+      if (!isValid) {
+        console.log('⚠️ Database thumbnail path is invalid, falling back to discovery');
+        thumbnailUrl = '';
+        discoveryAttempts.push(`database_thumbnail_path_invalid: ${thumbnailUrl}`);
+      }
     }
-    
-    if (!video) {
-      return generatePlaceholderThumbnail('not-found');
+
+    // Priority 2: Comprehensive thumbnail discovery using MediaDiscoveryService
+    if (!thumbnailUrl) {
+      console.log('🔍 No valid thumbnail URL from database, starting discovery...');
+      
+      const discoveryResult = await MediaDiscoveryService.discoverThumbnail(videoId);
+      
+      if (discoveryResult.found && discoveryResult.url) {
+        thumbnailUrl = discoveryResult.url;
+        discoveryMethod = discoveryResult.method;
+        discoveredThumbnailS3Key = discoveryResult.s3Key || '';
+        shouldRepairDatabase = true;
+        
+        discoveryAttempts.push(`${discoveryResult.method}: ${thumbnailUrl}`);
+        console.log(`✅ Thumbnail discovered via ${discoveryResult.method}:`, thumbnailUrl);
+        
+        // Repair database record with discovered thumbnail information
+        if (shouldRepairDatabase && video) {
+          try {
+            await VideoDB.repairVideoRecord(videoId, undefined, discoveredThumbnailS3Key, undefined, thumbnailUrl);
+            console.log('✅ Database record repaired with discovered thumbnail');
+          } catch (repairError) {
+            console.warn('⚠️ Failed to repair database record with thumbnail:', repairError);
+          }
+        }
+      } else {
+        discoveryAttempts.push(`comprehensive_thumbnail_discovery: failed`);
+        console.log('❌ Comprehensive thumbnail discovery failed');
+      }
     }
-    
-    // Fallback to placeholder
-    return generatePlaceholderThumbnail(id);
+
+    // Priority 3: Generate placeholder if no thumbnail found
+    if (!thumbnailUrl) {
+      console.log('🎨 No thumbnail found, generating placeholder');
+      discoveryMethod = 'placeholder_fallback';
+      discoveryAttempts.push('placeholder_fallback: generated');
+      
+      if (!video) {
+        return generatePlaceholderThumbnail('not-found');
+      }
+      
+      return generatePlaceholderThumbnail(videoId);
+    }
+
+    console.log('✅ Final thumbnail URL:', thumbnailUrl);
+    console.log('📊 Discovery method:', discoveryMethod);
+    console.log('🔍 Discovery attempts:', discoveryAttempts);
+
+    // Redirect to the thumbnail URL
+    return NextResponse.redirect(thumbnailUrl);
 
   } catch (error) {
-    console.error('Thumbnail error:', error);
-    return generatePlaceholderThumbnail('error');
+    console.error('❌ Thumbnail error:', error);
+    const { id } = await params;
+    return generatePlaceholderThumbnail(id || 'error');
   }
 }
 

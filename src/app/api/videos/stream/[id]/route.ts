@@ -1,35 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { VideoDB } from '@/lib/database';
-import { videoMonitor, PerformanceMonitor } from '@/lib/monitoring';
+import { videoMonitor } from '@/lib/monitoring';
+import { MediaDiscoveryService, VideoStreamResponse } from '@/lib/mediaDiscovery';
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const startTime = Date.now();
-  let videoId = '';
-  
   try {
-    const { id } = await params;
-    videoId = id;
+    const { id: videoId } = await params;
     
-    console.log('🎥 Stream request for video ID:', videoId);
+    console.log('🎥 Video stream request for ID:', videoId);
     
-    // Log video request
     await videoMonitor.logVideoRequest(videoId, {
-      userAgent: request.headers.get('user-agent'),
-      referer: request.headers.get('referer'),
-      ip: request.headers.get('x-forwarded-for') || 'unknown'
+      timestamp: new Date().toISOString(),
+      userAgent: request.headers.get('user-agent') || 'unknown'
     });
-    
-    // Get video from database with performance monitoring
-    const video = await PerformanceMonitor.measureAsync(
-      `database-lookup-${videoId}`,
-      () => VideoDB.findById(videoId)
-    );
+
+    // Get video from database
+    const video = await VideoDB.findById(videoId);
     
     if (!video) {
-      console.log('❌ Video not found:', videoId);
+      console.log('❌ Video not found in database:', videoId);
       await videoMonitor.logVideoError(videoId, 'Video not found in database');
       return NextResponse.json(
         { error: 'Video not found' },
@@ -37,120 +29,231 @@ export async function GET(
       );
     }
 
-    console.log('✅ Video found:', {
+    console.log('📹 Found video in database:', {
       id: video.id,
       title: video.title,
+      s3_key: video.s3_key,
       file_path: video.file_path,
-      s3_key: video.s3_key
+      is_processed: video.is_processed
     });
 
-    // Get the actual S3 URL - prefer direct S3 URL over CloudFront for now
-    let videoUrl = video.file_path;
-    
-    // If we have S3 key, construct direct S3 URL
-    if (video.s3_key && video.s3_bucket) {
-      const region = process.env.AWS_REGION || 'us-east-1';
-      videoUrl = `https://${video.s3_bucket}.s3.${region}.amazonaws.com/${video.s3_key}`;
-      console.log('🔗 Using direct S3 URL:', videoUrl);
-    } else if (video.file_path) {
+    let videoUrl = '';
+    let discoveryMethod = 'database';
+    let discoveryAttempts: string[] = [];
+    let shouldRepairDatabase = false;
+    let discoveredS3Key = '';
+
+    // Priority 1: Use existing S3 key to construct CloudFront URL
+    if (video.s3_key) {
+      const cloudFrontDomain = process.env.CLOUDFRONT_DOMAIN || 'd24qjgz9z4yzof.cloudfront.net';
+      videoUrl = `https://${cloudFrontDomain}/${video.s3_key}`;
+      discoveryMethod = 'database_s3_key';
+      discoveryAttempts.push(`database_s3_key: ${videoUrl}`);
+      console.log('🔗 Using CloudFront URL from database S3 key:', videoUrl);
+      
+      // Validate the URL works
+      const isValid = await MediaDiscoveryService.validateMediaUrl(videoUrl);
+      if (!isValid) {
+        console.log('⚠️ Database S3 key URL is invalid, falling back to discovery');
+        videoUrl = '';
+        discoveryAttempts.push(`database_s3_key_invalid: ${videoUrl}`);
+      }
+    }
+
+    // Priority 2: Use stored file_path if it looks like a valid CloudFront/S3 URL
+    if (!videoUrl && video.file_path && (
+      video.file_path.includes('cloudfront.net') || 
+      video.file_path.includes('amazonaws.com') ||
+      video.file_path.startsWith('https://')
+    )) {
       videoUrl = video.file_path;
+      discoveryMethod = 'database_file_path';
+      discoveryAttempts.push(`database_file_path: ${videoUrl}`);
       console.log('🔗 Using stored file path:', videoUrl);
-    } else {
-      console.log('❌ No video URL available');
-      await videoMonitor.logVideoError(videoId, 'No video URL available');
-      return NextResponse.json(
-        { error: 'Video URL not available' },
-        { status: 404 }
-      );
+      
+      // Validate the URL works
+      const isValid = await MediaDiscoveryService.validateMediaUrl(videoUrl);
+      if (!isValid) {
+        console.log('⚠️ Database file path URL is invalid, falling back to discovery');
+        videoUrl = '';
+        discoveryAttempts.push(`database_file_path_invalid: ${videoUrl}`);
+      }
     }
 
-    // Both IAM user and CloudFront lack S3 access permissions
-    // Create a temporary workaround by generating a presigned URL for downloads
-    // This uses the same mechanism as uploads but for GET operations
-    
-    try {
-      console.log('🔐 Attempting to generate presigned download URL...');
+    // Priority 3: Comprehensive video discovery using MediaDiscoveryService
+    if (!videoUrl) {
+      console.log('🔍 No valid URL from database, starting comprehensive discovery...');
       
-      // Import AWS SDK
-      const { S3Client, GetObjectCommand } = await import('@aws-sdk/client-s3');
-      const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
+      const discoveryResult = await MediaDiscoveryService.discoverVideo(videoId);
       
-      const s3Client = new S3Client({
-        region: process.env.AWS_REGION || 'us-east-1',
-        credentials: {
-          accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-          secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
-        },
-      });
-
-      const command = new GetObjectCommand({
-        Bucket: video.s3_bucket || process.env.S3_BUCKET_NAME!,
-        Key: video.s3_key,
-      });
-
-      // Generate presigned URL for download (valid for 1 hour)
-      const presignedUrl = await getSignedUrl(s3Client, command, { expiresIn: 3600 });
-      
-      console.log('✅ Generated presigned download URL, redirecting...');
-      
-      const responseTime = Date.now() - startTime;
-      await videoMonitor.logVideoSuccess(videoId, presignedUrl, responseTime);
-      
-      // Redirect to presigned URL
-      return NextResponse.redirect(presignedUrl, {
-        status: 302,
-        headers: {
-          'Cache-Control': 'public, max-age=3600', // Cache for 1 hour
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
-          'Access-Control-Allow-Headers': 'Range, Content-Range, Content-Length, Content-Type'
+      if (discoveryResult.found && discoveryResult.url) {
+        videoUrl = discoveryResult.url;
+        discoveryMethod = discoveryResult.method;
+        discoveredS3Key = discoveryResult.s3Key || '';
+        shouldRepairDatabase = true;
+        
+        discoveryAttempts.push(`${discoveryResult.method}: ${videoUrl}`);
+        console.log(`✅ Video discovered via ${discoveryResult.method}:`, videoUrl);
+        
+        // Repair database record with discovered information
+        if (shouldRepairDatabase && discoveredS3Key) {
+          try {
+            await VideoDB.repairVideoRecord(videoId, discoveredS3Key, undefined, videoUrl, undefined);
+            console.log('✅ Database record repaired with discovered S3 key');
+          } catch (repairError) {
+            console.warn('⚠️ Failed to repair database record:', repairError);
+          }
         }
-      });
-      
-    } catch (presignedError) {
-      console.error('❌ Error generating presigned download URL:', presignedError);
-      
-      await videoMonitor.logVideoError(videoId, 'Presigned URL generation failed', {
-        error: presignedError instanceof Error ? presignedError.message : String(presignedError),
-        s3Key: video?.s3_key,
-        bucket: video?.s3_bucket
-      });
-      
-      // If presigned URL fails, return a helpful error message
-      return NextResponse.json(
-        { 
-          error: 'Video access temporarily unavailable',
-          details: 'AWS permissions need to be configured for video playback',
-          suggestion: 'Contact administrator to configure S3 bucket permissions or CloudFront Origin Access Control'
-        },
-        { status: 503 }
-      );
+      } else {
+        discoveryAttempts.push(`comprehensive_discovery: failed`);
+        console.log('❌ Comprehensive discovery failed');
+      }
     }
+
+    // Priority 4: Generate presigned URL as absolute last resort
+    if (!videoUrl && (video.s3_key || discoveredS3Key)) {
+      try {
+        console.log('🔐 Generating presigned URL as last resort...');
+        const s3Key = video.s3_key || discoveredS3Key;
+        
+        videoUrl = await MediaDiscoveryService.generatePresignedFallback(s3Key);
+        discoveryMethod = 'presigned_fallback';
+        discoveryAttempts.push(`presigned_fallback: ${s3Key}`);
+        console.log('✅ Generated presigned URL as fallback');
+        
+      } catch (presignedError) {
+        console.error('❌ Failed to generate presigned URL:', presignedError);
+        discoveryAttempts.push(`presigned_fallback: failed`);
+      }
+    }
+
+    // If still no URL found, return comprehensive error
+    if (!videoUrl) {
+      console.log('❌ All video discovery methods failed');
+      
+      const errorResponse: VideoStreamResponse = {
+        success: false,
+        error: 'Video URL not available after comprehensive discovery',
+        metadata: {
+          discoveryAttempts,
+          s3Key: video.s3_key,
+          directUrl: video.file_path
+        }
+      };
+      
+      await videoMonitor.logVideoError(videoId, 'All discovery methods failed', {
+        videoData: {
+          id: video.id,
+          s3_key: video.s3_key,
+          file_path: video.file_path,
+          s3_bucket: video.s3_bucket
+        },
+        discoveryAttempts
+      });
+      
+      return NextResponse.json(errorResponse, { status: 404 });
+    }
+
+    console.log('✅ Final video URL:', videoUrl);
+    console.log('📊 Discovery method:', discoveryMethod);
+    console.log('🔍 Discovery attempts:', discoveryAttempts);
+
+    // Log successful stream
+    await videoMonitor.logVideoSuccess(videoId, videoUrl, Date.now());
+
+    // Increment view count
+    try {
+      await VideoDB.incrementViews(videoId);
+    } catch (viewError) {
+      console.warn('⚠️ Failed to increment view count:', viewError);
+    }
+
+    // Return redirect to the video URL
+    return NextResponse.redirect(videoUrl);
 
   } catch (error) {
-    console.error('❌ Stream error:', error);
+    console.error('❌ Video stream error:', error);
     
-    await videoMonitor.logVideoError(videoId || 'unknown', 'Stream endpoint error', {
-      error: error instanceof Error ? error.message : String(error),
-      stack: error instanceof Error ? error.stack : undefined
+    const { id: videoId } = await params;
+    await videoMonitor.logVideoError(videoId, 'Stream endpoint error', {
+      error: error instanceof Error ? error.message : 'Unknown error'
     });
     
-    return NextResponse.json(
-      { error: 'Failed to stream video' },
-      { status: 500 }
-    );
+    const errorResponse: VideoStreamResponse = {
+      success: false,
+      error: 'Failed to stream video',
+      metadata: {
+        discoveryAttempts: ['endpoint_error'],
+        directUrl: error instanceof Error ? error.message : 'Unknown error'
+      }
+    };
+    
+    return NextResponse.json(errorResponse, { status: 500 });
   }
 }
 
-// Handle OPTIONS for CORS
-export async function OPTIONS() {
-  return new NextResponse(null, {
-    status: 200,
-    headers: {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
-      'Access-Control-Allow-Headers': 'Range, Content-Range, Content-Length, Content-Type',
-      'Access-Control-Max-Age': '86400'
+// Add a POST endpoint for manual video URL testing/repair
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id: videoId } = await params;
+    const body = await request.json();
+    const { action } = body;
+
+    if (action === 'discover') {
+      console.log('🔍 Manual discovery request for video:', videoId);
+      
+      // Perform comprehensive discovery
+      const discoveryResult = await MediaDiscoveryService.discoverVideo(videoId);
+      
+      if (discoveryResult.found && discoveryResult.url && discoveryResult.s3Key) {
+        // Repair database record
+        try {
+          await VideoDB.repairVideoRecord(videoId, discoveryResult.s3Key, undefined, discoveryResult.url, undefined);
+          
+          return NextResponse.json({
+            success: true,
+            discovered: true,
+            repaired: true,
+            videoUrl: discoveryResult.url,
+            s3Key: discoveryResult.s3Key,
+            method: discoveryResult.method
+          });
+        } catch (repairError) {
+          return NextResponse.json({
+            success: true,
+            discovered: true,
+            repaired: false,
+            videoUrl: discoveryResult.url,
+            s3Key: discoveryResult.s3Key,
+            method: discoveryResult.method,
+            repairError: repairError instanceof Error ? repairError.message : 'Unknown error'
+          });
+        }
+      } else {
+        return NextResponse.json({
+          success: false,
+          discovered: false,
+          error: 'Video not found through discovery methods'
+        });
+      }
     }
-  });
+
+    return NextResponse.json(
+      { error: 'Invalid action. Use "discover".' },
+      { status: 400 }
+    );
+
+  } catch (error) {
+    console.error('❌ Manual discovery error:', error);
+    return NextResponse.json(
+      { 
+        error: 'Discovery failed',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      },
+      { status: 500 }
+    );
+  }
 }
