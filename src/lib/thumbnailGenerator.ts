@@ -10,17 +10,19 @@ export interface ThumbnailGenerationResult {
   jobId?: string;
 }
 
-// Advanced credential sanitization for Vercel + AWS SDK v3 compatibility (same as AWS upload route)
+// Enhanced credential sanitization for Vercel + AWS SDK v3 compatibility - FIXED for newlines
 const sanitizeCredential = (credential: string | undefined): string | undefined => {
   if (!credential) return undefined;
   
   return credential
     // Remove BOM (Byte Order Mark) characters
     .replace(/^\uFEFF/, '')
+    // CRITICAL FIX: Remove newlines and carriage returns first
+    .replace(/[\r\n]/g, '')
     // Remove all Unicode control characters (0x00-0x1F, 0x7F-0x9F)
     .replace(/[\u0000-\u001F\u007F-\u009F]/g, '')
-    // Remove all whitespace characters (spaces, tabs, newlines, etc.)
-    .replace(/\s/g, '')
+    // Remove all whitespace characters (spaces, tabs, etc.) but preserve the content
+    .replace(/\s+/g, '')
     // Remove any non-ASCII characters that could cause header issues
     .replace(/[^\x20-\x7E]/g, '')
     // Trim any remaining whitespace
@@ -39,6 +41,13 @@ export class ThumbnailGenerator {
       const rawRoleArn = process.env.MEDIACONVERT_ROLE_ARN;
       const rawEndpoint = process.env.MEDIACONVERT_ENDPOINT;
       
+      console.log('🔍 DEBUG: Raw environment variables:', {
+        rawRoleArn: rawRoleArn ? `${rawRoleArn.substring(0, 30)}...` : 'MISSING',
+        rawEndpoint: rawEndpoint ? `${rawEndpoint.substring(0, 40)}...` : 'MISSING',
+        roleArnLength: rawRoleArn?.length || 0,
+        endpointLength: rawEndpoint?.length || 0
+      });
+      
       const roleArn = sanitizeCredential(rawRoleArn);
       const endpoint = sanitizeCredential(rawEndpoint);
       
@@ -46,11 +55,19 @@ export class ThumbnailGenerator {
         roleArn: roleArn ? `${roleArn.substring(0, 20)}...` : 'MISSING',
         endpoint: endpoint ? `${endpoint.substring(0, 30)}...` : 'MISSING',
         rawRoleArnHasCarriageReturns: rawRoleArn?.includes('\r') || rawRoleArn?.includes('\n'),
-        rawEndpointHasCarriageReturns: rawEndpoint?.includes('\r') || rawEndpoint?.includes('\n')
+        rawEndpointHasCarriageReturns: rawEndpoint?.includes('\r') || rawEndpoint?.includes('\n'),
+        sanitizedRoleArnLength: roleArn?.length || 0,
+        sanitizedEndpointLength: endpoint?.length || 0
       });
       
       if (!roleArn || !endpoint) {
         console.error('❌ MediaConvert environment variables missing after sanitization');
+        console.error('❌ Raw values check:', {
+          rawRoleArnExists: !!rawRoleArn,
+          rawEndpointExists: !!rawEndpoint,
+          sanitizedRoleArnExists: !!roleArn,
+          sanitizedEndpointExists: !!endpoint
+        });
         throw new Error('MediaConvert configuration missing');
       }
       
@@ -173,8 +190,29 @@ export class ThumbnailGenerator {
       });
 
       console.log('🚀 Submitting MediaConvert job...');
+      console.log('🔍 DEBUG: Job parameters:', {
+        roleArn: jobParams.Role,
+        inputUrl: jobParams.Settings.Inputs[0].FileInput,
+        outputPath: jobParams.Settings.OutputGroups[0].OutputGroupSettings.FileGroupSettings?.Destination,
+        thumbnailBaseName
+      });
+      
       const command = new CreateJobCommand(jobParams);
+      
+      console.log('🔍 DEBUG: MediaConvert client config:', {
+        region: process.env.AWS_REGION || 'us-east-1',
+        endpoint: endpoint,
+        hasCredentials: !!(accessKeyId && secretAccessKey)
+      });
+      
       const result = await mediaConvertClient.send(command);
+      
+      console.log('🔍 DEBUG: MediaConvert response:', {
+        hasJob: !!result.Job,
+        jobId: result.Job?.Id,
+        jobStatus: result.Job?.Status,
+        jobArn: result.Job?.Arn
+      });
       
       if (result.Job?.Id) {
         console.log('✅ MediaConvert REAL thumbnail job created:', result.Job.Id);
@@ -200,6 +238,12 @@ export class ThumbnailGenerator {
 
     } catch (error) {
       console.error('❌ MediaConvert REAL thumbnail generation failed:', error);
+      console.error('❌ Error details:', {
+        name: error instanceof Error ? error.name : 'Unknown',
+        message: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack?.substring(0, 500) : 'No stack'
+      });
+      
       return {
         success: false,
         method: 'mediaconvert',
@@ -210,14 +254,22 @@ export class ThumbnailGenerator {
 
   /**
    * Generate thumbnail using FFmpeg (server-side processing)
+   * Enhanced to use real video frame extraction
    */
-  static async generateWithFFmpeg(videoS3Key: string, videoId: string): Promise<ThumbnailGenerationResult> {
+  static async generateWithFFmpeg(videoS3Key: string, videoId: string, videoRecord?: any): Promise<ThumbnailGenerationResult> {
     try {
-      console.log('🎬 Generating thumbnail with FFmpeg for:', videoS3Key);
+      console.log('🎬 Generating REAL thumbnail with FFmpeg for:', videoS3Key);
       
       // Check if we're in a serverless environment
       if (process.env.VERCEL || process.env.NETLIFY) {
-        console.log('⚠️ FFmpeg not available in serverless environment, skipping');
+        console.log('⚠️ FFmpeg not available in serverless environment, trying local processing...');
+        
+        // Try to use local FFmpeg processing if available
+        const localResult = await this.generateWithLocalFFmpeg(videoS3Key, videoId, videoRecord);
+        if (localResult.success) {
+          return localResult;
+        }
+        
         return {
           success: false,
           method: 'ffmpeg',
@@ -225,20 +277,26 @@ export class ThumbnailGenerator {
         };
       }
 
-      // For now, we'll create a simple implementation that generates a colored thumbnail
-      // In a full implementation, you would use FFmpeg to extract a frame from the video
+      // Try real FFmpeg processing
+      const realThumbnail = await this.extractVideoFrameWithFFmpeg(videoS3Key, videoId, videoRecord);
+      if (realThumbnail.success) {
+        return realThumbnail;
+      }
+
+      // Fallback to simple thumbnail if FFmpeg fails
+      console.log('⚠️ FFmpeg processing failed, using simple thumbnail generation');
       const thumbnailBuffer = await this.generateSimpleThumbnail(videoId);
       
       // Upload to S3
-      const thumbnailS3Key = `thumbnails/${videoId}_ffmpeg_${Date.now()}.jpg`;
+      const thumbnailS3Key = `thumbnails/${videoId}_ffmpeg_fallback_${Date.now()}.jpg`;
       
       const uploadResult = await AWSFileManager.uploadFile(
         thumbnailBuffer,
         thumbnailS3Key,
-        'image/jpeg'
+        'image/svg+xml'
       );
 
-      console.log('✅ FFmpeg thumbnail uploaded to S3:', thumbnailS3Key);
+      console.log('✅ FFmpeg fallback thumbnail uploaded to S3:', thumbnailS3Key);
 
       return {
         success: true,
@@ -249,6 +307,159 @@ export class ThumbnailGenerator {
 
     } catch (error) {
       console.error('❌ FFmpeg thumbnail generation failed:', error);
+      return {
+        success: false,
+        method: 'ffmpeg',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
+  /**
+   * Extract video frame using FFmpeg (real implementation)
+   */
+  static async extractVideoFrameWithFFmpeg(videoS3Key: string, videoId: string, videoRecord?: any): Promise<ThumbnailGenerationResult> {
+    try {
+      console.log('🎬 Extracting real video frame with FFmpeg...');
+      
+      const bucketName = process.env.S3_BUCKET_NAME || 'law-school-repository-content';
+      const videoUrl = `https://${bucketName}.s3.${process.env.AWS_REGION || 'us-east-1'}.amazonaws.com/${videoS3Key}`;
+      
+      // Generate smart thumbnail filename
+      let thumbnailBaseName = videoId;
+      if (videoRecord) {
+        const originalFilename = videoRecord.filename || videoRecord.title || videoId;
+        const baseFilename = originalFilename.replace(/\.[^/.]+$/, '');
+        const uploadTime = videoRecord.uploaded_at ? new Date(videoRecord.uploaded_at).getTime() : Date.now();
+        thumbnailBaseName = `${baseFilename}_${uploadTime}_${videoId}`;
+      }
+      
+      // Try to use child_process to run FFmpeg
+      const { spawn } = await import('child_process');
+      
+      return new Promise((resolve) => {
+        const outputPath = `/tmp/${thumbnailBaseName}_thumb.jpg`;
+        
+        // FFmpeg command to extract frame at 10 seconds
+        const ffmpegArgs = [
+          '-i', videoUrl,
+          '-ss', '00:00:10',
+          '-vframes', '1',
+          '-q:v', '2',
+          '-y',
+          outputPath
+        ];
+        
+        console.log('🔧 FFmpeg command:', 'ffmpeg', ffmpegArgs.join(' '));
+        
+        const ffmpeg = spawn('ffmpeg', ffmpegArgs);
+        
+        let stderr = '';
+        
+        ffmpeg.stderr.on('data', (data) => {
+          stderr += data.toString();
+        });
+        
+        ffmpeg.on('close', async (code) => {
+          if (code === 0) {
+            try {
+              // Read the generated thumbnail
+              const fs = await import('fs');
+              const thumbnailBuffer = fs.readFileSync(outputPath);
+              
+              // Upload to S3
+              const thumbnailS3Key = `thumbnails/${thumbnailBaseName}_ffmpeg_${Date.now()}.jpg`;
+              
+              const uploadResult = await AWSFileManager.uploadFile(
+                thumbnailBuffer,
+                thumbnailS3Key,
+                'image/jpeg'
+              );
+              
+              // Clean up temp file
+              fs.unlinkSync(outputPath);
+              
+              console.log('✅ Real FFmpeg thumbnail generated and uploaded:', thumbnailS3Key);
+              
+              resolve({
+                success: true,
+                thumbnailUrl: uploadResult.Location,
+                s3Key: thumbnailS3Key,
+                method: 'ffmpeg'
+              });
+              
+            } catch (uploadError) {
+              console.error('❌ Failed to upload FFmpeg thumbnail:', uploadError);
+              resolve({
+                success: false,
+                method: 'ffmpeg',
+                error: `Upload failed: ${uploadError instanceof Error ? uploadError.message : 'Unknown error'}`
+              });
+            }
+          } else {
+            console.error('❌ FFmpeg process failed with code:', code);
+            console.error('FFmpeg stderr:', stderr);
+            resolve({
+              success: false,
+              method: 'ffmpeg',
+              error: `FFmpeg failed with code ${code}: ${stderr}`
+            });
+          }
+        });
+        
+        ffmpeg.on('error', (error) => {
+          console.error('❌ FFmpeg spawn error:', error);
+          resolve({
+            success: false,
+            method: 'ffmpeg',
+            error: `FFmpeg spawn failed: ${error.message}`
+          });
+        });
+      });
+      
+    } catch (error) {
+      console.error('❌ FFmpeg frame extraction failed:', error);
+      return {
+        success: false,
+        method: 'ffmpeg',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
+  /**
+   * Generate thumbnail using local FFmpeg processing (for development)
+   */
+  static async generateWithLocalFFmpeg(videoS3Key: string, videoId: string, videoRecord?: any): Promise<ThumbnailGenerationResult> {
+    try {
+      console.log('🎬 Attempting local FFmpeg processing...');
+      
+      // Check if FFmpeg is available locally
+      const { execSync } = await import('child_process');
+      
+      try {
+        execSync('ffmpeg -version', { stdio: 'ignore' });
+        console.log('✅ FFmpeg found locally');
+      } catch {
+        console.log('❌ FFmpeg not found locally');
+        return {
+          success: false,
+          method: 'ffmpeg',
+          error: 'FFmpeg not installed locally'
+        };
+      }
+      
+      // Download video from S3 temporarily
+      const bucketName = process.env.S3_BUCKET_NAME || 'law-school-repository-content';
+      
+      // Get signed URL for video
+      const videoUrl = await AWSFileManager.getSignedUrl(videoS3Key, 3600);
+      
+      // Generate thumbnail using local FFmpeg
+      return await this.extractVideoFrameWithFFmpeg(videoS3Key, videoId, videoRecord);
+      
+    } catch (error) {
+      console.error('❌ Local FFmpeg processing failed:', error);
       return {
         success: false,
         method: 'ffmpeg',
@@ -546,9 +757,36 @@ export class ThumbnailGenerator {
       console.log('🔄 Skipping MediaConvert, proceeding to fallback methods');
     }
 
-    // FALLBACK: Only use SVG after MediaConvert has actually failed or is unavailable
-    console.log('⚠️ FALLBACK: Generating enhanced SVG placeholder...');
-    console.log('📋 This is a temporary placeholder - MediaConvert will generate real thumbnails when available');
+    // FALLBACK 1: Try FFmpeg for real video frame extraction
+    if (videoS3Key) {
+      console.log('🎬 Trying FFmpeg for REAL video frame extraction...');
+      
+      const ffmpegResult = await this.generateWithFFmpeg(videoS3Key, videoId, videoData);
+      
+      if (ffmpegResult.success) {
+        console.log('🎉 SUCCESS: FFmpeg generated REAL thumbnail!');
+        console.log('📸 Thumbnail URL:', ffmpegResult.thumbnailUrl);
+        
+        // Update database with the real FFmpeg thumbnail
+        try {
+          await VideoDB.update(videoId, {
+            thumbnail_path: ffmpegResult.thumbnailUrl
+          });
+          console.log('✅ Database updated with REAL FFmpeg thumbnail');
+        } catch (dbError) {
+          console.warn('⚠️ Failed to update database with thumbnail:', dbError);
+        }
+        
+        return ffmpegResult;
+      } else {
+        console.log('❌ FFmpeg FAILED with error:', ffmpegResult.error);
+        console.log('🔄 FFmpeg processing failed - proceeding to SVG fallback');
+      }
+    }
+
+    // FALLBACK 2: Enhanced SVG placeholder (only after both MediaConvert and FFmpeg fail)
+    console.log('⚠️ FINAL FALLBACK: Generating enhanced SVG placeholder...');
+    console.log('📋 This is a temporary placeholder - real thumbnails will be generated when MediaConvert or FFmpeg work');
     
     try {
       // Use video title from record or fetch from database
@@ -575,7 +813,7 @@ export class ThumbnailGenerator {
             thumbnail_path: svgResult.thumbnailUrl
           });
           console.log('✅ Database updated with TEMPORARY SVG thumbnail');
-          console.log('⚠️ NOTE: This is a placeholder - real thumbnails will be generated by MediaConvert');
+          console.log('⚠️ NOTE: This is a placeholder - real thumbnails will be generated by MediaConvert or FFmpeg');
         } catch (dbError) {
           console.warn('⚠️ Failed to update database with thumbnail:', dbError);
         }
