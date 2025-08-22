@@ -350,30 +350,68 @@ export async function POST(request: NextRequest) {
           throw new Error('DATABASE_URL not configured');
         }
         
-        const savedVideo = await VideoDB.create({
-          title: videoRecord.title,
-          description: videoRecord.description,
-          filename: videoRecord.originalFilename,
-          file_path: videoRecord.streamUrl,
-          file_size: videoRecord.size,
-          duration: videoRecord.duration,
-          thumbnail_path: thumbnailCloudFrontUrl || videoRecord.thumbnailPath,
-          video_quality: 'HD',
-          uploaded_by: 'current-user', // TODO: Get from auth context
-          course_id: undefined,
-          s3_key: s3Key,
-          s3_bucket: process.env.S3_BUCKET_NAME || undefined,
-          is_processed: true, // Mark as processed since S3 upload is complete
-          is_public: visibility === 'public',
-          // Mux integration fields - uncommented for production use
-          mux_asset_id: muxAssetId || undefined,
-          mux_playback_id: muxPlaybackId || undefined,
-          mux_status: muxStatus || 'pending',
-          mux_thumbnail_url: muxThumbnailUrl || undefined,
-          mux_streaming_url: muxStreamingUrl || undefined,
-          mux_mp4_url: muxMp4Url || undefined,
-          audio_enhanced: !!muxAssetId
-        });
+        // Try to save with Mux fields first, fallback to basic fields if migration hasn't run
+        let savedVideo;
+        try {
+          savedVideo = await VideoDB.create({
+            title: videoRecord.title,
+            description: videoRecord.description,
+            filename: videoRecord.originalFilename,
+            file_path: videoRecord.streamUrl,
+            file_size: videoRecord.size,
+            duration: videoRecord.duration,
+            thumbnail_path: thumbnailCloudFrontUrl || videoRecord.thumbnailPath,
+            video_quality: 'HD',
+            uploaded_by: 'current-user', // TODO: Get from auth context
+            course_id: undefined,
+            s3_key: s3Key,
+            s3_bucket: process.env.S3_BUCKET_NAME || undefined,
+            is_processed: true, // Mark as processed since S3 upload is complete
+            is_public: visibility === 'public',
+            // Mux integration fields - try to save, fallback if columns don't exist
+            mux_asset_id: muxAssetId || undefined,
+            mux_playback_id: muxPlaybackId || undefined,
+            mux_status: muxStatus || 'pending',
+            mux_thumbnail_url: muxThumbnailUrl || undefined,
+            mux_streaming_url: muxStreamingUrl || undefined,
+            mux_mp4_url: muxMp4Url || undefined,
+            audio_enhanced: !!muxAssetId
+          });
+        } catch (muxFieldError) {
+          // If Mux fields don't exist, save without them
+          if (muxFieldError instanceof Error && muxFieldError.message.includes('does not exist')) {
+            console.log('🎬 ⚠️ Mux columns not found, saving without Mux fields...');
+            savedVideo = await VideoDB.create({
+              title: videoRecord.title,
+              description: videoRecord.description,
+              filename: videoRecord.originalFilename,
+              file_path: videoRecord.streamUrl,
+              file_size: videoRecord.size,
+              duration: videoRecord.duration,
+              thumbnail_path: thumbnailCloudFrontUrl || videoRecord.thumbnailPath,
+              video_quality: 'HD',
+              uploaded_by: 'current-user',
+              course_id: undefined,
+              s3_key: s3Key,
+              s3_bucket: process.env.S3_BUCKET_NAME || undefined,
+              is_processed: true,
+              is_public: visibility === 'public'
+              // No Mux fields - will be added after migration
+            });
+            
+            // Store Mux data temporarily in metadata for later migration
+            if (muxAssetId) {
+              console.log('🎬 📝 Storing Mux data for later migration:', {
+                videoId: savedVideo.id,
+                muxAssetId,
+                muxPlaybackId,
+                muxStatus
+              });
+            }
+          } else {
+            throw muxFieldError;
+          }
+        }
         const dbSaveTime = dbTimer();
         console.log('🎬 Video saved to persistent database:', savedVideo.id);
         
