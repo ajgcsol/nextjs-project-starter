@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import path from 'path';
+import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
-import crypto from 'crypto';
+import * as crypto from 'crypto';
 import { VideoDB } from '@/lib/database';
 import { videoMonitor, PerformanceMonitor } from '@/lib/monitoring';
 import { VideoConverter } from '@/lib/videoConverter';
+import MuxVideoProcessor from '@/lib/mux-video-processor';
 import { ThumbnailGenerator } from '@/lib/thumbnailGenerator';
 
 // For serverless environment, we'll skip local file storage
@@ -92,35 +93,117 @@ export async function POST(request: NextRequest) {
         fileExtension: filename.toLowerCase().split('.').pop()
       });
 
-      // Handle video conversion if needed
-      let finalS3Key = s3Key;
-      let conversionStatus = 'not-needed';
+      // Create comprehensive Mux asset with all processing (replaces MediaConvert)
+      let muxAssetId = null;
+      let muxPlaybackId = null;
+      let muxThumbnailUrl = null;
+      let muxStreamingUrl = null;
+      let muxMp4Url = null;
+      let muxStatus = 'pending';
       
-      if (needsConversion) {
+      try {
+        console.log('🎬 🎭 Creating comprehensive Mux asset for:', filename);
+        
+        // Get processing options for pay-as-you-go plan
+        const processingOptions = MuxVideoProcessor.getDefaultProcessingOptions();
+        
+        // Create Mux asset from S3 URL with full processing pipeline
+        const muxResult = await MuxVideoProcessor.createAssetFromS3(s3Key, fileId, processingOptions);
+        
+        if (muxResult.success) {
+          muxAssetId = muxResult.assetId;
+          muxPlaybackId = muxResult.playbackId;
+          muxThumbnailUrl = muxResult.thumbnailUrl;
+          muxStreamingUrl = muxResult.streamingUrl;
+          muxMp4Url = muxResult.mp4Url;
+          muxStatus = muxResult.processingStatus;
+          
+          console.log('🎬 ✅ Mux asset created successfully:', {
+            assetId: muxAssetId,
+            playbackId: muxPlaybackId,
+            status: muxStatus,
+            thumbnailUrl: muxThumbnailUrl
+          });
+          
+          await videoMonitor.logUploadEvent('Mux asset created', {
+            assetId: muxAssetId,
+            playbackId: muxPlaybackId,
+            status: muxStatus,
+            features: ['video_conversion', 'thumbnail_generation', 'audio_enhancement', 'transcription']
+          });
+          
+          // Trigger automatic audio enhancement
+          if (processingOptions.enhanceAudio && muxAssetId) {
+            console.log('🎵 Starting automatic audio enhancement...');
+            MuxVideoProcessor.enhanceAudio(muxAssetId).then(result => {
+              if (result.success) {
+                console.log('🎵 ✅ Audio enhancement completed:', result.enhancedAudioUrl);
+              } else {
+                console.error('🎵 ❌ Audio enhancement failed:', result.error);
+              }
+            }).catch(error => {
+              console.error('🎵 ⚠️ Audio enhancement error:', error);
+            });
+          }
+          
+          // Trigger automatic caption generation
+          if (processingOptions.generateCaptions && muxAssetId) {
+            console.log('📝 Starting automatic caption generation...');
+            MuxVideoProcessor.generateCaptions(muxAssetId, {
+              language: processingOptions.captionLanguage,
+              generateVtt: true,
+              generateSrt: true
+            }).then(result => {
+              if (result.success) {
+                console.log('📝 ✅ Caption generation completed:', {
+                  vttUrl: result.vttUrl,
+                  srtUrl: result.srtUrl,
+                  confidence: result.confidence
+                });
+              } else {
+                console.error('📝 ❌ Caption generation failed:', result.error);
+              }
+            }).catch(error => {
+              console.error('📝 ⚠️ Caption generation error:', error);
+            });
+          }
+          
+        } else {
+          console.error('🎬 ❌ Mux asset creation failed:', muxResult.error);
+          await videoMonitor.logUploadEvent('Mux asset creation failed', {
+            error: muxResult.error,
+            fallback: 'continuing_without_mux'
+          });
+          // Continue with upload but without Mux processing
+        }
+      } catch (muxError) {
+        console.error('🎬 ⚠️ Mux processing failed, but continuing:', muxError);
+        await videoMonitor.logUploadEvent('Mux processing error', {
+          error: muxError instanceof Error ? muxError.message : 'Unknown error',
+          fallback: 'continuing_without_mux'
+        });
+        // Don't fail the entire upload if Mux processing fails
+      }
+
+      // Legacy video conversion handling (now as fallback)
+      let finalS3Key = s3Key;
+      let conversionStatus = muxAssetId ? 'mux-handled' : 'not-needed';
+      
+      if (needsConversion && !muxAssetId) {
         try {
-          console.log('🎬 ⚙️ Starting video conversion for web compatibility...');
-          await videoMonitor.logUploadEvent('Video conversion started', {
+          console.log('🎬 ⚙️ Starting fallback video conversion (Mux unavailable)...');
+          await videoMonitor.logUploadEvent('Fallback video conversion started', {
             originalFormat: filename.split('.').pop(),
             inputS3Key: s3Key,
-            reason: 'web-compatibility'
+            reason: 'mux-unavailable-fallback'
           });
 
-          // For now, we'll mark it as needing conversion but use the original file
-          // In production with MediaConvert configured, this would trigger actual conversion
+          // Mark as needing conversion but use the original file
           conversionStatus = 'pending';
-          console.log('🎬 📝 Video marked for conversion (MediaConvert setup required)');
-          
-          await videoMonitor.logUploadEvent('Video conversion queued', {
-            status: 'pending',
-            note: 'MediaConvert configuration required for actual conversion'
-          });
+          console.log('🎬 📝 Video marked for fallback conversion');
           
         } catch (conversionError) {
-          console.error('🎬 ❌ Video conversion failed:', conversionError);
-          await videoMonitor.logUploadEvent('Video conversion failed', {
-            error: conversionError instanceof Error ? conversionError.message : 'Unknown error'
-          });
-          // Continue with original file
+          console.error('🎬 ❌ Fallback video conversion failed:', conversionError);
           conversionStatus = 'failed';
         }
       }
@@ -282,6 +365,14 @@ export async function POST(request: NextRequest) {
           s3_bucket: process.env.S3_BUCKET_NAME || undefined,
           is_processed: true, // Mark as processed since S3 upload is complete
           is_public: visibility === 'public'
+          // TODO: Add Mux integration fields after database migration
+          // mux_asset_id: muxAssetId || undefined,
+          // mux_playback_id: muxPlaybackId || undefined,
+          // mux_status: muxStatus,
+          // mux_thumbnail_url: muxThumbnailUrl || undefined,
+          // mux_streaming_url: muxStreamingUrl || undefined,
+          // mux_mp4_url: muxMp4Url || undefined,
+          // audio_enhanced: !!muxAssetId
         });
         const dbSaveTime = dbTimer();
         console.log('🎬 Video saved to persistent database:', savedVideo.id);

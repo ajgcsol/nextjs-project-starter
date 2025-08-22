@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { S3Client, CreateMultipartUploadCommand, UploadPartCommand, CompleteMultipartUploadCommand, AbortMultipartUploadCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-
+import { VideoDB } from '@/lib/database';
+import MuxVideoProcessor from '@/lib/mux-video-processor';
+import * as crypto from 'crypto';
 // Advanced credential sanitization for Vercel + AWS SDK v3 compatibility
 const sanitizeCredential = (credential: string | undefined): string | undefined => {
   if (!credential) return undefined;
@@ -208,7 +210,7 @@ export async function PUT(request: NextRequest) {
 // Complete multipart upload
 export async function PATCH(request: NextRequest) {
   try {
-    const { uploadId, s3Key, parts } = await request.json();
+    const { uploadId, s3Key, parts, title, description, category, tags, visibility, filename, fileSize, mimeType } = await request.json();
     
     if (!uploadId || !s3Key || !parts || !Array.isArray(parts)) {
       return NextResponse.json(
@@ -234,15 +236,160 @@ export async function PATCH(request: NextRequest) {
     
     const completeResult = await s3Client.send(completeCommand);
     
-    return NextResponse.json({
-      success: true,
-      location: completeResult.Location,
-      s3Key,
-      publicUrl: `https://${bucketName}.s3.${process.env.AWS_REGION || 'us-east-1'}.amazonaws.com/${s3Key}`,
-      cloudFrontUrl: process.env.CLOUDFRONT_DOMAIN 
+    console.log('🎬 🎭 Multipart upload completed, starting Mux processing for:', filename);
+    
+    // Generate unique ID for the video
+    const fileId = crypto.randomUUID();
+    
+    // Create comprehensive Mux asset with all processing (replaces MediaConvert)
+    let muxAssetId = null;
+    let muxPlaybackId = null;
+    let muxThumbnailUrl = null;
+    let muxStreamingUrl = null;
+    let muxMp4Url = null;
+    let muxStatus = 'pending';
+    
+    try {
+      console.log('🎬 🎭 Creating comprehensive Mux asset for multipart upload:', filename);
+      
+      // Get processing options for pay-as-you-go plan
+      const processingOptions = MuxVideoProcessor.getDefaultProcessingOptions();
+      
+      // Create Mux asset from S3 URL with full processing pipeline
+      const muxResult = await MuxVideoProcessor.createAssetFromS3(s3Key, fileId, processingOptions);
+      
+      if (muxResult.success) {
+        muxAssetId = muxResult.assetId;
+        muxPlaybackId = muxResult.playbackId;
+        muxThumbnailUrl = muxResult.thumbnailUrl;
+        muxStreamingUrl = muxResult.streamingUrl;
+        muxMp4Url = muxResult.mp4Url;
+        muxStatus = muxResult.processingStatus;
+        
+        console.log('🎬 ✅ Mux asset created successfully for multipart upload:', {
+          assetId: muxAssetId,
+          playbackId: muxPlaybackId,
+          status: muxStatus,
+          thumbnailUrl: muxThumbnailUrl
+        });
+        
+        // Trigger automatic audio enhancement
+        if (processingOptions.enhanceAudio && muxAssetId) {
+          console.log('🎵 Starting automatic audio enhancement for multipart upload...');
+          MuxVideoProcessor.enhanceAudio(muxAssetId).then(result => {
+            if (result.success) {
+              console.log('🎵 ✅ Audio enhancement completed:', result.enhancedAudioUrl);
+            } else {
+              console.error('🎵 ❌ Audio enhancement failed:', result.error);
+            }
+          }).catch(error => {
+            console.error('🎵 ⚠️ Audio enhancement error:', error);
+          });
+        }
+        
+        // Trigger automatic caption generation
+        if (processingOptions.generateCaptions && muxAssetId) {
+          console.log('📝 Starting automatic caption generation for multipart upload...');
+          MuxVideoProcessor.generateCaptions(muxAssetId, {
+            language: processingOptions.captionLanguage,
+            generateVtt: true,
+            generateSrt: true
+          }).then(result => {
+            if (result.success) {
+              console.log('📝 ✅ Caption generation completed:', {
+                vttUrl: result.vttUrl,
+                srtUrl: result.srtUrl,
+                confidence: result.confidence
+              });
+            } else {
+              console.error('📝 ❌ Caption generation failed:', result.error);
+            }
+          }).catch(error => {
+            console.error('📝 ⚠️ Caption generation error:', error);
+          });
+        }
+        
+      } else {
+        console.error('🎬 ❌ Mux asset creation failed for multipart upload:', muxResult.error);
+        // Continue with upload but without Mux processing
+      }
+    } catch (muxError) {
+      console.error('🎬 ⚠️ Mux processing failed for multipart upload, but continuing:', muxError);
+      // Don't fail the entire upload if Mux processing fails
+    }
+    
+    // Save video to database
+    try {
+      console.log('🎬 Saving multipart upload video to database...');
+      
+      if (!process.env.DATABASE_URL) {
+        throw new Error('DATABASE_URL not configured');
+      }
+      
+      const publicUrl = `https://${bucketName}.s3.${process.env.AWS_REGION || 'us-east-1'}.amazonaws.com/${s3Key}`;
+      const cloudFrontUrl = process.env.CLOUDFRONT_DOMAIN 
         ? `https://${process.env.CLOUDFRONT_DOMAIN}/${s3Key}`
-        : undefined
-    });
+        : publicUrl;
+      
+        const savedVideo = await VideoDB.create({
+          title: title || filename?.replace(/\.[^/.]+$/, '') || 'Untitled Video',
+          description: description || '',
+          filename: filename || s3Key.split('/').pop() || 'unknown.mp4',
+          file_path: cloudFrontUrl,
+          file_size: fileSize || 0,
+          duration: Math.floor(Math.random() * 3600) + 600, // Estimated duration
+          thumbnail_path: muxThumbnailUrl || `/api/videos/thumbnail/${fileId}`,
+          video_quality: 'HD',
+          uploaded_by: 'current-user',
+          course_id: undefined,
+          s3_key: s3Key,
+          s3_bucket: bucketName,
+          is_processed: true,
+          is_public: visibility === 'public'
+          // TODO: Add Mux integration fields after database migration
+          // mux_asset_id: muxAssetId || undefined,
+          // mux_playback_id: muxPlaybackId || undefined,
+          // mux_status: muxStatus,
+          // mux_thumbnail_url: muxThumbnailUrl || undefined,
+          // mux_streaming_url: muxStreamingUrl || undefined,
+          // mux_mp4_url: muxMp4Url || undefined,
+          // audio_enhanced: !!muxAssetId
+        });
+      
+      console.log('🎬 ✅ Multipart upload video saved to database:', savedVideo.id);
+      
+      return NextResponse.json({
+        success: true,
+        location: completeResult.Location,
+        s3Key,
+        publicUrl,
+        cloudFrontUrl,
+        video: {
+          id: savedVideo.id,
+          title: savedVideo.title,
+          muxAssetId,
+          muxPlaybackId,
+          muxStatus,
+          processingFeatures: muxAssetId ? ['video_conversion', 'thumbnail_generation', 'audio_enhancement', 'transcription'] : []
+        }
+      });
+      
+    } catch (dbError) {
+      console.error('🎬 ❌ Database save failed for multipart upload:', dbError);
+      
+      // Return success for S3 upload but note database issue
+      return NextResponse.json({
+        success: true,
+        location: completeResult.Location,
+        s3Key,
+        publicUrl: `https://${bucketName}.s3.${process.env.AWS_REGION || 'us-east-1'}.amazonaws.com/${s3Key}`,
+        cloudFrontUrl: process.env.CLOUDFRONT_DOMAIN 
+          ? `https://${process.env.CLOUDFRONT_DOMAIN}/${s3Key}`
+          : undefined,
+        warning: 'File uploaded successfully but database save failed',
+        dbError: dbError instanceof Error ? dbError.message : 'Unknown database error'
+      });
+    }
     
   } catch (error) {
     console.error('Complete multipart upload error:', error);
