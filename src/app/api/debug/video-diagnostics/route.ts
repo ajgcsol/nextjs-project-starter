@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { VideoDB } from '@/lib/database';
 import { videoMonitor } from '@/lib/monitoring';
+import MuxVideoProcessor from '@/lib/mux-video-processor';
 
 export async function GET(request: NextRequest) {
   const url = new URL(request.url);
@@ -26,6 +27,10 @@ export async function GET(request: NextRequest) {
           tokenSecret: !!process.env.VIDEO_MUX_TOKEN_SECRET,
           environment: process.env.NODE_ENV === 'production' ? 'production' : 'development',
           status: (process.env.VIDEO_MUX_TOKEN_ID && process.env.VIDEO_MUX_TOKEN_SECRET) ? 'configured' : 'missing_credentials'
+        },
+        environment: {
+          VIDEO_MUX_TOKEN_ID: !!process.env.VIDEO_MUX_TOKEN_ID,
+          VIDEO_MUX_TOKEN_SECRET: !!process.env.VIDEO_MUX_TOKEN_SECRET
         },
         database: {
           hasUrl: !!process.env.DATABASE_URL,
@@ -166,6 +171,82 @@ export async function GET(request: NextRequest) {
       details: error instanceof Error ? error.message : String(error),
       videoId,
       timestamp: new Date().toISOString()
+    }, { status: 500 });
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { action, s3Key, videoId } = body;
+
+    if (action === 'test-mux-asset') {
+      console.log('🎭 Testing Mux asset creation in production...');
+      
+      // Check Mux credentials first
+      if (!process.env.VIDEO_MUX_TOKEN_ID || !process.env.VIDEO_MUX_TOKEN_SECRET) {
+        return NextResponse.json({
+          success: false,
+          error: 'Mux credentials not configured',
+          environment: {
+            VIDEO_MUX_TOKEN_ID: !!process.env.VIDEO_MUX_TOKEN_ID,
+            VIDEO_MUX_TOKEN_SECRET: !!process.env.VIDEO_MUX_TOKEN_SECRET
+          }
+        });
+      }
+
+      // Test Mux configuration
+      const configTest = await MuxVideoProcessor.testConfiguration();
+      
+      if (!configTest.success) {
+        return NextResponse.json({
+          success: false,
+          error: 'Mux configuration test failed',
+          details: configTest.message,
+          configTest
+        });
+      }
+
+      // Try to create a test Mux asset
+      try {
+        const processingOptions = MuxVideoProcessor.getDefaultProcessingOptions();
+        const result = await MuxVideoProcessor.createAssetFromS3(s3Key, videoId, processingOptions);
+        
+        return NextResponse.json({
+          success: result.success,
+          assetId: result.assetId,
+          playbackId: result.playbackId,
+          thumbnailUrl: result.thumbnailUrl,
+          streamingUrl: result.streamingUrl,
+          mp4Url: result.mp4Url,
+          processingStatus: result.processingStatus,
+          error: result.error,
+          configTest
+        });
+        
+      } catch (muxError) {
+        return NextResponse.json({
+          success: false,
+          error: 'Mux asset creation failed',
+          details: muxError instanceof Error ? muxError.message : 'Unknown error',
+          configTest
+        });
+      }
+    }
+
+    return NextResponse.json({
+      success: false,
+      error: 'Unknown action',
+      supportedActions: ['test-mux-asset']
+    });
+
+  } catch (error) {
+    console.error('🔍 POST diagnostics error:', error);
+    
+    return NextResponse.json({
+      success: false,
+      error: 'POST diagnostics failed',
+      details: error instanceof Error ? error.message : 'Unknown error'
     }, { status: 500 });
   }
 }
