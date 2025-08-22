@@ -6,8 +6,53 @@ export async function GET(request: NextRequest) {
   const url = new URL(request.url);
   const videoId = url.searchParams.get('id');
   
+  // If no video ID provided, return system diagnostics including Mux config
   if (!videoId) {
-    return NextResponse.json({ error: 'Video ID required' }, { status: 400 });
+    try {
+      const systemDiagnostics = {
+        timestamp: new Date().toISOString(),
+        system: {
+          environment: process.env.NODE_ENV || 'development',
+          region: process.env.AWS_REGION || 'us-east-1'
+        },
+        aws: {
+          hasCredentials: !!(process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY),
+          bucketName: process.env.S3_BUCKET_NAME,
+          cloudFrontDomain: process.env.CLOUDFRONT_DOMAIN,
+          region: process.env.AWS_REGION
+        },
+        mux: {
+          tokenId: !!process.env.VIDEO_MUX_TOKEN_ID,
+          tokenSecret: !!process.env.VIDEO_MUX_TOKEN_SECRET,
+          environment: process.env.NODE_ENV === 'production' ? 'production' : 'development',
+          status: (process.env.VIDEO_MUX_TOKEN_ID && process.env.VIDEO_MUX_TOKEN_SECRET) ? 'configured' : 'missing_credentials'
+        },
+        database: {
+          hasUrl: !!process.env.DATABASE_URL,
+          status: 'unknown' as string,
+          videoCount: undefined as number | undefined,
+          error: undefined as string | undefined
+        }
+      };
+
+      // Test database connectivity
+      try {
+        const testQuery = await VideoDB.findAll(1, 0); // Get 1 video to test connection
+        systemDiagnostics.database.status = 'connected';
+        systemDiagnostics.database.videoCount = testQuery.length;
+      } catch (dbError) {
+        systemDiagnostics.database.status = 'error';
+        systemDiagnostics.database.error = dbError instanceof Error ? dbError.message : 'Unknown error';
+      }
+
+      return NextResponse.json(systemDiagnostics);
+    } catch (error) {
+      return NextResponse.json({
+        error: 'System diagnostics failed',
+        details: error instanceof Error ? error.message : 'Unknown error',
+        timestamp: new Date().toISOString()
+      }, { status: 500 });
+    }
   }
 
   try {
