@@ -1,6 +1,14 @@
 import { AWSVideoProcessor, AWSFileManager } from './aws-integration';
-import { MuxVideoProcessor, MuxThumbnailResult } from './mux-integration';
+import MuxVideoProcessor from './mux-video-processor';
 import { VideoDB } from './database';
+
+interface MuxThumbnailResult {
+  success: boolean;
+  thumbnailUrl?: string;
+  assetId?: string;
+  playbackId?: string;
+  error?: string;
+}
 
 export interface ThumbnailGenerationResult {
   success: boolean;
