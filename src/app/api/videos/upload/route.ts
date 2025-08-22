@@ -364,15 +364,15 @@ export async function POST(request: NextRequest) {
           s3_key: s3Key,
           s3_bucket: process.env.S3_BUCKET_NAME || undefined,
           is_processed: true, // Mark as processed since S3 upload is complete
-          is_public: visibility === 'public'
-          // TODO: Add Mux integration fields after database migration
-          // mux_asset_id: muxAssetId || undefined,
-          // mux_playback_id: muxPlaybackId || undefined,
-          // mux_status: muxStatus,
-          // mux_thumbnail_url: muxThumbnailUrl || undefined,
-          // mux_streaming_url: muxStreamingUrl || undefined,
-          // mux_mp4_url: muxMp4Url || undefined,
-          // audio_enhanced: !!muxAssetId
+          is_public: visibility === 'public',
+          // Mux integration fields - uncommented for production use
+          mux_asset_id: muxAssetId || undefined,
+          mux_playback_id: muxPlaybackId || undefined,
+          mux_status: muxStatus || 'pending',
+          mux_thumbnail_url: muxThumbnailUrl || undefined,
+          mux_streaming_url: muxStreamingUrl || undefined,
+          mux_mp4_url: muxMp4Url || undefined,
+          audio_enhanced: !!muxAssetId
         });
         const dbSaveTime = dbTimer();
         console.log('🎬 Video saved to persistent database:', savedVideo.id);
