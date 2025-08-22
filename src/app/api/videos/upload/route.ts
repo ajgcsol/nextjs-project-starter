@@ -350,67 +350,59 @@ export async function POST(request: NextRequest) {
           throw new Error('DATABASE_URL not configured');
         }
         
-        // Try to save with Mux fields first, fallback to basic fields if migration hasn't run
-        let savedVideo;
-        try {
-          savedVideo = await VideoDB.create({
-            title: videoRecord.title,
-            description: videoRecord.description,
-            filename: videoRecord.originalFilename,
-            file_path: videoRecord.streamUrl,
-            file_size: videoRecord.size,
-            duration: videoRecord.duration,
-            thumbnail_path: thumbnailCloudFrontUrl || videoRecord.thumbnailPath,
-            video_quality: 'HD',
-            uploaded_by: 'current-user', // TODO: Get from auth context
-            course_id: undefined,
-            s3_key: s3Key,
-            s3_bucket: process.env.S3_BUCKET_NAME || undefined,
-            is_processed: true, // Mark as processed since S3 upload is complete
-            is_public: visibility === 'public',
-            // Mux integration fields - try to save, fallback if columns don't exist
-            mux_asset_id: muxAssetId || undefined,
-            mux_playback_id: muxPlaybackId || undefined,
-            mux_status: muxStatus || 'pending',
-            mux_thumbnail_url: muxThumbnailUrl || undefined,
-            mux_streaming_url: muxStreamingUrl || undefined,
-            mux_mp4_url: muxMp4Url || undefined,
-            audio_enhanced: !!muxAssetId
-          });
-        } catch (muxFieldError) {
-          // If Mux fields don't exist, save without them
-          if (muxFieldError instanceof Error && muxFieldError.message.includes('does not exist')) {
-            console.log('🎬 ⚠️ Mux columns not found, saving without Mux fields...');
-            savedVideo = await VideoDB.create({
-              title: videoRecord.title,
-              description: videoRecord.description,
-              filename: videoRecord.originalFilename,
-              file_path: videoRecord.streamUrl,
-              file_size: videoRecord.size,
-              duration: videoRecord.duration,
-              thumbnail_path: thumbnailCloudFrontUrl || videoRecord.thumbnailPath,
-              video_quality: 'HD',
-              uploaded_by: 'current-user',
-              course_id: undefined,
-              s3_key: s3Key,
-              s3_bucket: process.env.S3_BUCKET_NAME || undefined,
-              is_processed: true,
-              is_public: visibility === 'public'
-              // No Mux fields - will be added after migration
+        // Use the new createWithFallback method for graceful Mux field handling
+        const createResult = await VideoDB.createWithFallback({
+          title: videoRecord.title,
+          description: videoRecord.description,
+          filename: videoRecord.originalFilename,
+          file_path: videoRecord.streamUrl,
+          file_size: videoRecord.size,
+          duration: videoRecord.duration,
+          thumbnail_path: thumbnailCloudFrontUrl || videoRecord.thumbnailPath,
+          video_quality: 'HD',
+          uploaded_by: 'current-user', // TODO: Get from auth context
+          course_id: undefined,
+          s3_key: s3Key,
+          s3_bucket: process.env.S3_BUCKET_NAME || undefined,
+          is_processed: true, // Mark as processed since S3 upload is complete
+          is_public: visibility === 'public',
+          // Mux integration fields - will be saved if columns exist, ignored if not
+          mux_asset_id: muxAssetId || undefined,
+          mux_playback_id: muxPlaybackId || undefined,
+          mux_upload_id: undefined, // Not used in S3 upload flow
+          mux_status: muxStatus || 'pending',
+          mux_thumbnail_url: muxThumbnailUrl || undefined,
+          mux_streaming_url: muxStreamingUrl || undefined,
+          mux_mp4_url: muxMp4Url || undefined,
+          mux_duration_seconds: undefined, // Will be updated by Mux webhook
+          mux_aspect_ratio: undefined, // Will be updated by Mux webhook
+          mux_created_at: muxAssetId ? new Date() : undefined,
+          mux_ready_at: undefined, // Will be updated when Mux processing completes
+          audio_enhanced: !!muxAssetId,
+          audio_enhancement_job_id: undefined, // Will be set when audio enhancement starts
+          transcription_job_id: undefined, // Will be set when transcription starts
+          captions_webvtt_url: undefined, // Will be set when captions are generated
+          captions_srt_url: undefined, // Will be set when captions are generated
+          transcript_text: undefined, // Will be set when transcription completes
+          transcript_confidence: undefined // Will be set when transcription completes
+        });
+
+        const savedVideo = createResult.video;
+        const muxFieldsUsed = createResult.muxFieldsUsed;
+        const fallbackUsed = createResult.fallbackUsed;
+
+        if (fallbackUsed) {
+          console.log('🎬 ⚠️ Video saved using fallback method (Mux columns not available)');
+          if (muxAssetId) {
+            console.log('🎬 📝 Mux data will be added after database migration:', {
+              videoId: savedVideo.id,
+              muxAssetId,
+              muxPlaybackId,
+              muxStatus
             });
-            
-            // Store Mux data temporarily in metadata for later migration
-            if (muxAssetId) {
-              console.log('🎬 📝 Storing Mux data for later migration:', {
-                videoId: savedVideo.id,
-                muxAssetId,
-                muxPlaybackId,
-                muxStatus
-              });
-            }
-          } else {
-            throw muxFieldError;
           }
+        } else {
+          console.log('🎬 ✅ Video saved with full Mux integration fields');
         }
         const dbSaveTime = dbTimer();
         console.log('🎬 Video saved to persistent database:', savedVideo.id);

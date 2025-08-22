@@ -181,7 +181,7 @@ export async function POST(request: NextRequest) {
     const { action, s3Key, videoId } = body;
 
     if (action === 'test-mux-asset') {
-      console.log('🎭 Testing Mux asset creation in production...');
+      console.log('🎭 Testing Mux asset creation in production (v2)...');
       
       // Check Mux credentials first
       if (!process.env.VIDEO_MUX_TOKEN_ID || !process.env.VIDEO_MUX_TOKEN_SECRET) {

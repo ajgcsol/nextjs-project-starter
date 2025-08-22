@@ -388,28 +388,156 @@ export const VideoDB = {
     // Mux integration fields
     mux_asset_id?: string;
     mux_playback_id?: string;
+    mux_upload_id?: string;
     mux_status?: string;
     mux_thumbnail_url?: string;
     mux_streaming_url?: string;
     mux_mp4_url?: string;
+    mux_duration_seconds?: number;
+    mux_aspect_ratio?: string;
+    mux_created_at?: Date;
+    mux_ready_at?: Date;
     audio_enhanced?: boolean;
+    audio_enhancement_job_id?: string;
+    transcription_job_id?: string;
+    captions_webvtt_url?: string;
+    captions_srt_url?: string;
+    transcript_text?: string;
+    transcript_confidence?: number;
   }) {
-    const { rows } = await query(
-      `INSERT INTO videos (title, description, filename, file_path, file_size, duration, 
-                          thumbnail_path, video_quality, uploaded_by, course_id, 
-                          s3_key, s3_bucket, is_processed, is_public,
-                          mux_asset_id, mux_playback_id, mux_status, mux_thumbnail_url,
-                          mux_streaming_url, mux_mp4_url, audio_enhanced)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
-       RETURNING *`,
-      [videoData.title, videoData.description, videoData.filename, videoData.file_path,
-       videoData.file_size, videoData.duration, videoData.thumbnail_path, 
-       videoData.video_quality || 'HD', videoData.uploaded_by, videoData.course_id,
-       videoData.s3_key, videoData.s3_bucket, videoData.is_processed || false, videoData.is_public || false,
-       videoData.mux_asset_id, videoData.mux_playback_id, videoData.mux_status, videoData.mux_thumbnail_url,
-       videoData.mux_streaming_url, videoData.mux_mp4_url, videoData.audio_enhanced || false]
-    );
-    return rows[0];
+    console.log('🎬 VideoDB.create: Attempting to create video record with Mux fields...');
+    
+    try {
+      // First try with all Mux fields
+      const { rows } = await query(
+        `INSERT INTO videos (title, description, filename, file_path, file_size, duration, 
+                            thumbnail_path, video_quality, uploaded_by, course_id, 
+                            s3_key, s3_bucket, is_processed, is_public,
+                            mux_asset_id, mux_playback_id, mux_upload_id, mux_status, 
+                            mux_thumbnail_url, mux_streaming_url, mux_mp4_url, 
+                            mux_duration_seconds, mux_aspect_ratio, mux_created_at, mux_ready_at,
+                            audio_enhanced, audio_enhancement_job_id, transcription_job_id,
+                            captions_webvtt_url, captions_srt_url, transcript_text, transcript_confidence)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 
+                 $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32)
+         RETURNING *`,
+        [videoData.title, videoData.description, videoData.filename, videoData.file_path,
+         videoData.file_size, videoData.duration, videoData.thumbnail_path, 
+         videoData.video_quality || 'HD', videoData.uploaded_by, videoData.course_id,
+         videoData.s3_key, videoData.s3_bucket, videoData.is_processed || false, videoData.is_public || false,
+         videoData.mux_asset_id, videoData.mux_playback_id, videoData.mux_upload_id, videoData.mux_status,
+         videoData.mux_thumbnail_url, videoData.mux_streaming_url, videoData.mux_mp4_url,
+         videoData.mux_duration_seconds, videoData.mux_aspect_ratio, videoData.mux_created_at, videoData.mux_ready_at,
+         videoData.audio_enhanced || false, videoData.audio_enhancement_job_id, videoData.transcription_job_id,
+         videoData.captions_webvtt_url, videoData.captions_srt_url, videoData.transcript_text, videoData.transcript_confidence]
+      );
+      
+      console.log('✅ VideoDB.create: Successfully created video with full Mux fields');
+      return rows[0];
+      
+    } catch (muxError) {
+      // If Mux fields don't exist, fall back to basic fields
+      if (muxError instanceof Error && (
+        muxError.message.includes('does not exist') || 
+        muxError.message.includes('column') ||
+        muxError.message.includes('mux_')
+      )) {
+        console.log('⚠️ VideoDB.create: Mux columns not found, falling back to basic fields...');
+        
+        try {
+          const { rows } = await query(
+            `INSERT INTO videos (title, description, filename, file_path, file_size, duration, 
+                                thumbnail_path, video_quality, uploaded_by, course_id, 
+                                s3_key, s3_bucket, is_processed, is_public)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+             RETURNING *`,
+            [videoData.title, videoData.description, videoData.filename, videoData.file_path,
+             videoData.file_size, videoData.duration, videoData.thumbnail_path, 
+             videoData.video_quality || 'HD', videoData.uploaded_by, videoData.course_id,
+             videoData.s3_key, videoData.s3_bucket, videoData.is_processed || false, videoData.is_public || false]
+          );
+          
+          console.log('✅ VideoDB.create: Successfully created video with basic fields (Mux data will be added after migration)');
+          
+          // Store Mux data in a temporary way for later migration if needed
+          if (videoData.mux_asset_id) {
+            console.log('📝 VideoDB.create: Mux data available for future migration:', {
+              videoId: rows[0].id,
+              muxAssetId: videoData.mux_asset_id,
+              muxPlaybackId: videoData.mux_playback_id,
+              muxStatus: videoData.mux_status
+            });
+          }
+          
+          return rows[0];
+          
+        } catch (basicError) {
+          console.error('❌ VideoDB.create: Failed to create video even with basic fields:', basicError);
+          throw basicError;
+        }
+      } else {
+        // Re-throw if it's not a column-related error
+        console.error('❌ VideoDB.create: Unexpected error during video creation:', muxError);
+        throw muxError;
+      }
+    }
+  },
+
+  /**
+   * Create video with automatic fallback handling
+   */
+  async createWithFallback(videoData: {
+    title: string;
+    description?: string;
+    filename: string;
+    file_path: string;
+    file_size: number;
+    duration?: number;
+    thumbnail_path?: string;
+    video_quality?: string;
+    uploaded_by: string;
+    course_id?: string;
+    s3_key?: string;
+    s3_bucket?: string;
+    is_processed?: boolean;
+    is_public?: boolean;
+    // Mux integration fields
+    mux_asset_id?: string;
+    mux_playback_id?: string;
+    mux_upload_id?: string;
+    mux_status?: string;
+    mux_thumbnail_url?: string;
+    mux_streaming_url?: string;
+    mux_mp4_url?: string;
+    mux_duration_seconds?: number;
+    mux_aspect_ratio?: string;
+    mux_created_at?: Date;
+    mux_ready_at?: Date;
+    audio_enhanced?: boolean;
+    audio_enhancement_job_id?: string;
+    transcription_job_id?: string;
+    captions_webvtt_url?: string;
+    captions_srt_url?: string;
+    transcript_text?: string;
+    transcript_confidence?: number;
+  }): Promise<{ video: any; muxFieldsUsed: boolean; fallbackUsed: boolean }> {
+    
+    try {
+      const video = await this.create(videoData);
+      
+      // Check if the returned video has Mux fields
+      const hasMuxFields = video.mux_asset_id !== undefined;
+      
+      return {
+        video,
+        muxFieldsUsed: hasMuxFields,
+        fallbackUsed: !hasMuxFields
+      };
+      
+    } catch (error) {
+      console.error('❌ VideoDB.createWithFallback: Failed to create video:', error);
+      throw error;
+    }
   },
 
   async findById(id: string) {
