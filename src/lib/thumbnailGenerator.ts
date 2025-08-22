@@ -1,13 +1,16 @@
 import { AWSVideoProcessor, AWSFileManager } from './aws-integration';
+import { MuxVideoProcessor, MuxThumbnailResult } from './mux-integration';
 import { VideoDB } from './database';
 
 export interface ThumbnailGenerationResult {
   success: boolean;
   thumbnailUrl?: string;
   s3Key?: string;
-  method: 'mediaconvert' | 'ffmpeg' | 'enhanced_svg' | 'client_side' | 'placeholder';
+  method: 'mux' | 'mediaconvert' | 'ffmpeg' | 'enhanced_svg' | 'client_side' | 'placeholder';
   error?: string;
   jobId?: string;
+  assetId?: string;
+  playbackId?: string;
 }
 
 // Enhanced credential sanitization for Vercel + AWS SDK v3 compatibility - FIXED for newlines
@@ -689,7 +692,7 @@ export class ThumbnailGenerator {
 
   /**
    * Comprehensive thumbnail generation with fallbacks and smart matching
-   * Now waits for actual MediaConvert failure before falling back
+   * Now uses Mux as the primary method for real video thumbnails
    */
   static async generateThumbnail(videoId: string, videoS3Key?: string, videoUrl?: string, videoRecord?: any): Promise<ThumbnailGenerationResult> {
     console.log('🖼️ Starting REAL thumbnail generation for video:', videoId);
@@ -711,143 +714,52 @@ export class ThumbnailGenerator {
       }
     }
 
-    // PRIORITY: Try MediaConvert if we have S3 key and configuration
-    if (videoS3Key && process.env.MEDIACONVERT_ROLE_ARN && process.env.MEDIACONVERT_ENDPOINT) {
-      console.log('🎬 MediaConvert is configured - attempting REAL thumbnail generation with smart matching...');
-      console.log('🔧 Configuration check:');
-      console.log('   - MEDIACONVERT_ROLE_ARN: SET');
-      console.log('   - MEDIACONVERT_ENDPOINT: SET');
-      console.log('   - AWS_ACCESS_KEY_ID:', process.env.AWS_ACCESS_KEY_ID ? 'SET' : 'MISSING');
-      console.log('   - AWS_SECRET_ACCESS_KEY:', process.env.AWS_SECRET_ACCESS_KEY ? 'SET' : 'MISSING');
-      
-      const mediaConvertResult = await this.generateWithMediaConvert(videoS3Key, videoId, videoData);
-      
-      if (mediaConvertResult.success) {
-        console.log('🎉 SUCCESS: MediaConvert job created for REAL thumbnail with smart naming!');
-        console.log('📸 Job ID:', mediaConvertResult.jobId);
-        console.log('🔗 Expected thumbnail URL:', mediaConvertResult.thumbnailUrl);
-        console.log('🔗 Expected S3 key:', mediaConvertResult.s3Key);
-        
-        // Update database with the new thumbnail info
-        try {
-          await VideoDB.update(videoId, {
-            thumbnail_path: mediaConvertResult.thumbnailUrl
-          });
-          console.log('✅ Database updated with MediaConvert thumbnail URL');
-        } catch (dbError) {
-          console.warn('⚠️ Failed to update database with thumbnail:', dbError);
-        }
-        
-        return mediaConvertResult;
-      } else {
-        console.log('❌ MediaConvert FAILED with error:', mediaConvertResult.error);
-        console.log('🔄 MediaConvert job creation failed - proceeding to fallback methods');
-        // Continue to fallback methods only after actual MediaConvert failure
-      }
-    } else {
-      // Log why MediaConvert is not being attempted
-      if (!videoS3Key) {
-        console.log('❌ No S3 key provided - cannot extract video frames from S3');
-      } else {
-        console.log('❌ MediaConvert NOT configured properly');
-        console.log('📋 Missing environment variables:');
-        if (!process.env.MEDIACONVERT_ROLE_ARN) console.log('   - MEDIACONVERT_ROLE_ARN');
-        if (!process.env.MEDIACONVERT_ENDPOINT) console.log('   - MEDIACONVERT_ENDPOINT');
-      }
-      console.log('🔄 Skipping MediaConvert, proceeding to fallback methods');
+    // ONLY TRY MUX - NO FALLBACKS TO SEE ACTUAL ERRORS
+    if (!videoS3Key) {
+      throw new Error('❌ No S3 key provided - cannot extract video frames');
     }
 
-    // FALLBACK 1: Try FFmpeg for real video frame extraction
-    if (videoS3Key) {
-      console.log('🎬 Trying FFmpeg for REAL video frame extraction...');
-      
-      const ffmpegResult = await this.generateWithFFmpeg(videoS3Key, videoId, videoData);
-      
-      if (ffmpegResult.success) {
-        console.log('🎉 SUCCESS: FFmpeg generated REAL thumbnail!');
-        console.log('📸 Thumbnail URL:', ffmpegResult.thumbnailUrl);
-        
-        // Update database with the real FFmpeg thumbnail
-        try {
-          await VideoDB.update(videoId, {
-            thumbnail_path: ffmpegResult.thumbnailUrl
-          });
-          console.log('✅ Database updated with REAL FFmpeg thumbnail');
-        } catch (dbError) {
-          console.warn('⚠️ Failed to update database with thumbnail:', dbError);
-        }
-        
-        return ffmpegResult;
-      } else {
-        console.log('❌ FFmpeg FAILED with error:', ffmpegResult.error);
-        console.log('🔄 FFmpeg processing failed - proceeding to SVG fallback');
-      }
+    if (!process.env.VIDEO_MUX_TOKEN_ID || !process.env.VIDEO_MUX_TOKEN_SECRET) {
+      console.log('❌ Mux NOT configured properly');
+      console.log('📋 Missing environment variables:');
+      if (!process.env.VIDEO_MUX_TOKEN_ID) console.log('   - VIDEO_MUX_TOKEN_ID');
+      if (!process.env.VIDEO_MUX_TOKEN_SECRET) console.log('   - VIDEO_MUX_TOKEN_SECRET');
+      throw new Error('❌ Mux credentials not configured. Need VIDEO_MUX_TOKEN_ID and VIDEO_MUX_TOKEN_SECRET');
     }
 
-    // FALLBACK 2: Enhanced SVG placeholder (only after both MediaConvert and FFmpeg fail)
-    console.log('⚠️ FINAL FALLBACK: Generating enhanced SVG placeholder...');
-    console.log('📋 This is a temporary placeholder - real thumbnails will be generated when MediaConvert or FFmpeg work');
+    console.log('🎬 Mux is configured - attempting REAL thumbnail generation...');
+    console.log('🔧 Configuration check:');
+    console.log('   - VIDEO_MUX_TOKEN_ID: SET');
+    console.log('   - VIDEO_MUX_TOKEN_SECRET: SET');
     
-    try {
-      // Use video title from record or fetch from database
-      let videoTitle = videoId;
-      if (videoData?.title) {
-        videoTitle = videoData.title;
-      } else {
-        try {
-          const video = await VideoDB.findById(videoId);
-          if (video?.title) {
-            videoTitle = video.title;
-          }
-        } catch (dbError) {
-          console.warn('⚠️ Could not fetch video title, using ID:', dbError);
-        }
+    const muxResult = await MuxVideoProcessor.generateThumbnail(videoS3Key, videoId, videoData);
+    
+    if (muxResult.success) {
+      console.log('🎉 SUCCESS: Mux asset created for REAL thumbnail!');
+      console.log('📸 Asset ID:', muxResult.assetId);
+      console.log('📸 Playback ID:', muxResult.playbackId);
+      console.log('🔗 Thumbnail URL:', muxResult.thumbnailUrl);
+      
+      // Update database with the new thumbnail info
+      try {
+        await VideoDB.update(videoId, {
+          thumbnail_path: muxResult.thumbnailUrl
+        });
+        console.log('✅ Database updated with Mux thumbnail URL');
+      } catch (dbError) {
+        console.warn('⚠️ Failed to update database with thumbnail:', dbError);
       }
       
-      const svgResult = await this.generateSVGThumbnail(videoId, videoTitle);
-      
-      if (svgResult.success) {
-        // Update database with enhanced SVG thumbnail
-        try {
-          await VideoDB.update(videoId, {
-            thumbnail_path: svgResult.thumbnailUrl
-          });
-          console.log('✅ Database updated with TEMPORARY SVG thumbnail');
-          console.log('⚠️ NOTE: This is a placeholder - real thumbnails will be generated by MediaConvert or FFmpeg');
-        } catch (dbError) {
-          console.warn('⚠️ Failed to update database with thumbnail:', dbError);
-        }
-        
-        return svgResult;
-      }
-    } catch (error) {
-      console.error('❌ SVG thumbnail generation failed:', error);
-    }
-
-    // Last resort: Basic placeholder
-    console.log('🎨 Generating basic placeholder thumbnail...');
-    try {
-      const placeholderResult = await this.generatePlaceholderThumbnail(videoId);
-      
-      if (placeholderResult.success) {
-        try {
-          await VideoDB.update(videoId, {
-            thumbnail_path: placeholderResult.thumbnailUrl
-          });
-          console.log('✅ Database updated with basic placeholder thumbnail');
-        } catch (dbError) {
-          console.warn('⚠️ Failed to update database with thumbnail:', dbError);
-        }
-      }
-      
-      return placeholderResult;
-    } catch (error) {
-      console.error('❌ Failed to generate basic placeholder thumbnail:', error);
       return {
-        success: false,
-        method: 'placeholder',
-        error: 'All thumbnail generation methods failed'
+        success: true,
+        thumbnailUrl: muxResult.thumbnailUrl,
+        method: 'mux',
+        assetId: muxResult.assetId,
+        playbackId: muxResult.playbackId
       };
+    } else {
+      console.log('❌ Mux FAILED with error:', muxResult.error);
+      throw new Error(`❌ Mux thumbnail generation failed: ${muxResult.error}`);
     }
   }
 
