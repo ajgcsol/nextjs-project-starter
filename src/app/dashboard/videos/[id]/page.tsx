@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { MuxVideoPlayer } from "@/components/MuxVideoPlayer";
 import { 
   ArrowLeft, 
   Download, 
@@ -17,7 +18,10 @@ import {
   Clock,
   Users,
   Calendar,
-  Play
+  Play,
+  Sparkles,
+  Captions,
+  Volume2
 } from "lucide-react";
 
 interface VideoData {
@@ -36,6 +40,15 @@ interface VideoData {
   createdBy: string;
   streamUrl?: string;
   thumbnailUrl?: string;
+  // Mux integration fields
+  mux_asset_id?: string;
+  mux_playback_id?: string;
+  mux_status?: string;
+  mux_thumbnail_url?: string;
+  mux_streaming_url?: string;
+  transcript_text?: string;
+  captions_webvtt_url?: string;
+  audio_enhanced?: boolean;
 }
 
 export default function VideoPlayerPage({ params }: { params: { id: string } }) {
@@ -198,116 +211,58 @@ export default function VideoPlayerPage({ params }: { params: { id: string } }) 
             </div>
           </div>
 
-          {/* Video Player */}
+          {/* Modern Mux Video Player */}
           <Card className="border-0 shadow-sm">
             <CardContent className="pt-6">
-              <div className="aspect-video bg-black rounded-lg overflow-hidden mb-4 relative">
-                {streamUrl ? (
-                  <>
-                    <video 
-                      controls 
-                      className="w-full h-full"
-                      poster={`/api/videos/thumbnail/${video.id}`}
-                      preload="metadata" // Changed from "none" to "metadata" for better large video handling
-                      playsInline
-                      crossOrigin="anonymous"
-                      onLoadStart={() => {
-                        console.log('Video load started for:', video.id);
-                      }}
-                      onLoadedMetadata={() => {
-                        console.log('Video metadata loaded for:', video.id);
-                      }}
-                      onCanPlay={() => {
-                        console.log('Video can play:', video.id);
-                      }}
-                      onCanPlayThrough={() => {
-                        console.log('Video can play through:', video.id);
-                      }}
-                      onError={(e) => {
-                        const error = e.currentTarget.error;
-                        if (error) {
-                          console.error('Video error:', {
-                            code: error.code,
-                            message: error.message,
-                            videoId: video.id,
-                            fileSize: video.size,
-                            src: e.currentTarget.src
-                          });
-                          
-                          // Handle specific error codes
-                          switch (error.code) {
-                            case MediaError.MEDIA_ERR_NETWORK:
-                              console.log('Network error - video may be too large or connection issue');
-                              // For large videos, suggest direct download
-                              if (video.size > 500 * 1024 * 1024) { // 500MB+
-                                console.log('Large video detected - consider direct download');
-                              }
-                              break;
-                            case MediaError.MEDIA_ERR_DECODE:
-                              console.log('Decode error - video format may be unsupported');
-                              break;
-                            case MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED:
-                              console.log('Source not supported - trying fallback');
-                              break;
-                            default:
-                              console.log('Unknown video error');
-                          }
-                        }
-                      }}
-                      onWaiting={() => {
-                        console.log('Video buffering...');
-                      }}
-                      onPlaying={() => {
-                        console.log('Video playing');
-                      }}
-                      onProgress={(e) => {
-                        const video = e.currentTarget;
-                        if (video.buffered.length > 0) {
-                          const bufferedEnd = video.buffered.end(video.buffered.length - 1);
-                          const duration = video.duration;
-                          if (duration > 0) {
-                            const bufferedPercent = (bufferedEnd / duration) * 100;
-                            console.log(`Video buffered: ${bufferedPercent.toFixed(1)}%`);
-                          }
-                        }
-                      }}
-                      onStalled={() => {
-                        console.log('Video stalled - network may be slow for large file');
-                      }}
-                      onSuspend={() => {
-                        console.log('Video loading suspended');
-                      }}
-                    >
-                      <source src={streamUrl} type="video/mp4" />
-                      Your browser does not support the video tag.
-                    </video>
-                    
-                    {/* Debug overlay for large videos */}
-                    {video.size > 100 * 1024 * 1024 && (
-                      <div className="absolute top-2 right-2 bg-black bg-opacity-75 text-white text-xs px-2 py-1 rounded">
-                        {formatFileSize(video.size)} • CloudFront
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center text-white">
-                    <div className="text-center">
-                      <Play className="h-16 w-16 mx-auto mb-4 opacity-50" />
-                      <p>Video not available</p>
-                    </div>
+              <MuxVideoPlayer
+                playbackId={video.mux_playback_id || video.id}
+                assetId={video.mux_asset_id}
+                title={video.title}
+                poster={video.mux_thumbnail_url || video.thumbnailUrl}
+                className="w-full aspect-video rounded-lg overflow-hidden"
+                showCaptions={true}
+                showTranscript={true}
+                showDownload={true}
+                showShare={true}
+                enableAdaptiveStreaming={true}
+              />
+              
+              {/* Enhanced Features Notice */}
+              <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="flex items-center gap-2 p-3 bg-gradient-to-r from-purple-50 to-pink-50 border border-purple-200 rounded-lg">
+                  <Sparkles className="h-4 w-4 text-purple-600" />
+                  <div className="text-sm">
+                    <div className="font-medium text-purple-800">Universal Format Support</div>
+                    <div className="text-purple-600 text-xs">WMV, AVI, MOV, MP4 & more</div>
                   </div>
-                )}
+                </div>
+                
+                <div className="flex items-center gap-2 p-3 bg-gradient-to-r from-blue-50 to-cyan-50 border border-blue-200 rounded-lg">
+                  <Captions className="h-4 w-4 text-blue-600" />
+                  <div className="text-sm">
+                    <div className="font-medium text-blue-800">Auto Transcripts</div>
+                    <div className="text-blue-600 text-xs">AI-generated captions</div>
+                  </div>
+                </div>
+                
+                <div className="flex items-center gap-2 p-3 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-lg">
+                  <Volume2 className="h-4 w-4 text-green-600" />
+                  <div className="text-sm">
+                    <div className="font-medium text-green-800">Enhanced Audio</div>
+                    <div className="text-green-600 text-xs">Noise reduction & clarity</div>
+                  </div>
+                </div>
               </div>
               
-              {/* Large Video Notice */}
-              {video.size > 100 * 1024 * 1024 && (
-                <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                  <div className="flex items-center gap-2 text-blue-800">
-                    <Play className="h-4 w-4" />
-                    <span className="text-sm font-medium">Large Video ({formatFileSize(video.size)})</span>
+              {/* Processing Status */}
+              {video.status === "processing" && (
+                <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                  <div className="flex items-center gap-2 text-amber-800">
+                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-amber-600 border-t-transparent"></div>
+                    <span className="text-sm font-medium">Processing Video</span>
                   </div>
-                  <p className="text-xs text-blue-600 mt-1">
-                    This video will stream on-demand to optimize loading time. Click play to start.
+                  <p className="text-xs text-amber-600 mt-1">
+                    Your video is being processed with Mux for optimal streaming, thumbnail generation, and transcript creation.
                   </p>
                 </div>
               )}

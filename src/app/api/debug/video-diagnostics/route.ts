@@ -5,10 +5,20 @@ import MuxVideoProcessor from '@/lib/mux-video-processor';
 
 export async function GET(request: NextRequest) {
   const url = new URL(request.url);
-  const videoId = url.searchParams.get('id');
+  const videoId = url.searchParams.get('id') || url.searchParams.get('videoId');
   
   // If no video ID provided, return system diagnostics including Mux config
   if (!videoId) {
+    return NextResponse.json({
+      success: false,
+      error: 'Video ID required',
+      message: 'Please provide a video ID using ?id=VIDEO_ID or ?videoId=VIDEO_ID parameter',
+      timestamp: new Date().toISOString()
+    }, { status: 400 });
+  }
+
+  // If videoId is provided but we want system diagnostics, handle that case
+  if (videoId === 'system') {
     try {
       const systemDiagnostics = {
         timestamp: new Date().toISOString(),
@@ -76,16 +86,34 @@ export async function GET(request: NextRequest) {
 
     // Test S3 connectivity and permissions
     const diagnostics = {
+      success: true,
       videoId,
       timestamp: new Date().toISOString(),
-      database: {
+      video: {
         found: true,
         title: video.title,
         s3_key: video.s3_key,
         s3_bucket: video.s3_bucket,
         file_path: video.file_path,
         file_size: video.file_size,
-        is_processed: video.is_processed
+        is_processed: video.is_processed,
+        status: video.is_processed ? 'processed' : 'pending'
+      },
+      mux: {
+        status: 'unknown',
+        assetId: video.mux_asset_id || null,
+        playbackId: video.mux_playback_id || null,
+        configured: !!(process.env.VIDEO_MUX_TOKEN_ID && process.env.VIDEO_MUX_TOKEN_SECRET)
+      },
+      thumbnail: {
+        available: !!video.thumbnail_path,
+        path: video.thumbnail_path,
+        url: video.thumbnail_path ? `/api/videos/thumbnail/${videoId}` : null
+      },
+      streaming: {
+        available: !!video.s3_key,
+        endpoint: `/api/videos/stream/${videoId}`,
+        method: video.mux_playback_id ? 'mux' : 's3'
       },
       aws: {
         region: process.env.AWS_REGION,
@@ -94,11 +122,23 @@ export async function GET(request: NextRequest) {
       },
       urls: {
         streamingEndpoint: `/api/videos/stream/${videoId}`,
+        thumbnailEndpoint: `/api/videos/thumbnail/${videoId}`,
         directS3: video.s3_key ? `https://${video.s3_bucket || process.env.S3_BUCKET_NAME}.s3.${process.env.AWS_REGION || 'us-east-1'}.amazonaws.com/${video.s3_key}` : null,
-        cloudFront: process.env.CLOUDFRONT_DOMAIN ? `https://${process.env.CLOUDFRONT_DOMAIN}/${video.s3_key}` : null
+        cloudFront: process.env.CLOUDFRONT_DOMAIN ? `https://${process.env.CLOUDFRONT_DOMAIN}/${video.s3_key}` : null,
+        muxStream: video.mux_playback_id ? `https://stream.mux.com/${video.mux_playback_id}.m3u8` : null,
+        muxThumbnail: video.mux_playback_id ? `https://image.mux.com/${video.mux_playback_id}/thumbnail.jpg?time=10` : null
       },
       tests: {} as any
     };
+
+    // Update Mux status based on available data
+    if (video.mux_asset_id && video.mux_playback_id) {
+      diagnostics.mux.status = 'configured';
+    } else if (process.env.VIDEO_MUX_TOKEN_ID && process.env.VIDEO_MUX_TOKEN_SECRET) {
+      diagnostics.mux.status = 'ready_for_processing';
+    } else {
+      diagnostics.mux.status = 'not_configured';
+    }
 
     // Test presigned URL generation
     try {
