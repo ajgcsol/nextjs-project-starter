@@ -211,21 +211,45 @@ export default function VideoPlayerPage({ params }: { params: { id: string } }) 
             </div>
           </div>
 
-          {/* Modern Mux Video Player */}
+          {/* Modern Video Player */}
           <Card className="border-0 shadow-sm">
             <CardContent className="pt-6">
-              <MuxVideoPlayer
-                playbackId={video.mux_playback_id || video.id}
-                assetId={video.mux_asset_id}
-                title={video.title}
-                poster={video.mux_thumbnail_url || video.thumbnailUrl}
-                className="w-full aspect-video rounded-lg overflow-hidden"
-                showCaptions={true}
-                showTranscript={true}
-                showDownload={true}
-                showShare={true}
-                enableAdaptiveStreaming={true}
-              />
+              {video.mux_playback_id ? (
+                // Use Mux player if we have a Mux playback ID
+                <MuxVideoPlayer
+                  playbackId={video.mux_playback_id}
+                  assetId={video.mux_asset_id}
+                  title={video.title}
+                  poster={video.mux_thumbnail_url || video.thumbnailUrl}
+                  className="w-full aspect-video rounded-lg overflow-hidden"
+                  showCaptions={true}
+                  showTranscript={true}
+                  showDownload={true}
+                  showShare={true}
+                  enableAdaptiveStreaming={true}
+                />
+              ) : (
+                // Fallback to enhanced HTML5 player for non-Mux videos
+                <div className="relative bg-gradient-to-br from-slate-900 to-black rounded-xl overflow-hidden group shadow-2xl">
+                  <video 
+                    controls 
+                    className="w-full h-full object-contain bg-black rounded-xl"
+                    poster={`/api/videos/thumbnail/${video.id}`}
+                    preload="metadata"
+                    playsInline
+                    crossOrigin="anonymous"
+                    style={{ aspectRatio: '16/9' }}
+                  >
+                    <source src={`/api/videos/stream/${video.id}`} type="video/mp4" />
+                    Your browser does not support the video tag.
+                  </video>
+                  
+                  {/* Enhanced overlay for non-Mux videos */}
+                  <div className="absolute top-4 right-4 bg-black/60 backdrop-blur-sm rounded-full px-3 py-1 text-white text-xs">
+                    Enhanced Streaming
+                  </div>
+                </div>
+              )}
               
               {/* Enhanced Features Notice */}
               <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
