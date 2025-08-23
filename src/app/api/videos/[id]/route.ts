@@ -118,6 +118,7 @@ export async function GET(
       filename: video.filename,
       duration: video.duration || 0,
       size: video.size || 0,
+      file_size: video.file_size,
       uploadDate: video.created_at,
       status: video.status || 'ready',
       visibility: video.visibility || 'private',
@@ -127,7 +128,27 @@ export async function GET(
       createdBy: video.created_by || 'Unknown',
       streamUrl: video.stream_url,
       thumbnailUrl: video.thumbnail_path,
-      s3Key: video.s3_key
+      thumbnail_path: video.thumbnail_path,
+      s3Key: video.s3_key,
+      // Mux integration fields
+      mux_asset_id: video.mux_asset_id,
+      mux_playback_id: video.mux_playback_id,
+      mux_status: video.mux_status,
+      processing_status: video.processing_status,
+      // Audio enhancement fields
+      audio_enhanced: video.audio_enhanced,
+      audio_job_id: video.audio_job_id,
+      audio_status: video.audio_status,
+      // Transcription fields
+      transcript: video.transcript,
+      transcript_confidence: video.transcript_confidence,
+      transcript_word_count: video.transcript_word_count,
+      captions_url: video.captions_url,
+      captions_status: video.captions_status,
+      // Timestamps
+      webhook_received_at: video.webhook_received_at,
+      created_at: video.created_at,
+      updated_at: video.updated_at
     };
 
     return NextResponse.json({
