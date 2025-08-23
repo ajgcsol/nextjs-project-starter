@@ -1,83 +1,57 @@
-"use client";
+'use client';
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
-import { MuxVideoPlayer } from "@/components/MuxVideoPlayer";
-import { 
-  ArrowLeft, 
-  Download, 
-  Share, 
-  Edit, 
-  Trash2,
-  Eye,
-  EyeOff,
-  Clock,
-  Users,
-  Calendar,
-  Play,
-  Sparkles,
-  Captions,
-  Volume2
-} from "lucide-react";
+import { useState, useEffect } from 'react';
+import { useParams } from 'next/navigation';
+import Link from 'next/link';
+import { ArrowLeft, Download, Share2, Edit, Trash2, Play, Clock, FileVideo } from 'lucide-react';
+import { MuxVideoPlayer } from '@/components/MuxVideoPlayer';
 
-interface VideoData {
+interface Video {
   id: string;
   title: string;
-  description: string;
+  description?: string;
   filename: string;
-  duration: number;
-  size: number;
-  uploadDate: string;
-  status: string;
-  visibility: string;
-  category: string;
-  tags: string[];
-  views: number;
-  createdBy: string;
-  streamUrl?: string;
-  thumbnailUrl?: string;
-  // Mux integration fields
+  file_size: number;
+  duration?: number;
+  created_at: string;
+  updated_at: string;
+  s3_key?: string;
+  thumbnail_path?: string;
   mux_asset_id?: string;
   mux_playback_id?: string;
-  mux_status?: string;
-  mux_thumbnail_url?: string;
-  mux_streaming_url?: string;
-  transcript_text?: string;
-  captions_webvtt_url?: string;
-  audio_enhanced?: boolean;
+  processing_status?: string;
+  transcript?: string;
+  captions_url?: string;
 }
 
-export default function VideoPlayerPage({ params }: { params: { id: string } }) {
-  const router = useRouter();
-  const [video, setVideo] = useState<VideoData | null>(null);
+export default function VideoDetailPage() {
+  const params = useParams();
+  const videoId = params.id as string;
+  const [video, setVideo] = useState<Video | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [streamUrl, setStreamUrl] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchVideo();
-  }, [params.id]);
+    if (videoId) {
+      fetchVideo();
+    }
+  }, [videoId]);
 
   const fetchVideo = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`/api/videos/${params.id}`);
+      const response = await fetch(`/api/videos/${videoId}`);
       
       if (!response.ok) {
-        throw new Error('Video not found');
+        throw new Error(`Failed to fetch video: ${response.status}`);
       }
       
       const data = await response.json();
-      if (data.success && data.video) {
+      
+      if (data.success) {
         setVideo(data.video);
-        // Set the stream URL for the video player
-        setStreamUrl(`/api/videos/stream/${params.id}`);
       } else {
-        throw new Error('Failed to load video');
+        throw new Error(data.error || 'Failed to load video');
       }
     } catch (err) {
       console.error('Error fetching video:', err);
@@ -87,45 +61,14 @@ export default function VideoPlayerPage({ params }: { params: { id: string } }) 
     }
   };
 
-  const handleDownload = () => {
-    if (streamUrl) {
-      // Create a temporary link to download the video
-      const link = document.createElement('a');
-      link.href = streamUrl;
-      link.download = video?.filename || 'video.mp4';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    }
+  const formatFileSize = (bytes: number): string => {
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    if (bytes === 0) return '0 Bytes';
+    const i = Math.floor(Math.log(bytes) / Math.log(1024));
+    return Math.round(bytes / Math.pow(1024, i) * 100) / 100 + ' ' + sizes[i];
   };
 
-  const handleDelete = async () => {
-    if (!video) return;
-    
-    if (!confirm(`Are you sure you want to delete "${video.title}"? This action cannot be undone.`)) {
-      return;
-    }
-
-    try {
-      const response = await fetch(`/api/videos/${video.id}`, {
-        method: 'DELETE',
-      });
-
-      if (response.ok) {
-        router.push('/dashboard/videos');
-      } else {
-        const errorData = await response.json();
-        alert(`Failed to delete video: ${errorData.error || 'Unknown error'}`);
-      }
-    } catch (error) {
-      console.error('Error deleting video:', error);
-      alert('Error deleting video. Please try again.');
-    }
-  };
-
-  const formatDuration = (seconds: number) => {
-    if (!seconds || seconds === 0) return 'Unknown';
-    
+  const formatDuration = (seconds: number): string => {
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
     const secs = Math.floor(seconds % 60);
@@ -136,260 +79,205 @@ export default function VideoPlayerPage({ params }: { params: { id: string } }) 
     return `${minutes}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const formatFileSize = (bytes: number) => {
-    if (!bytes || bytes === 0) return 'Unknown';
-    
-    const mb = bytes / (1024 * 1024);
-    if (mb >= 1024) {
-      return `${(mb / 1024).toFixed(1)} GB`;
-    }
-    return `${mb.toFixed(1)} MB`;
-  };
-
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <Card className="border-0 shadow-sm">
-          <CardContent className="pt-6">
-            <p className="text-center text-slate-600">Loading video...</p>
-          </CardContent>
-        </Card>
+      <div className="min-h-screen bg-gray-50 p-6">
+        <div className="max-w-6xl mx-auto">
+          <div className="animate-pulse">
+            <div className="h-8 bg-gray-200 rounded w-1/4 mb-6"></div>
+            <div className="bg-white rounded-lg shadow p-6">
+              <div className="aspect-video bg-gray-200 rounded mb-6"></div>
+              <div className="h-6 bg-gray-200 rounded w-3/4 mb-4"></div>
+              <div className="h-4 bg-gray-200 rounded w-1/2"></div>
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
 
   if (error || !video) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <Card className="border-0 shadow-sm">
-          <CardContent className="pt-6 text-center">
-            <p className="text-red-600 mb-4">{error || 'Video not found'}</p>
-            <Button onClick={() => router.push('/dashboard/videos')}>
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Back to Videos
-            </Button>
-          </CardContent>
-        </Card>
+      <div className="min-h-screen bg-gray-50 p-6">
+        <div className="max-w-6xl mx-auto">
+          <Link 
+            href="/dashboard/videos" 
+            className="inline-flex items-center text-blue-600 hover:text-blue-800 mb-6"
+          >
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Back to Videos
+          </Link>
+          
+          <div className="bg-white rounded-lg shadow p-8 text-center">
+            <h1 className="text-2xl font-bold text-gray-900 mb-2">Video Not Found</h1>
+            <p className="text-gray-600 mb-6">
+              {error || 'The requested video could not be found.'}
+            </p>
+            <Link 
+              href="/dashboard/videos"
+              className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+            >
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              Return to Videos
+            </Link>
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <div className="container mx-auto px-4 py-8">
-        <div className="space-y-6">
-          {/* Header */}
-          <div className="flex items-center justify-between">
-            <Button 
-              variant="outline" 
-              onClick={() => router.push('/dashboard/videos')}
-            >
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Back to Videos
-            </Button>
-            <div className="flex gap-2">
-              <Button variant="outline" onClick={handleDownload}>
-                <Download className="h-4 w-4 mr-2" />
-                Download
-              </Button>
-              <Button variant="outline">
-                <Share className="h-4 w-4 mr-2" />
-                Share
-              </Button>
-              <Button variant="outline">
-                <Edit className="h-4 w-4 mr-2" />
-                Edit
-              </Button>
-              <Button 
-                variant="outline" 
-                className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                onClick={handleDelete}
-              >
-                <Trash2 className="h-4 w-4 mr-2" />
-                Delete
-              </Button>
+    <div className="min-h-screen bg-gray-50 p-6">
+      <div className="max-w-6xl mx-auto">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-6">
+          <Link 
+            href="/dashboard/videos" 
+            className="inline-flex items-center text-blue-600 hover:text-blue-800"
+          >
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Back to Videos
+          </Link>
+          
+          <div className="flex items-center space-x-2">
+            <button className="p-2 text-gray-600 hover:text-blue-600 rounded">
+              <Download className="w-5 h-5" />
+            </button>
+            <button className="p-2 text-gray-600 hover:text-blue-600 rounded">
+              <Share2 className="w-5 h-5" />
+            </button>
+            <button className="p-2 text-gray-600 hover:text-blue-600 rounded">
+              <Edit className="w-5 h-5" />
+            </button>
+            <button className="p-2 text-gray-600 hover:text-red-600 rounded">
+              <Trash2 className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Main Content */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Video Player */}
+          <div className="lg:col-span-2">
+            <div className="bg-white rounded-lg shadow overflow-hidden">
+              <div className="p-6">
+                {video.mux_playback_id ? (
+                  <MuxVideoPlayer
+                    playbackId={video.mux_playback_id}
+                    title={video.title}
+                    poster={video.thumbnail_path}
+                    showCaptions={!!video.captions_url}
+                    showTranscript={!!video.transcript}
+                  />
+                ) : (
+                  <div className="aspect-video bg-gray-100 rounded flex items-center justify-center">
+                    <div className="text-center">
+                      <Clock className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                      <h3 className="text-lg font-semibold text-gray-700 mb-2">Processing Video</h3>
+                      <p className="text-gray-500 text-sm">
+                        Your video is being processed. This usually takes a few minutes.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
-          {/* Modern Video Player */}
-          <Card className="border-0 shadow-sm">
-            <CardContent className="pt-6">
-              {video.mux_playback_id ? (
-                // Use Mux player if we have a Mux playback ID
-                <MuxVideoPlayer
-                  playbackId={video.mux_playback_id}
-                  assetId={video.mux_asset_id}
-                  title={video.title}
-                  poster={video.mux_thumbnail_url || video.thumbnailUrl}
-                  className="w-full aspect-video rounded-lg overflow-hidden"
-                  showCaptions={true}
-                  showTranscript={true}
-                  showDownload={true}
-                  showShare={true}
-                  enableAdaptiveStreaming={true}
-                />
-              ) : (
-                // Fallback to enhanced HTML5 player for non-Mux videos
-                <div className="relative bg-gradient-to-br from-slate-900 to-black rounded-xl overflow-hidden group shadow-2xl">
-                  <video 
-                    controls 
-                    className="w-full h-full object-contain bg-black rounded-xl"
-                    poster={`/api/videos/thumbnail/${video.id}`}
-                    preload="metadata"
-                    playsInline
-                    crossOrigin="anonymous"
-                    style={{ aspectRatio: '16/9' }}
-                  >
-                    <source src={`/api/videos/stream/${video.id}`} type="video/mp4" />
-                    Your browser does not support the video tag.
-                  </video>
-                  
-                  {/* Enhanced overlay for non-Mux videos */}
-                  <div className="absolute top-4 right-4 bg-black/60 backdrop-blur-sm rounded-full px-3 py-1 text-white text-xs">
-                    Enhanced Streaming
-                  </div>
+          {/* Video Details */}
+          <div className="space-y-6">
+            {/* Basic Info */}
+            <div className="bg-white rounded-lg shadow p-6">
+              <h1 className="text-2xl font-bold text-gray-900 mb-4">{video.title}</h1>
+              
+              {video.description && (
+                <div className="mb-4">
+                  <h3 className="text-sm font-semibold text-gray-700 mb-2">Description</h3>
+                  <p className="text-gray-600 text-sm">{video.description}</p>
                 </div>
               )}
-              
-              {/* Enhanced Features Notice */}
-              <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div className="flex items-center gap-2 p-3 bg-gradient-to-r from-purple-50 to-pink-50 border border-purple-200 rounded-lg">
-                  <Sparkles className="h-4 w-4 text-purple-600" />
-                  <div className="text-sm">
-                    <div className="font-medium text-purple-800">Universal Format Support</div>
-                    <div className="text-purple-600 text-xs">WMV, AVI, MOV, MP4 & more</div>
-                  </div>
+
+              <div className="space-y-3">
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">File Size</span>
+                  <span className="font-medium">{formatFileSize(video.file_size)}</span>
                 </div>
                 
-                <div className="flex items-center gap-2 p-3 bg-gradient-to-r from-blue-50 to-cyan-50 border border-blue-200 rounded-lg">
-                  <Captions className="h-4 w-4 text-blue-600" />
-                  <div className="text-sm">
-                    <div className="font-medium text-blue-800">Auto Transcripts</div>
-                    <div className="text-blue-600 text-xs">AI-generated captions</div>
+                {video.duration && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">Duration</span>
+                    <span className="font-medium">{formatDuration(video.duration)}</span>
                   </div>
+                )}
+                
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">Format</span>
+                  <span className="font-medium">{video.filename.split('.').pop()?.toUpperCase()}</span>
                 </div>
                 
-                <div className="flex items-center gap-2 p-3 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-lg">
-                  <Volume2 className="h-4 w-4 text-green-600" />
-                  <div className="text-sm">
-                    <div className="font-medium text-green-800">Enhanced Audio</div>
-                    <div className="text-green-600 text-xs">Noise reduction & clarity</div>
-                  </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">Uploaded</span>
+                  <span className="font-medium">
+                    {new Date(video.created_at).toLocaleDateString()}
+                  </span>
                 </div>
               </div>
-              
-              {/* Processing Status */}
-              {video.status === "processing" && (
-                <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
-                  <div className="flex items-center gap-2 text-amber-800">
-                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-amber-600 border-t-transparent"></div>
-                    <span className="text-sm font-medium">Processing Video</span>
-                  </div>
-                  <p className="text-xs text-amber-600 mt-1">
-                    Your video is being processed with Mux for optimal streaming, thumbnail generation, and transcript creation.
-                  </p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Video Information */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Main Info */}
-            <div className="lg:col-span-2">
-              <Card className="border-0 shadow-sm">
-                <CardHeader>
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <CardTitle className="text-2xl mb-2">{video.title}</CardTitle>
-                      <CardDescription className="text-base">
-                        {video.description}
-                      </CardDescription>
-                    </div>
-                    <Badge 
-                      variant={video.status === "ready" ? "default" : video.status === "processing" ? "secondary" : "destructive"}
-                    >
-                      {video.status}
-                    </Badge>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    <div className="flex items-center gap-6 text-sm text-slate-600">
-                      <span className="flex items-center gap-1">
-                        <Users className="h-4 w-4" />
-                        {video.views} views
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <Calendar className="h-4 w-4" />
-                        {video.uploadDate ? new Date(video.uploadDate).toLocaleDateString() : 'Unknown date'}
-                      </span>
-                      <span className="flex items-center gap-1">
-                        {video.visibility === "public" ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
-                        {video.visibility}
-                      </span>
-                    </div>
-                    
-                    {video.tags.length > 0 && (
-                      <>
-                        <Separator />
-                        <div>
-                          <h4 className="font-medium mb-2">Tags</h4>
-                          <div className="flex flex-wrap gap-2">
-                            {video.tags.map(tag => (
-                              <Badge key={tag} variant="outline">
-                                {tag}
-                              </Badge>
-                            ))}
-                          </div>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
             </div>
 
-            {/* Video Details */}
-            <div>
-              <Card className="border-0 shadow-sm">
-                <CardHeader>
-                  <CardTitle>Video Details</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div>
-                    <label className="text-sm font-medium text-slate-600">Duration</label>
-                    <p className="text-sm">{formatDuration(video.duration)}</p>
+            {/* Mux Status */}
+            {video.mux_asset_id && (
+              <div className="bg-white rounded-lg shadow p-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+                  <Play className="w-5 h-5 mr-2 text-green-600" />
+                  Mux Integration
+                </h3>
+                
+                <div className="space-y-3">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">Status</span>
+                    <span className="text-green-600 font-medium">Active</span>
                   </div>
                   
-                  <div>
-                    <label className="text-sm font-medium text-slate-600">File Size</label>
-                    <p className="text-sm">{formatFileSize(video.size)}</p>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">Asset ID</span>
+                    <span className="font-mono text-xs">{video.mux_asset_id.substring(0, 12)}...</span>
                   </div>
                   
-                  <div>
-                    <label className="text-sm font-medium text-slate-600">Filename</label>
-                    <p className="text-sm font-mono text-xs break-all">{video.filename}</p>
-                  </div>
-                  
-                  {video.category && (
-                    <div>
-                      <label className="text-sm font-medium text-slate-600">Category</label>
-                      <p className="text-sm">{video.category}</p>
+                  {video.mux_playback_id && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-500">Playback ID</span>
+                      <span className="font-mono text-xs">{video.mux_playback_id.substring(0, 12)}...</span>
                     </div>
                   )}
-                  
-                  <div>
-                    <label className="text-sm font-medium text-slate-600">Uploaded By</label>
-                    <p className="text-sm">{video.createdBy}</p>
-                  </div>
-                  
-                  <div>
-                    <label className="text-sm font-medium text-slate-600">Upload Date</label>
-                    <p className="text-sm">{video.uploadDate ? new Date(video.uploadDate).toLocaleString() : 'Unknown date'}</p>
-                  </div>
-                </CardContent>
-              </Card>
+                </div>
+              </div>
+            )}
+
+            {/* Technical Details */}
+            <div className="bg-white rounded-lg shadow p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+                <FileVideo className="w-5 h-5 mr-2 text-blue-600" />
+                Technical Details
+              </h3>
+              
+              <div className="space-y-3">
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">Video ID</span>
+                  <span className="font-mono text-xs">{video.id}</span>
+                </div>
+                
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">Filename</span>
+                  <span className="text-xs">{video.filename}</span>
+                </div>
+                
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">Last Updated</span>
+                  <span className="font-medium">
+                    {new Date(video.updated_at).toLocaleDateString()}
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
