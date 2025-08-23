@@ -1,4 +1,4 @@
-"use client";
+ i"use client";
 
 import React, { useState, useRef } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -78,16 +78,17 @@ export function VideoUploadComponent({
     'Other'
   ];
 
-  // Handle file selection
+  // Handle file selection - Mux supports ALL video formats!
   const handleFileSelect = (file: File) => {
-    if (!file.type.startsWith('video/')) {
+    // Mux supports virtually any video format, so we're very permissive
+    if (!file.type.startsWith('video/') && !file.name.match(/\.(wmv|avi|mov|mp4|mkv|flv|webm|ogv|3gp|m4v|asf|rm|rmvb|vob|ts|mts|m2ts)$/i)) {
       onUploadError?.('Please select a valid video file');
       return;
     }
 
-    const maxSize = 2 * 1024 * 1024 * 1024; // 2GB limit
+    const maxSize = 5 * 1024 * 1024 * 1024; // 5GB limit (increased for Mux)
     if (file.size > maxSize) {
-      onUploadError?.('File size must be less than 2GB');
+      onUploadError?.('File size must be less than 5GB');
       return;
     }
 
@@ -347,8 +348,8 @@ export function VideoUploadComponent({
                   </p>
                 </div>
                 <div className="text-xs text-slate-400 space-y-1">
-                  <p>Supported formats: MP4, MOV, AVI, WebM, OGG</p>
-                  <p>Maximum file size: 2GB</p>
+                  <p>Supported formats: ALL video formats (MP4, WMV, AVI, MOV, MKV, FLV, WebM, and more)</p>
+                  <p>Maximum file size: 5GB</p>
                 </div>
                 <Button
                   variant="outline"
