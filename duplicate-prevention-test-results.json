@@ -1,0 +1,104 @@
+{
+  "timestamp": "2025-08-23T02:19:55.547Z",
+  "summary": {
+    "totalTests": 6,
+    "passedTests": 5,
+    "failedTests": 1,
+    "successRate": 83
+  },
+  "systemStatus": "HEALTHY",
+  "testResults": [
+    {
+      "name": "Database Migration Status",
+      "status": "PASSED",
+      "result": {
+        "databaseHealthy": true,
+        "videoApiWorking": true,
+        "migrationStatus": "ready"
+      }
+    },
+    {
+      "name": "Duplicate Detection API",
+      "status": "PASSED",
+      "result": {
+        "duplicateGroups": 0,
+        "statistics": {
+          "totalGroups": 0,
+          "totalDuplicates": 0,
+          "duplicatesByType": {},
+          "averageDuplicatesPerGroup": 0
+        },
+        "hasInstructions": true
+      }
+    },
+    {
+      "name": "Upload Deduplication Logic",
+      "status": "FAILED",
+      "error": "Upload test failed: 500 - {\"success\":false,\"error\":\"Database connection failed - video upload aborted\",\"details\":\"DATABASE_URL not configured\",\"troubleshooting\":{\"issue\":\"Database server unreachable\",\"suggestion\":\"Check DATABASE_URL and database server status\"}}"
+    },
+    {
+      "name": "Duplicate Resolution (Dry Run)",
+      "status": "PASSED",
+      "result": {
+        "skipped": true,
+        "reason": "No duplicate groups available"
+      }
+    },
+    {
+      "name": "Error Handling & Edge Cases",
+      "status": "PASSED",
+      "result": {
+        "totalTests": 3,
+        "passedTests": 2,
+        "tests": [
+          {
+            "name": "Invalid action handling",
+            "passed": true,
+            "details": {
+              "success": false,
+              "error": "Invalid request: action and duplicateVideoIds are required"
+            }
+          },
+          {
+            "name": "Missing fields handling",
+            "passed": true,
+            "details": {
+              "success": false,
+              "error": "Invalid request: action and duplicateVideoIds are required"
+            }
+          },
+          {
+            "name": "Non-existent video handling",
+            "passed": false,
+            "details": {
+              "success": false,
+              "error": "Failed to resolve duplicates",
+              "details": "",
+              "troubleshooting": [
+                "Check request format and required fields",
+                "Verify video IDs exist in database",
+                "Ensure sufficient permissions for database operations",
+                "Check database connectivity"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "Performance & Scalability",
+      "status": "PASSED",
+      "result": {
+        "duplicateDetectionTime": 735,
+        "videoListingTime": 572,
+        "totalTime": 1307,
+        "performanceAcceptable": true
+      }
+    }
+  ],
+  "environment": {
+    "baseUrl": "http://localhost:3000",
+    "nodeVersion": "v24.4.1",
+    "platform": "win32"
+  }
+}

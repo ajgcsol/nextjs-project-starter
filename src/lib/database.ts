@@ -484,7 +484,332 @@ export const VideoDB = {
   },
 
   /**
-   * Create video with automatic fallback handling
+   * Find video by Mux Asset ID with proper error handling
+   */
+  async findByMuxAssetId(muxAssetId: string) {
+    if (!muxAssetId) return null;
+    
+    console.log('🔍 VideoDB.findByMuxAssetId: Searching for Mux Asset ID:', muxAssetId);
+    
+    try {
+      // First check if the mux_asset_id column exists
+      const { rows } = await query(
+        'SELECT * FROM videos WHERE mux_asset_id = $1 LIMIT 1',
+        [muxAssetId]
+      );
+      
+      const result = rows[0] || null;
+      console.log('🔍 VideoDB.findByMuxAssetId: Query result:', result ? `Found video ${result.id}` : 'No video found');
+      
+      return result;
+    } catch (error) {
+      // If mux_asset_id column doesn't exist, return null (migration not run yet)
+      if (error instanceof Error && (
+        error.message.includes('column "mux_asset_id" does not exist') ||
+        error.message.includes('mux_asset_id')
+      )) {
+        console.log('⚠️ VideoDB.findByMuxAssetId: mux_asset_id column does not exist (migration needed)');
+        return null;
+      }
+      
+      console.error('❌ VideoDB.findByMuxAssetId: Database error:', error);
+      throw error; // Re-throw other database errors
+    }
+  },
+
+  /**
+   * Find or create video by Mux Asset ID with circuit breaker to prevent infinite loops
+   */
+  async findOrCreateByMuxAsset(muxAssetId: string, videoData: {
+    title: string;
+    description?: string;
+    filename: string;
+    file_path: string;
+    file_size: number;
+    duration?: number;
+    thumbnail_path?: string;
+    video_quality?: string;
+    uploaded_by: string;
+    course_id?: string;
+    s3_key?: string;
+    s3_bucket?: string;
+    is_processed?: boolean;
+    is_public?: boolean;
+    // Mux integration fields
+    mux_asset_id?: string;
+    mux_playback_id?: string;
+    mux_upload_id?: string;
+    mux_status?: string;
+    mux_thumbnail_url?: string;
+    mux_streaming_url?: string;
+    mux_mp4_url?: string;
+    mux_duration_seconds?: number;
+    mux_aspect_ratio?: string;
+    mux_created_at?: Date;
+    mux_ready_at?: Date;
+    audio_enhanced?: boolean;
+    audio_enhancement_job_id?: string;
+    transcription_job_id?: string;
+    captions_webvtt_url?: string;
+    captions_srt_url?: string;
+    transcript_text?: string;
+    transcript_confidence?: number;
+  }, _recursionDepth: number = 0): Promise<{ 
+    video: any; 
+    created: boolean; 
+    merged?: boolean; 
+    duplicateInfo?: any;
+    muxFieldsUsed: boolean;
+    fallbackUsed: boolean;
+  }> {
+    
+    // CIRCUIT BREAKER: Prevent infinite loops
+    if (_recursionDepth > 2) {
+      console.error('🚨 VideoDB.findOrCreateByMuxAsset: CIRCUIT BREAKER ACTIVATED - Too many recursion attempts');
+      throw new Error('Circuit breaker activated: Too many recursion attempts in findOrCreateByMuxAsset');
+    }
+    
+    console.log(`🔍 VideoDB.findOrCreateByMuxAsset: Attempt ${_recursionDepth + 1} - Checking for existing video with Mux Asset ID:`, muxAssetId);
+    
+    try {
+      // Step 1: Check if video already exists
+      if (muxAssetId) {
+        console.log('🔍 Step 1: Checking for existing video...');
+        const existingVideo = await this.findByMuxAssetId(muxAssetId);
+        
+        if (existingVideo) {
+          console.log('✅ VideoDB.findOrCreateByMuxAsset: Found existing video:', existingVideo.id);
+          
+          return {
+            video: existingVideo,
+            created: false,
+            merged: false,
+            duplicateInfo: {
+              existingVideoId: existingVideo.id,
+              action: 'returned_existing'
+            },
+            muxFieldsUsed: true,
+            fallbackUsed: false
+          };
+        }
+      }
+      
+      // Step 2: No existing video found, create new one WITHOUT calling createWithFallback
+      console.log('➕ Step 2: Creating new video record directly...');
+      
+      // Create video directly to avoid recursion
+      const newVideo = await this.create(videoData);
+      
+      console.log('✅ VideoDB.findOrCreateByMuxAsset: Successfully created new video:', newVideo.id);
+      
+      return {
+        video: newVideo,
+        created: true,
+        merged: false,
+        muxFieldsUsed: !!newVideo.mux_asset_id,
+        fallbackUsed: !newVideo.mux_asset_id
+      };
+      
+    } catch (error) {
+      console.error('❌ VideoDB.findOrCreateByMuxAsset: Error in attempt', _recursionDepth + 1, ':', error);
+      
+      // Handle unique constraint violation (race condition)
+      if (error instanceof Error && (
+        error.message.includes('unique_mux_asset_id') ||
+        error.message.includes('duplicate key value')
+      )) {
+        console.log('⚠️ VideoDB.findOrCreateByMuxAsset: Unique constraint violation detected, retrying...');
+        
+        // Retry once to find the existing video (race condition handling)
+        if (_recursionDepth < 1) {
+          await new Promise(resolve => setTimeout(resolve, 100)); // Small delay
+          return this.findOrCreateByMuxAsset(muxAssetId, videoData, _recursionDepth + 1);
+        }
+        
+        // If still failing after retry, try to find existing video
+        const existingVideo = await this.findByMuxAssetId(muxAssetId);
+        if (existingVideo) {
+          console.log('✅ VideoDB.findOrCreateByMuxAsset: Found existing video after constraint violation');
+          return {
+            video: existingVideo,
+            created: false,
+            merged: false,
+            duplicateInfo: {
+              existingVideoId: existingVideo.id,
+              action: 'constraint_violation_resolved',
+              error: 'Duplicate Mux Asset ID prevented by database constraint'
+            },
+            muxFieldsUsed: true,
+            fallbackUsed: false
+          };
+        }
+      }
+      
+      // For other errors, don't retry - just throw
+      console.error('❌ VideoDB.findOrCreateByMuxAsset: Unrecoverable error:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Check if video data should be merged
+   */
+  shouldMergeVideoData(existingVideo: any, newVideoData: any): { 
+    shouldMerge: boolean; 
+    fieldsToMerge: string[] 
+  } {
+    const fieldsToMerge: string[] = [];
+    
+    // Check for missing or incomplete fields that should be merged
+    const mergeableFields = [
+      'title', 'description', 'thumbnail_path', 'duration', 'file_size',
+      'mux_thumbnail_url', 'mux_streaming_url', 'mux_mp4_url', 
+      'mux_duration_seconds', 'mux_aspect_ratio', 'mux_playback_id',
+      'captions_webvtt_url', 'captions_srt_url', 'transcript_text'
+    ];
+    
+    for (const field of mergeableFields) {
+      const existingValue = existingVideo[field];
+      const newValue = newVideoData[field];
+      
+      // Merge if existing is null/empty and new has value
+      if ((!existingValue || existingValue === '') && newValue) {
+        fieldsToMerge.push(field);
+      }
+      // Merge if new value is more complete (longer text, larger numbers)
+      else if (typeof newValue === 'string' && typeof existingValue === 'string') {
+        if (newValue.length > existingValue.length) {
+          fieldsToMerge.push(field);
+        }
+      }
+      else if (typeof newValue === 'number' && typeof existingValue === 'number') {
+        if (newValue > existingValue) {
+          fieldsToMerge.push(field);
+        }
+      }
+    }
+    
+    return {
+      shouldMerge: fieldsToMerge.length > 0,
+      fieldsToMerge
+    };
+  },
+
+  /**
+   * Merge video data into existing record
+   */
+  async mergeVideoData(videoId: string, newData: any, fieldsToMerge: string[]) {
+    if (fieldsToMerge.length === 0) return null;
+    
+    const updateFields = fieldsToMerge.filter(field => newData[field] !== undefined);
+    const values = updateFields.map(field => newData[field]);
+    const setClause = updateFields.map((field, index) => `${field} = $${index + 2}`).join(', ');
+    
+    console.log(`🔄 VideoDB.mergeVideoData: Merging fields [${updateFields.join(', ')}] for video ${videoId}`);
+    
+    try {
+      const { rows } = await query(
+        `UPDATE videos SET ${setClause}, updated_at = CURRENT_TIMESTAMP WHERE id = $1 RETURNING *`,
+        [videoId, ...values]
+      );
+      
+      if (rows[0]) {
+        console.log(`✅ VideoDB.mergeVideoData: Successfully merged ${updateFields.length} fields`);
+      }
+      
+      return rows[0];
+    } catch (error) {
+      console.error('❌ VideoDB.mergeVideoData: Error merging video data:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Find duplicate videos by various criteria
+   */
+  async findDuplicateVideos(): Promise<Array<{
+    type: 'mux_asset_id' | 'filename_timing' | 'file_size_timing';
+    groupId: string;
+    videos: any[];
+    recommendedAction: 'merge' | 'keep_latest' | 'manual_review';
+    conflictFields: string[];
+  }>> {
+    const duplicateGroups = [];
+    
+    try {
+      // Find duplicates by Mux Asset ID
+      const { rows: muxDuplicates } = await query(`
+        SELECT mux_asset_id, array_agg(id ORDER BY created_at DESC) as video_ids
+        FROM videos 
+        WHERE mux_asset_id IS NOT NULL 
+        GROUP BY mux_asset_id 
+        HAVING COUNT(*) > 1
+      `);
+      
+      for (const duplicate of muxDuplicates) {
+        const videos = await Promise.all(
+          duplicate.video_ids.map((id: string) => this.findById(id))
+        );
+        
+        duplicateGroups.push({
+          type: 'mux_asset_id' as const,
+          groupId: duplicate.mux_asset_id,
+          videos: videos.filter(Boolean),
+          recommendedAction: 'merge' as const,
+          conflictFields: this.identifyConflictFields(videos.filter(Boolean))
+        });
+      }
+      
+      // Find potential duplicates by filename and timing
+      const { rows: timingDuplicates } = await query(`
+        SELECT * FROM detect_potential_duplicates(300)
+      `);
+      
+      for (const duplicate of timingDuplicates) {
+        const videos = await Promise.all(
+          duplicate.video_ids.map((id: string) => this.findById(id))
+        );
+        
+        duplicateGroups.push({
+          type: 'filename_timing' as const,
+          groupId: duplicate.group_id,
+          videos: videos.filter(Boolean),
+          recommendedAction: 'manual_review' as const,
+          conflictFields: this.identifyConflictFields(videos.filter(Boolean))
+        });
+      }
+      
+      return duplicateGroups;
+      
+    } catch (error) {
+      console.error('❌ VideoDB.findDuplicateVideos: Error finding duplicates:', error);
+      return [];
+    }
+  },
+
+  /**
+   * Identify conflicting fields between videos
+   */
+  identifyConflictFields(videos: any[]): string[] {
+    if (videos.length < 2) return [];
+    
+    const conflictFields: string[] = [];
+    const fieldsToCheck = ['title', 'description', 'file_size', 'duration', 'thumbnail_path'];
+    
+    for (const field of fieldsToCheck) {
+      const values = videos.map(v => v[field]).filter(v => v != null);
+      const uniqueValues = [...new Set(values)];
+      
+      if (uniqueValues.length > 1) {
+        conflictFields.push(field);
+      }
+    }
+    
+    return conflictFields;
+  },
+
+  /**
+   * Create video with automatic fallback handling - NO RECURSION
    */
   async createWithFallback(videoData: {
     title: string;
@@ -522,11 +847,20 @@ export const VideoDB = {
     transcript_confidence?: number;
   }): Promise<{ video: any; muxFieldsUsed: boolean; fallbackUsed: boolean }> {
     
+    console.log('🎯 VideoDB.createWithFallback: Creating video directly (no recursion)');
+    
+    // FIXED: Always use direct create method - no recursion or deduplication here
     try {
       const video = await this.create(videoData);
       
       // Check if the returned video has Mux fields
       const hasMuxFields = video.mux_asset_id !== undefined;
+      
+      console.log('✅ VideoDB.createWithFallback: Video created successfully', {
+        videoId: video.id,
+        hasMuxFields,
+        muxAssetId: video.mux_asset_id
+      });
       
       return {
         video,
