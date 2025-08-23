@@ -1176,6 +1176,83 @@ export const VideoDB = {
       [videoId, s3Key, filePath]
     );
     return rows[0];
+  },
+
+  /**
+   * Update Mux asset information for a video
+   */
+  async updateMuxAsset(videoId: string, muxData: {
+    mux_asset_id?: string;
+    mux_playback_id?: string;
+    mux_upload_id?: string;
+    mux_status?: string;
+    mux_thumbnail_url?: string;
+    streaming_url?: string;
+    mp4_url?: string;
+    mux_duration_seconds?: number;
+    mux_aspect_ratio?: string;
+    mux_created_at?: Date;
+    mux_ready_at?: Date;
+    thumbnail_url?: string;
+  }) {
+    console.log('🎬 VideoDB.updateMuxAsset: Updating Mux asset for video:', videoId);
+    
+    try {
+      // Try to update with Mux fields first
+      const fields = Object.keys(muxData).filter(key => muxData[key as keyof typeof muxData] !== undefined);
+      const values = fields.map(key => muxData[key as keyof typeof muxData]);
+      const setClause = fields.map((field, index) => `${field} = $${index + 2}`).join(', ');
+      
+      if (fields.length === 0) {
+        console.log('⚠️ VideoDB.updateMuxAsset: No fields to update');
+        return null;
+      }
+
+      const { rows } = await query(
+        `UPDATE videos SET ${setClause}, updated_at = CURRENT_TIMESTAMP WHERE id = $1 RETURNING *`,
+        [videoId, ...values]
+      );
+      
+      if (rows[0]) {
+        console.log('✅ VideoDB.updateMuxAsset: Successfully updated Mux asset information');
+      } else {
+        console.log('❌ VideoDB.updateMuxAsset: Video not found');
+      }
+      
+      return rows[0];
+      
+    } catch (error) {
+      // If Mux columns don't exist, log and continue gracefully
+      if (error instanceof Error && (
+        error.message.includes('does not exist') || 
+        error.message.includes('column') ||
+        error.message.includes('mux_')
+      )) {
+        console.log('⚠️ VideoDB.updateMuxAsset: Mux columns not found (migration needed), storing basic info...');
+        
+        // Update basic fields that should exist
+        const basicUpdates: any = {};
+        if (muxData.thumbnail_url) basicUpdates.thumbnail_path = muxData.thumbnail_url;
+        if (muxData.streaming_url) basicUpdates.file_path = muxData.streaming_url;
+        
+        if (Object.keys(basicUpdates).length > 0) {
+          try {
+            const result = await this.update(videoId, basicUpdates);
+            console.log('✅ VideoDB.updateMuxAsset: Updated basic fields as fallback');
+            return result;
+          } catch (basicError) {
+            console.error('❌ VideoDB.updateMuxAsset: Failed to update even basic fields:', basicError);
+            throw basicError;
+          }
+        } else {
+          console.log('⚠️ VideoDB.updateMuxAsset: No basic fields to update, skipping');
+          return null;
+        }
+      } else {
+        console.error('❌ VideoDB.updateMuxAsset: Unexpected error:', error);
+        throw error;
+      }
+    }
   }
 };
 

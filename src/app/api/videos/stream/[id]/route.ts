@@ -3,6 +3,7 @@ import { VideoDB } from '@/lib/database';
 import { videoMonitor } from '@/lib/monitoring';
 import { MediaDiscoveryService, VideoStreamResponse } from '@/lib/mediaDiscovery';
 import { VideoConverter } from '@/lib/videoConverter';
+import { MuxVideoProcessor } from '@/lib/mux-video-processor';
 
 export async function GET(
   request: NextRequest,
@@ -166,7 +167,66 @@ export async function GET(
       }
     }
 
-    // Priority 4: Generate presigned URL as absolute last resort
+    // Priority 4: Auto-create Mux asset if video exists in S3 but no playback ID
+    if (!videoUrl && (video.s3_key || discoveredS3Key)) {
+      const s3Key = video.s3_key || discoveredS3Key;
+      
+      // Check if video has Mux playback ID, if not create one
+      if (!video.mux_playback_id && s3Key) {
+        console.log('🎬 Video exists in S3 but no Mux asset found, creating Mux asset...');
+        
+        try {
+          const muxOptions = MuxVideoProcessor.getDefaultProcessingOptions();
+          const muxResult = await MuxVideoProcessor.createAssetFromS3(s3Key, videoId, muxOptions);
+          
+          if (muxResult.success && muxResult.assetId && muxResult.playbackId) {
+            console.log('✅ Mux asset created successfully:', {
+              assetId: muxResult.assetId,
+              playbackId: muxResult.playbackId
+            });
+            
+            // Update database with new Mux asset information
+            try {
+              await VideoDB.updateMuxAsset(videoId, {
+                mux_asset_id: muxResult.assetId,
+                mux_playback_id: muxResult.playbackId,
+                mux_status: muxResult.processingStatus,
+                streaming_url: muxResult.streamingUrl,
+                mp4_url: muxResult.mp4Url,
+                thumbnail_url: muxResult.thumbnailUrl
+              });
+              
+              console.log('📝 Database updated with new Mux asset information');
+              
+              // Use Mux streaming URL if available
+              if (muxResult.streamingUrl) {
+                videoUrl = muxResult.streamingUrl;
+                discoveryMethod = 'mux_auto_created';
+                discoveryAttempts.push(`mux_auto_created: ${videoUrl}`);
+              } else if (muxResult.mp4Url) {
+                videoUrl = muxResult.mp4Url;
+                discoveryMethod = 'mux_mp4_auto_created';
+                discoveryAttempts.push(`mux_mp4_auto_created: ${videoUrl}`);
+              }
+              
+            } catch (dbUpdateError) {
+              console.warn('⚠️ Failed to update database with Mux asset:', dbUpdateError);
+              // Continue with other methods even if DB update fails
+            }
+            
+          } else {
+            console.log('❌ Mux asset creation failed:', muxResult.error);
+            discoveryAttempts.push(`mux_auto_creation: failed - ${muxResult.error}`);
+          }
+          
+        } catch (muxError) {
+          console.error('❌ Mux asset creation error:', muxError);
+          discoveryAttempts.push(`mux_auto_creation: error - ${muxError instanceof Error ? muxError.message : 'Unknown error'}`);
+        }
+      }
+    }
+
+    // Priority 5: Generate presigned URL as absolute last resort
     if (!videoUrl && (video.s3_key || discoveredS3Key)) {
       try {
         console.log('🔐 Generating presigned URL as last resort...');

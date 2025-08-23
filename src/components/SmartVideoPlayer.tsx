@@ -231,7 +231,7 @@ export function SmartVideoPlayer({
     const video = videoRef.current;
     if (!video || error) return;
 
-    const tryCurrentSource = () => {
+    const tryCurrentSource = async () => {
       if (currentSource === 'mux') {
         const muxUrl = getMuxUrl();
         if (muxUrl) {
@@ -243,14 +243,39 @@ export function SmartVideoPlayer({
       } else if (currentSource === 's3') {
         const s3Url = getS3Url();
         if (s3Url) {
-          video.src = s3Url;
-          video.load();
+          // Test S3/CloudFront URL before using it
+          try {
+            const response = await fetch(s3Url, { method: 'HEAD' });
+            if (response.ok) {
+              video.src = s3Url;
+              video.load();
+            } else {
+              console.log(`❌ S3/CloudFront returned ${response.status}, trying API...`);
+              setCurrentSource('api');
+            }
+          } catch (fetchError) {
+            console.log('❌ S3/CloudFront fetch failed, trying API...', fetchError);
+            setCurrentSource('api');
+          }
         } else {
           setCurrentSource('api');
         }
       } else if (currentSource === 'api') {
-        video.src = getApiUrl();
-        video.load();
+        const apiUrl = getApiUrl();
+        // Test API URL before using it
+        try {
+          const response = await fetch(apiUrl, { method: 'HEAD' });
+          if (response.ok) {
+            video.src = apiUrl;
+            video.load();
+          } else {
+            console.log(`❌ API returned ${response.status}, no more sources available`);
+            setError('Video is not available. The file may have been moved or deleted.');
+          }
+        } catch (fetchError) {
+          console.log('❌ API fetch failed, no more sources available', fetchError);
+          setError('Video is not available. Please check your connection and try again.');
+        }
       }
     };
 
