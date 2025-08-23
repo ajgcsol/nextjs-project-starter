@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, Download, Share2, Edit, Trash2, Play, Clock, FileVideo } from 'lucide-react';
-import { PremiumMuxPlayer } from '@/components/PremiumMuxPlayer';
+import { SmartVideoPlayer } from '@/components/SmartVideoPlayer';
 
 interface Video {
   id: string;
@@ -18,6 +18,7 @@ interface Video {
   s3_key?: string;
   thumbnail_path?: string;
   thumbnailUrl?: string;
+  streamUrl?: string;
   mux_asset_id?: string;
   mux_playback_id?: string;
   processing_status?: string;
@@ -163,39 +164,15 @@ export default function VideoDetailPage() {
           <div className="lg:col-span-2">
             <div className="bg-white rounded-lg shadow overflow-hidden">
               <div className="p-6">
-                {(() => {
-                  // Extract playback ID from mux_playback_id or thumbnail URL
-                  let playbackId = video.mux_playback_id;
-                  
-                  // If no direct playback ID, try to extract from Mux thumbnail URL
-                  const thumbnailUrl = video.thumbnailUrl || video.thumbnail_path;
-                  if (!playbackId && thumbnailUrl && thumbnailUrl.includes('image.mux.com')) {
-                    playbackId = thumbnailUrl.split('/')[3];
-                  }
-                  
-                  return playbackId ? (
-                    <PremiumMuxPlayer
-                      playbackId={playbackId}
-                      title={video.title}
-                      poster={thumbnailUrl}
-                      captionsAvailable={!!video.captions_url}
-                      transcriptText={video.transcript}
-                      showTranscript={!!video.transcript}
-                      audioEnhanced={video.audio_enhanced || false}
-                      className="w-full aspect-video"
-                    />
-                  ) : (
-                    <div className="aspect-video bg-gray-100 rounded flex items-center justify-center">
-                      <div className="text-center">
-                        <Clock className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                        <h3 className="text-lg font-semibold text-gray-700 mb-2">Processing Video</h3>
-                        <p className="text-gray-500 text-sm">
-                          Your video is being processed. This usually takes a few minutes.
-                        </p>
-                      </div>
-                    </div>
-                  );
-                })()}
+                <SmartVideoPlayer
+                  videoId={video.id}
+                  playbackId={video.mux_playback_id}
+                  title={video.title}
+                  poster={video.thumbnailUrl || video.thumbnail_path}
+                  s3Key={video.s3_key}
+                  filePath={video.streamUrl}
+                  className="w-full aspect-video"
+                />
               </div>
             </div>
           </div>
