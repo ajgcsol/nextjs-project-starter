@@ -20,6 +20,14 @@ export interface VideoStreamResponse {
     cloudFrontUrl?: string;
     directUrl?: string;
     discoveryAttempts?: string[];
+    discoveryMethod?: string;
+    title?: string;
+    duration?: number;
+    size?: number;
+    format?: string;
+    isProcessed?: boolean;
+    muxPlaybackId?: string;
+    muxAssetId?: string;
   };
 }
 

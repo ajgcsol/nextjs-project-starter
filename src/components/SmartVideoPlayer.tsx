@@ -262,12 +262,20 @@ export function SmartVideoPlayer({
         }
       } else if (currentSource === 'api') {
         const apiUrl = getApiUrl();
-        // Test API URL before using it
+        // Fetch JSON metadata from API to get actual video URL
         try {
-          const response = await fetch(apiUrl, { method: 'HEAD' });
+          console.log('🔄 Loading video from API...');
+          const response = await fetch(apiUrl);
           if (response.ok) {
-            video.src = apiUrl;
-            video.load();
+            const data = await response.json();
+            if (data.success && data.videoUrl) {
+              console.log('✅ Got video URL from API:', data.videoUrl);
+              video.src = data.videoUrl;
+              video.load();
+            } else {
+              console.log('❌ API returned no video URL:', data.error || 'Unknown error');
+              setError(data.error || 'Video URL not available from API.');
+            }
           } else {
             console.log(`❌ API returned ${response.status}, no more sources available`);
             setError('Video is not available. The file may have been moved or deleted.');

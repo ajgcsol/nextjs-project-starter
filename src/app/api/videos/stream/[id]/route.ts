@@ -284,83 +284,34 @@ export async function GET(
       console.warn('⚠️ Failed to increment view count:', viewError);
     }
 
-    // Check if this is a range request (for video seeking/progressive loading)
-    const range = request.headers.get('range');
-    
-    // For small videos (<50MB), proxy through our API to avoid CORS issues
-    // For large videos, still redirect but with better CORS handling
-    const isSmallVideo = !video.size || video.size < 50 * 1024 * 1024; // 50MB threshold
-    
-    if (isSmallVideo || range) {
-      console.log(`🔄 Proxying video (${video.size ? Math.round(video.size / 1024 / 1024) + 'MB' : 'unknown size'}) through API to avoid CORS issues`);
-      
-      try {
-        // Fetch the video from CloudFront
-        const videoResponse = await fetch(videoUrl, {
-          headers: range ? { 'Range': range } : {}
-        });
-        
-        if (!videoResponse.ok) {
-          throw new Error(`CloudFront fetch failed: ${videoResponse.status}`);
-        }
-        
-        // Get the video stream
-        const videoStream = videoResponse.body;
-        
-        if (!videoStream) {
-          throw new Error('No video stream available');
-        }
-        
-        // Create response with proper headers
-        const response = new NextResponse(videoStream, {
-          status: range ? 206 : 200,
-          headers: {
-            'Content-Type': videoResponse.headers.get('content-type') || 'video/mp4',
-            'Content-Length': videoResponse.headers.get('content-length') || '',
-            'Accept-Ranges': 'bytes',
-            'Cache-Control': 'public, max-age=3600', // 1 hour cache for proxied content
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
-            'Access-Control-Allow-Headers': 'Range, Content-Range, Content-Length',
-            'Access-Control-Expose-Headers': 'Content-Range, Content-Length, Accept-Ranges',
-            'Access-Control-Allow-Credentials': 'false'
-          }
-        });
-        
-        // Add range-specific headers if this is a partial content request
-        if (range && videoResponse.status === 206) {
-          const contentRange = videoResponse.headers.get('content-range');
-          if (contentRange) {
-            response.headers.set('Content-Range', contentRange);
-          }
-        }
-        
-        return response;
-        
-      } catch (proxyError) {
-        console.error('❌ Video proxy failed, falling back to redirect:', proxyError);
-        // Fall through to redirect logic below
+    // Return video metadata and streaming URL instead of proxying the video
+    const successResponse: VideoStreamResponse = {
+      success: true,
+      videoUrl: videoUrl,
+      metadata: {
+        discoveryMethod,
+        discoveryAttempts,
+        s3Key: video.s3_key || discoveredS3Key,
+        directUrl: videoUrl,
+        title: video.title,
+        duration: video.duration,
+        size: video.size,
+        format: video.format || 'video/mp4',
+        isProcessed: video.is_processed,
+        muxPlaybackId: video.mux_playback_id,
+        muxAssetId: video.mux_asset_id
       }
-    }
+    };
+
+    console.log('✅ Returning video metadata and streaming URL');
     
-    // For large videos or when proxy fails, redirect with proper CORS headers
-    console.log(`🔄 Redirecting large video (${video.size ? Math.round(video.size / 1024 / 1024) + 'MB' : 'unknown size'}) to CloudFront`);
+    const response = NextResponse.json(successResponse);
     
-    const response = NextResponse.redirect(videoUrl, 302);
-    
-    // Set optimal headers for video streaming with correct CORS
-    response.headers.set('Cache-Control', 'public, max-age=31536000, immutable'); // 1 year cache
-    response.headers.set('Accept-Ranges', 'bytes');
+    // Set CORS headers for API response
     response.headers.set('Access-Control-Allow-Origin', '*');
-    response.headers.set('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
-    response.headers.set('Access-Control-Allow-Headers', 'Range, Content-Range, Content-Length');
-    response.headers.set('Access-Control-Expose-Headers', 'Content-Range, Content-Length, Accept-Ranges');
-    response.headers.set('Access-Control-Allow-Credentials', 'false');
-    
-    // Add video-specific headers
-    if (range) {
-      response.headers.set('Vary', 'Range');
-    }
+    response.headers.set('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS, POST');
+    response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    response.headers.set('Cache-Control', 'public, max-age=300'); // 5 minute cache for metadata
     
     return response;
 
