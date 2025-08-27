@@ -278,7 +278,7 @@ export class VideoOptimizationService {
             }
           }
         }
-      });
+      } as any);
     }
 
     return {

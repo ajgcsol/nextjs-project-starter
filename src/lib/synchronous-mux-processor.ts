@@ -93,7 +93,7 @@ export class SynchronousMuxProcessor {
         
         if (!metadata) {
           console.log('📊 Using fallback metadata extraction...');
-          metadata = VideoMetadataExtractor.extractFromFileInfo(filename || 'unknown.mp4', fileSize, s3Key);
+          metadata = VideoMetadataExtractor.extractFromFileInfo(filename || 'unknown.mp4', fileSize || 0, s3Key);
         }
         
         console.log('📊 Metadata extracted:', {

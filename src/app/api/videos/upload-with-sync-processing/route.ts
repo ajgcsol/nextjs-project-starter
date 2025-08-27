@@ -103,7 +103,9 @@ export async function POST(request: NextRequest) {
         const syncResult = await SynchronousMuxProcessor.processVideoSynchronously(
           s3Key,
           fileId,
-          120000 // 2 minutes max wait
+          filename, // filename parameter
+          size, // fileSize parameter
+          120000 // maxWaitTime parameter - 2 minutes max wait
         );
         
         if (syncResult.success) {

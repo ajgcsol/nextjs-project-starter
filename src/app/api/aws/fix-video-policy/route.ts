@@ -17,7 +17,7 @@ export async function GET() {
     
     // Get current policy
     const currentPolicyResponse = await s3Client.send(new GetBucketPolicyCommand({ Bucket: BUCKET_NAME }));
-    const currentPolicy = JSON.parse(currentPolicyResponse.Policy);
+    const currentPolicy = currentPolicyResponse.Policy ? JSON.parse(currentPolicyResponse.Policy) : {};
     
     console.log('📋 Current policy:', currentPolicy);
 

@@ -23,7 +23,7 @@ export async function GET() {
     // Check bucket policy
     try {
       const policyResponse = await s3Client.send(new GetBucketPolicyCommand({ Bucket: BUCKET_NAME }));
-      results.bucketPolicy = JSON.parse(policyResponse.Policy);
+      results.bucketPolicy = policyResponse.Policy ? JSON.parse(policyResponse.Policy) : null;
       console.log('📋 Current bucket policy:', results.bucketPolicy);
     } catch (error: any) {
       if (error.name === 'NoSuchBucketPolicy') {

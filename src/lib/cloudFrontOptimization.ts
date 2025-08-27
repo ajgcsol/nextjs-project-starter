@@ -1,4 +1,4 @@
-import { CloudFrontClient, CreateInvalidationCommand, GetDistributionConfigCommand, UpdateDistributionCommand } from '@aws-sdk/client-cloudfront';
+import { CloudFrontClient, CreateInvalidationCommand, GetDistributionConfigCommand, UpdateDistributionCommand, ViewerProtocolPolicy, Method, PriceClass } from '@aws-sdk/client-cloudfront';
 
 export interface CloudFrontConfig {
   distributionId: string;
@@ -140,20 +140,21 @@ export class CloudFrontOptimizer {
         ...distributionConfig,
         Comment: 'Optimized for video streaming - Law School Repository',
         DefaultRootObject: '',
-        PriceClass: 'PriceClass_All', // Use all edge locations for best performance
+        PriceClass: 'PriceClass_All' as PriceClass, // Use all edge locations for best performance
         Enabled: true,
         
         // Optimize default cache behavior for video content
         DefaultCacheBehavior: {
           ...distributionConfig.DefaultCacheBehavior,
-          ViewerProtocolPolicy: 'redirect-to-https',
+          TargetOriginId: distributionConfig.DefaultCacheBehavior?.TargetOriginId || 'S3-law-school-repository-content',
+          ViewerProtocolPolicy: 'redirect-to-https' as ViewerProtocolPolicy,
           Compress: false, // Don't compress video files by default
           AllowedMethods: {
             Quantity: 7,
-            Items: ['GET', 'HEAD', 'OPTIONS', 'PUT', 'POST', 'PATCH', 'DELETE'],
+            Items: ['GET', 'HEAD', 'OPTIONS', 'PUT', 'POST', 'PATCH', 'DELETE'] as Method[],
             CachedMethods: {
               Quantity: 2,
-              Items: ['GET', 'HEAD']
+              Items: ['GET', 'HEAD'] as Method[]
             }
           },
           CachePolicyId: '4135ea2d-6df8-44a3-9df3-4b5a84be39ad', // Managed-CachingOptimized
@@ -171,10 +172,10 @@ export class CloudFrontOptimizer {
             Compress: behavior.compress,
             AllowedMethods: {
               Quantity: behavior.allowedMethods.length,
-              Items: behavior.allowedMethods,
+              Items: behavior.allowedMethods as Method[],
               CachedMethods: {
                 Quantity: behavior.cachedMethods.length,
-                Items: behavior.cachedMethods
+                Items: behavior.cachedMethods as Method[]
               }
             },
             CachePolicyId: '4135ea2d-6df8-44a3-9df3-4b5a84be39ad', // Managed-CachingOptimized

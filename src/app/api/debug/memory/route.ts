@@ -26,7 +26,7 @@ export async function GET() {
         estimatedSizeKB: dbMemoryUsage.estimatedSizeKB,
         estimatedSizeMB: (dbMemoryUsage.estimatedSizeKB / 1024).toFixed(2)
       },
-      recommendations: []
+      recommendations: [] as string[]
     };
 
     // Add recommendations based on memory usage

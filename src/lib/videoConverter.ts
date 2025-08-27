@@ -73,7 +73,7 @@ export class VideoConverter {
     const needsConversionByMimeType = mimeType && 
       incompatibleMimeTypes.includes(mimeType.toLowerCase());
 
-    return needsConversionByExtension || needsConversionByMimeType;
+    return Boolean(needsConversionByExtension || needsConversionByMimeType);
   }
 
   /**

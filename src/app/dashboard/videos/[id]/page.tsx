@@ -1,10 +1,23 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Download, Share2, Edit, Trash2, Play, Clock, FileVideo } from 'lucide-react';
+import { ArrowLeft, Download, Share2, Edit, Trash2, Play, Clock, FileVideo, Globe, Lock, Users, AlertTriangle } from 'lucide-react';
 import { SmartVideoPlayer } from '@/components/SmartVideoPlayer';
+import { VideoEditModal } from '@/components/VideoEditModal';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { 
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 interface Video {
   id: string;
@@ -25,14 +38,24 @@ interface Video {
   transcript?: string;
   captions_url?: string;
   audio_enhanced?: boolean;
+  tags?: string[];
+  category?: string;
+  visibility?: 'public' | 'private' | 'unlisted';
+  is_public?: boolean;
+  status?: string;
+  views?: number;
 }
 
 export default function VideoDetailPage() {
   const params = useParams();
+  const router = useRouter();
   const videoId = params.id as string;
   const [video, setVideo] = useState<Video | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     if (videoId) {
@@ -80,6 +103,114 @@ export default function VideoDetailPage() {
       return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
     }
     return `${minutes}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const handleEditVideo = async (updatedVideo: Partial<Video>) => {
+    try {
+      const response = await fetch(`/api/videos/${videoId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(updatedVideo),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update video');
+      }
+
+      const data = await response.json();
+      
+      if (data.success) {
+        setVideo(data.video);
+        setIsEditModalOpen(false);
+        // Simple success notification (you could replace with a proper toast)
+        alert('Video updated successfully!');
+      } else {
+        throw new Error(data.error || 'Failed to update video');
+      }
+    } catch (error) {
+      console.error('Error updating video:', error);
+      alert('Failed to update video. Please try again.');
+    }
+  };
+
+  const handleDeleteVideo = async () => {
+    setIsDeleting(true);
+    try {
+      const response = await fetch(`/api/videos/${videoId}`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to delete video');
+      }
+
+      const data = await response.json();
+      
+      if (data.success) {
+        // Redirect to videos list after successful deletion
+        router.push('/dashboard/videos');
+      } else {
+        throw new Error(data.error || 'Failed to delete video');
+      }
+    } catch (error) {
+      console.error('Error deleting video:', error);
+      alert('Failed to delete video. Please try again.');
+    } finally {
+      setIsDeleting(false);
+      setIsDeleteDialogOpen(false);
+    }
+  };
+
+  const handleDownload = () => {
+    if (video?.streamUrl) {
+      window.open(video.streamUrl, '_blank');
+    }
+  };
+
+  const handleShare = async () => {
+    const shareUrl = `${window.location.origin}/videos/${videoId}`;
+    
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: video?.title,
+          text: video?.description,
+          url: shareUrl,
+        });
+      } catch (error) {
+        // Fallback to clipboard
+        navigator.clipboard.writeText(shareUrl);
+        alert('Video link copied to clipboard!');
+      }
+    } else {
+      // Fallback to clipboard
+      navigator.clipboard.writeText(shareUrl);
+      alert('Video link copied to clipboard!');
+    }
+  };
+
+  const getVisibilityIcon = (visibility?: string) => {
+    switch (visibility) {
+      case 'public':
+        return <Globe className="h-4 w-4 text-green-600" />;
+      case 'unlisted':
+        return <Users className="h-4 w-4 text-yellow-600" />;
+      default:
+        return <Lock className="h-4 w-4 text-gray-600" />;
+    }
+  };
+
+  const getVisibilityLabel = (visibility?: string) => {
+    switch (visibility) {
+      case 'public':
+        return 'Public';
+      case 'unlisted':
+        return 'Unlisted';
+      default:
+        return 'Private';
+    }
   };
 
   if (loading) {
@@ -143,18 +274,42 @@ export default function VideoDetailPage() {
           </Link>
           
           <div className="flex items-center space-x-2">
-            <button className="p-2 text-gray-600 hover:text-blue-600 rounded">
-              <Download className="w-5 h-5" />
-            </button>
-            <button className="p-2 text-gray-600 hover:text-blue-600 rounded">
-              <Share2 className="w-5 h-5" />
-            </button>
-            <button className="p-2 text-gray-600 hover:text-blue-600 rounded">
-              <Edit className="w-5 h-5" />
-            </button>
-            <button className="p-2 text-gray-600 hover:text-red-600 rounded">
-              <Trash2 className="w-5 h-5" />
-            </button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleDownload}
+              className="text-gray-600 hover:text-blue-600"
+            >
+              <Download className="w-4 h-4 mr-2" />
+              Download
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleShare}
+              className="text-gray-600 hover:text-blue-600"
+            >
+              <Share2 className="w-4 h-4 mr-2" />
+              Share
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setIsEditModalOpen(true)}
+              className="text-gray-600 hover:text-blue-600"
+            >
+              <Edit className="w-4 h-4 mr-2" />
+              Edit
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setIsDeleteDialogOpen(true)}
+              className="text-gray-600 hover:text-red-600"
+            >
+              <Trash2 className="w-4 h-4 mr-2" />
+              Delete
+            </Button>
           </div>
         </div>
 
@@ -181,7 +336,15 @@ export default function VideoDetailPage() {
           <div className="space-y-6">
             {/* Basic Info */}
             <div className="bg-white rounded-lg shadow p-6">
-              <h1 className="text-2xl font-bold text-gray-900 mb-4">{video.title}</h1>
+              <div className="flex items-center justify-between mb-4">
+                <h1 className="text-2xl font-bold text-gray-900">{video.title}</h1>
+                <div className="flex items-center space-x-2">
+                  {getVisibilityIcon(video.visibility || (video.is_public ? 'public' : 'private'))}
+                  <Badge variant={video.is_public ? 'default' : 'secondary'}>
+                    {getVisibilityLabel(video.visibility || (video.is_public ? 'public' : 'private'))}
+                  </Badge>
+                </div>
+              </div>
               
               {video.description && (
                 <div className="mb-4">
@@ -274,6 +437,44 @@ export default function VideoDetailPage() {
             </div>
           </div>
         </div>
+
+        {/* Edit Modal */}
+        {video && (
+          <VideoEditModal
+            video={video}
+            isOpen={isEditModalOpen}
+            onClose={() => setIsEditModalOpen(false)}
+            onSave={handleEditVideo}
+          />
+        )}
+
+        {/* Delete Confirmation Dialog */}
+        <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-red-600" />
+                Delete Video
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to delete "{video?.title}"? This action cannot be undone.
+                The video file and all associated data will be permanently removed.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={isDeleting}>
+                Cancel
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleDeleteVideo}
+                disabled={isDeleting}
+                className="bg-red-600 hover:bg-red-700"
+              >
+                {isDeleting ? 'Deleting...' : 'Delete Video'}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </div>
   );

@@ -38,7 +38,7 @@ export async function GET() {
     let currentPolicy;
     try {
       const policyResponse = await s3Client.send(new GetBucketPolicyCommand({ Bucket: BUCKET_NAME }));
-      currentPolicy = JSON.parse(policyResponse.Policy);
+      currentPolicy = policyResponse.Policy ? JSON.parse(policyResponse.Policy) : {};
     } catch (error: any) {
       if (error.name === 'NoSuchBucketPolicy') {
         currentPolicy = null;

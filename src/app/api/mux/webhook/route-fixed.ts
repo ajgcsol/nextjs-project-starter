@@ -159,8 +159,8 @@ async function handleAssetReady(event: MuxWebhookEvent, videoId: string) {
           mux_playback_id: playbackId,
           mux_status: 'ready',
           mux_thumbnail_url: thumbnailUrl,
-          mux_streaming_url: streamingUrl,
-          mux_mp4_url: mp4Url,
+          streaming_url: streamingUrl,
+          // mux_mp4_url: mp4Url, // Field doesn't exist in database schema
           mux_duration_seconds: duration,
           mux_aspect_ratio: aspectRatio,
           mux_ready_at: new Date()

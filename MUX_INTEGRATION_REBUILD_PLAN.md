@@ -7,7 +7,7 @@ Based on my analysis of the codebase, here are the main issues with the current 
 ### 1. **Webhook URL Missing**
 - **Issue**: No webhook endpoint configured for Mux dashboard
 - **Solution**: ✅ Created `/api/mux/webhook` endpoint
-- **URL for Mux Dashboard**: `https://your-domain.vercel.app/api/mux/webhook`
+- **URL for Mux Dashboard**: `https://law-school-repository.vercel.app/api/mux/webhook`
 
 ### 2. **Database Schema Inconsistencies**
 - **Issue**: Mux fields exist in migration but not fully integrated in database interface

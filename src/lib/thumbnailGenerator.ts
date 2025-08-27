@@ -740,18 +740,25 @@ export class ThumbnailGenerator {
     console.log('   - VIDEO_MUX_TOKEN_ID: SET');
     console.log('   - VIDEO_MUX_TOKEN_SECRET: SET');
     
-    const muxResult = await MuxVideoProcessor.generateThumbnail(videoS3Key, videoId, videoData);
+    const muxResult = await MuxVideoProcessor.generateThumbnails(videoS3Key, {
+      times: [5, 10, 15, 30],
+      width: 1920,
+      height: 1080,
+      fitMode: 'preserve'
+    });
     
-    if (muxResult.success) {
-      console.log('🎉 SUCCESS: Mux asset created for REAL thumbnail!');
-      console.log('📸 Asset ID:', muxResult.assetId);
-      console.log('📸 Playback ID:', muxResult.playbackId);
-      console.log('🔗 Thumbnail URL:', muxResult.thumbnailUrl);
+    if (muxResult.success && muxResult.thumbnails && muxResult.thumbnails.length > 0) {
+      console.log('🎉 SUCCESS: Mux thumbnails generated!');
+      console.log('📸 Number of thumbnails:', muxResult.thumbnails.length);
+      
+      // Use the first thumbnail (at 5 seconds)
+      const primaryThumbnail = muxResult.thumbnails[0];
+      console.log('🔗 Primary thumbnail URL:', primaryThumbnail.url);
       
       // Update database with the new thumbnail info
       try {
         await VideoDB.update(videoId, {
-          thumbnail_path: muxResult.thumbnailUrl
+          thumbnail_path: primaryThumbnail.url
         });
         console.log('✅ Database updated with Mux thumbnail URL');
       } catch (dbError) {
@@ -760,10 +767,8 @@ export class ThumbnailGenerator {
       
       return {
         success: true,
-        thumbnailUrl: muxResult.thumbnailUrl,
-        method: 'mux',
-        assetId: muxResult.assetId,
-        playbackId: muxResult.playbackId
+        thumbnailUrl: primaryThumbnail.url,
+        method: 'mux'
       };
     } else {
       console.log('❌ Mux FAILED with error:', muxResult.error);
