@@ -270,8 +270,23 @@ export function SmartVideoPlayer({
             const data = await response.json();
             if (data.success && data.videoUrl) {
               console.log('✅ Got video URL from API:', data.videoUrl);
-              video.src = data.videoUrl;
-              video.load();
+              
+              // Validate the URL format before using it
+              if (data.videoUrl.startsWith('http')) {
+                video.src = data.videoUrl;
+                video.load();
+                
+                // Set a timeout to detect if this URL also fails to load
+                setTimeout(() => {
+                  if (video.networkState === HTMLMediaElement.NETWORK_NO_SOURCE) {
+                    console.log('⚠️ API video URL failed to load after timeout');
+                    setError('Video file could not be loaded. The file may be corrupted or unavailable.');
+                  }
+                }, 5000);
+              } else {
+                console.log('❌ Invalid video URL format from API:', data.videoUrl);
+                setError('Invalid video URL returned from server.');
+              }
             } else {
               console.log('❌ API returned no video URL:', data.error || 'Unknown error');
               setError(data.error || 'Video URL not available from API.');

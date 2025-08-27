@@ -6,6 +6,7 @@ import { VideoDB } from '@/lib/database';
 import { videoMonitor, PerformanceMonitor } from '@/lib/monitoring';
 import { VideoConverter } from '@/lib/videoConverter';
 import MuxVideoProcessor from '@/lib/mux-video-processor';
+import { SynchronousMuxProcessor } from '@/lib/synchronous-mux-processor';
 import { ThumbnailGenerator } from '@/lib/thumbnailGenerator';
 
 // For serverless environment, we'll skip local file storage
@@ -69,8 +70,8 @@ export async function POST(request: NextRequest) {
         );
       }
       
-      const { title, description, category, tags, visibility, s3Key, publicUrl, filename, size, mimeType, autoThumbnail } = data;
-      console.log('🎬 Extracted fields:', { title, description, category, tags, visibility, s3Key, publicUrl, filename, size, mimeType, hasThumbnail: !!autoThumbnail });
+      const { title: jsonTitle, description: jsonDescription, category: jsonCategory, tags: jsonTags, visibility: jsonVisibility, s3Key, publicUrl, filename, size, mimeType, autoThumbnail } = data;
+      console.log('🎬 Extracted fields:', { title: jsonTitle, description: jsonDescription, category: jsonCategory, tags: jsonTags, visibility: jsonVisibility, s3Key, publicUrl, filename, size, mimeType, hasThumbnail: !!autoThumbnail });
 
       if (!s3Key || !publicUrl || !filename) {
         console.log('🎬 ❌ Missing required S3 data:', { s3Key: !!s3Key, publicUrl: !!publicUrl, filename: !!filename });
@@ -81,8 +82,8 @@ export async function POST(request: NextRequest) {
       }
 
       // Generate unique ID early so it can be used in thumbnail processing
-      const fileId = crypto.randomUUID();
-      console.log('🎬 Generated file ID:', fileId);
+      const jsonFileId = crypto.randomUUID();
+      console.log('🎬 Generated file ID:', jsonFileId);
 
       // Check if video needs conversion for web compatibility
       const needsConversion = VideoConverter.needsConversion(filename, mimeType);
@@ -93,89 +94,169 @@ export async function POST(request: NextRequest) {
         fileExtension: filename.toLowerCase().split('.').pop()
       });
 
-      // Create comprehensive Mux asset with all processing (replaces MediaConvert)
+      // Decide whether to use synchronous or asynchronous Mux processing
+      const shouldProcessSync = SynchronousMuxProcessor.shouldProcessSynchronously(size, mimeType || 'video/mp4');
+      console.log('🎬 Processing decision:', {
+        fileSize: `${(size / (1024*1024)).toFixed(2)}MB`,
+        mimeType,
+        shouldProcessSync,
+        estimatedTime: `${SynchronousMuxProcessor.estimateProcessingTime(size, mimeType || 'video/mp4') / 1000}s`
+      });
+
+      // Initialize Mux processing variables
       let muxAssetId = null;
       let muxPlaybackId = null;
       let muxThumbnailUrl = null;
       let muxStreamingUrl = null;
       let muxMp4Url = null;
       let muxStatus = 'pending';
+      let transcriptText = '';
+      let captionsUrl = '';
+      let muxDuration = null;
+      let muxWidth = null;
+      let muxHeight = null;
+      let muxAspectRatio = null;
+      let muxBitrate = null;
       
       try {
-        console.log('🎬 🎭 Creating comprehensive Mux asset for:', filename);
+        console.log('🎬 🎭 Starting Mux processing for:', filename);
         
-        // Get processing options for pay-as-you-go plan
-        const processingOptions = MuxVideoProcessor.getDefaultProcessingOptions();
-        
-        // Create Mux asset from S3 URL with full processing pipeline
-        const muxResult = await MuxVideoProcessor.createAssetFromS3(s3Key, fileId, processingOptions);
-        
-        if (muxResult.success) {
-          muxAssetId = muxResult.assetId;
-          muxPlaybackId = muxResult.playbackId;
-          muxThumbnailUrl = muxResult.thumbnailUrl;
-          muxStreamingUrl = muxResult.streamingUrl;
-          muxMp4Url = muxResult.mp4Url;
-          muxStatus = muxResult.processingStatus;
+        if (shouldProcessSync) {
+          console.log('⚡ Using SYNCHRONOUS Mux processing - thumbnails and transcripts will be ready immediately');
           
-          console.log('🎬 ✅ Mux asset created successfully:', {
-            assetId: muxAssetId,
-            playbackId: muxPlaybackId,
-            status: muxStatus,
-            thumbnailUrl: muxThumbnailUrl
-          });
+          // Use synchronous processing for immediate results
+          const syncResult = await SynchronousMuxProcessor.processVideoSynchronously(
+            s3Key, 
+            jsonFileId, 
+            filename, 
+            size,
+            90000 // 90 seconds max wait for synchronous processing
+          );
           
-          await videoMonitor.logUploadEvent('Mux asset created', {
-            assetId: muxAssetId,
-            playbackId: muxPlaybackId,
-            status: muxStatus,
-            features: ['video_conversion', 'thumbnail_generation', 'audio_enhancement', 'transcription']
-          });
-          
-          // Trigger automatic audio enhancement
-          if (processingOptions.enhanceAudio && muxAssetId) {
-            console.log('🎵 Starting automatic audio enhancement...');
-            MuxVideoProcessor.enhanceAudio(muxAssetId).then(result => {
-              if (result.success) {
-                console.log('🎵 ✅ Audio enhancement completed:', result.enhancedAudioUrl);
-              } else {
-                console.error('🎵 ❌ Audio enhancement failed:', result.error);
+          if (syncResult.success) {
+            muxAssetId = syncResult.muxAssetId;
+            muxPlaybackId = syncResult.muxPlaybackId;
+            muxThumbnailUrl = syncResult.thumbnailUrl;
+            muxStreamingUrl = syncResult.muxStreamingUrl;
+            muxMp4Url = syncResult.muxMp4Url;
+            transcriptText = syncResult.transcriptText || '';
+            captionsUrl = syncResult.captionsUrl || '';
+            muxDuration = syncResult.duration;
+            muxWidth = syncResult.width;
+            muxHeight = syncResult.height;
+            muxAspectRatio = syncResult.aspectRatio;
+            muxBitrate = syncResult.bitrate;
+            muxStatus = syncResult.error ? 'processing' : 'ready';
+            
+            console.log('🎬 ✅ Synchronous Mux processing completed:', {
+              assetId: muxAssetId,
+              playbackId: muxPlaybackId,
+              status: muxStatus,
+              thumbnailUrl: muxThumbnailUrl,
+              hasTranscript: !!transcriptText,
+              hasCaptions: !!captionsUrl,
+              processingTime: `${syncResult.processingTime}ms`,
+              metadata: {
+                duration: muxDuration,
+                dimensions: muxWidth && muxHeight ? `${muxWidth}x${muxHeight}` : 'unknown',
+                aspectRatio: muxAspectRatio
               }
-            }).catch(error => {
-              console.error('🎵 ⚠️ Audio enhancement error:', error);
             });
-          }
-          
-          // Trigger automatic caption generation
-          if (processingOptions.generateCaptions && muxAssetId) {
-            console.log('📝 Starting automatic caption generation...');
-            MuxVideoProcessor.generateCaptions(muxAssetId, {
-              language: processingOptions.captionLanguage,
-              generateVtt: true,
-              generateSrt: true
-            }).then(result => {
-              if (result.success) {
-                console.log('📝 ✅ Caption generation completed:', {
-                  vttUrl: result.vttUrl,
-                  srtUrl: result.srtUrl,
-                  confidence: result.confidence
-                });
-              } else {
-                console.error('📝 ❌ Caption generation failed:', result.error);
-              }
-            }).catch(error => {
-              console.error('📝 ⚠️ Caption generation error:', error);
+            
+            await videoMonitor.logUploadEvent('Synchronous Mux processing completed', {
+              assetId: muxAssetId,
+              playbackId: muxPlaybackId,
+              status: muxStatus,
+              processingTime: syncResult.processingTime,
+              features: ['video_conversion', 'thumbnail_generation', 'transcript_generation', 'metadata_extraction'],
+              thumbnailReady: !!muxThumbnailUrl,
+              transcriptReady: !!transcriptText
+            });
+            
+          } else {
+            console.error('🎬 ❌ Synchronous Mux processing failed:', syncResult.error);
+            await videoMonitor.logUploadEvent('Synchronous Mux processing failed', {
+              error: syncResult.error,
+              processingTime: syncResult.processingTime,
+              fallback: 'continuing_without_mux'
             });
           }
           
         } else {
-          console.error('🎬 ❌ Mux asset creation failed:', muxResult.error);
-          await videoMonitor.logUploadEvent('Mux asset creation failed', {
-            error: muxResult.error,
-            fallback: 'continuing_without_mux'
-          });
-          // Continue with upload but without Mux processing
+          console.log('🔄 Using ASYNCHRONOUS Mux processing - thumbnails and transcripts will be available via webhooks');
+          
+          // Use asynchronous processing for large files
+          const processingOptions = MuxVideoProcessor.getDefaultProcessingOptions();
+          const muxResult = await MuxVideoProcessor.createAssetFromS3(s3Key, jsonFileId, processingOptions);
+          
+          if (muxResult.success) {
+            muxAssetId = muxResult.assetId;
+            muxPlaybackId = muxResult.playbackId;
+            muxThumbnailUrl = muxResult.thumbnailUrl;
+            muxStreamingUrl = muxResult.streamingUrl;
+            muxMp4Url = muxResult.mp4Url;
+            muxStatus = muxResult.processingStatus;
+            
+            console.log('🎬 ✅ Asynchronous Mux asset created:', {
+              assetId: muxAssetId,
+              playbackId: muxPlaybackId,
+              status: muxStatus,
+              thumbnailUrl: muxThumbnailUrl,
+              note: 'Processing will continue in background'
+            });
+            
+            await videoMonitor.logUploadEvent('Asynchronous Mux asset created', {
+              assetId: muxAssetId,
+              playbackId: muxPlaybackId,
+              status: muxStatus,
+              features: ['video_conversion', 'thumbnail_generation', 'audio_enhancement', 'transcription'],
+              note: 'Background processing initiated'
+            });
+            
+            // Trigger background processing (don't await)
+            if (processingOptions.enhanceAudio && muxAssetId) {
+              console.log('🎵 Starting background audio enhancement...');
+              MuxVideoProcessor.enhanceAudio(muxAssetId).then(result => {
+                if (result.success) {
+                  console.log('🎵 ✅ Background audio enhancement completed:', result.enhancedAudioUrl);
+                } else {
+                  console.error('🎵 ❌ Background audio enhancement failed:', result.error);
+                }
+              }).catch(error => {
+                console.error('🎵 ⚠️ Background audio enhancement error:', error);
+              });
+            }
+            
+            if (processingOptions.generateCaptions && muxAssetId) {
+              console.log('📝 Starting background caption generation...');
+              MuxVideoProcessor.generateCaptions(muxAssetId, {
+                language: processingOptions.captionLanguage,
+                generateVtt: true,
+                generateSrt: true
+              }).then(result => {
+                if (result.success) {
+                  console.log('📝 ✅ Background caption generation completed:', {
+                    vttUrl: result.vttUrl,
+                    srtUrl: result.srtUrl,
+                    confidence: result.confidence
+                  });
+                } else {
+                  console.error('📝 ❌ Background caption generation failed:', result.error);
+                }
+              }).catch(error => {
+                console.error('📝 ⚠️ Background caption generation error:', error);
+              });
+            }
+            
+          } else {
+            console.error('🎬 ❌ Asynchronous Mux asset creation failed:', muxResult.error);
+            await videoMonitor.logUploadEvent('Asynchronous Mux asset creation failed', {
+              error: muxResult.error,
+              fallback: 'continuing_without_mux'
+            });
+          }
         }
+        
       } catch (muxError) {
         console.error('🎬 ⚠️ Mux processing failed, but continuing:', muxError);
         await videoMonitor.logUploadEvent('Mux processing error', {
@@ -264,7 +345,7 @@ export async function POST(request: NextRequest) {
           
           // Track thumbnail upload completion
           await videoMonitor.logUploadEvent('Thumbnail tracking', {
-            fileId: fileId,
+            fileId: jsonFileId,
             thumbnailUrl: thumbnailCloudFrontUrl,
             loadTime: thumbnailLoadTime
           });
@@ -279,20 +360,18 @@ export async function POST(request: NextRequest) {
 
       // File ID already generated above for thumbnail processing
       
-      // Extract basic metadata
-      const estimatedDuration = Math.floor(Math.random() * 3600) + 600; // Random duration for demo
+      // Use enhanced metadata from Mux processing if available, otherwise estimate
+      const finalDuration = muxDuration || Math.floor(Math.random() * 3600) + 600; // Use Mux duration or fallback
+      const finalWidth = muxWidth || (size < 100 * 1024 * 1024 ? (size < 50 * 1024 * 1024 ? 854 : 1280) : 1920);
+      const finalHeight = muxHeight || (size < 100 * 1024 * 1024 ? (size < 50 * 1024 * 1024 ? 480 : 720) : 1080);
+      const finalBitrate = muxBitrate || Math.round((size * 8) / finalDuration);
       
-      // Determine video dimensions based on file size
-      let width = 1920;
-      let height = 1080;
-      
-      if (size < 100 * 1024 * 1024) { // Less than 100MB
-        width = 1280;
-        height = 720;
-      } else if (size < 50 * 1024 * 1024) { // Less than 50MB
-        width = 854;
-        height = 480;
-      }
+      console.log('🎬 Final metadata decision:', {
+        duration: muxDuration ? `${finalDuration}s (from Mux)` : `${finalDuration}s (estimated)`,
+        dimensions: muxWidth && muxHeight ? `${finalWidth}x${finalHeight} (from Mux)` : `${finalWidth}x${finalHeight} (estimated)`,
+        bitrate: muxBitrate ? `${finalBitrate} (from Mux)` : `${finalBitrate} (estimated)`,
+        aspectRatio: muxAspectRatio || 'unknown'
+      });
 
       // Create video record with S3 data - use CloudFront URL for better performance
       const cloudFrontDomain = process.env.CLOUDFRONT_DOMAIN;
@@ -308,22 +387,22 @@ export async function POST(request: NextRequest) {
         finalStreamUrl: optimizedStreamUrl
       });
 
-      const videoRecord = {
-        id: fileId,
-        title: title || filename.replace(/\.[^/.]+$/, ''),
-        description: description || '',
-        category: category || 'General',
-        tags: tags ? tags.split(',').map((tag: string) => tag.trim()).filter(Boolean) : [],
-        visibility: (visibility || 'private') as 'public' | 'private' | 'unlisted',
+      const jsonVideoRecord = {
+        id: jsonFileId,
+        title: jsonTitle || filename.replace(/\.[^/.]+$/, ''),
+        description: jsonDescription || '',
+        category: jsonCategory || 'General',
+        tags: jsonTags ? jsonTags.split(',').map((tag: string) => tag.trim()).filter(Boolean) : [],
+        visibility: (jsonVisibility || 'private') as 'public' | 'private' | 'unlisted',
         originalFilename: filename,
         storedFilename: s3Key,
-        thumbnailPath: thumbnailCloudFrontUrl || `/api/videos/thumbnail/${fileId}`,
+        thumbnailPath: thumbnailCloudFrontUrl || `/api/videos/thumbnail/${jsonFileId}`,
         size: size,
-        duration: estimatedDuration,
-        width,
-        height,
-        bitrate: Math.round((size * 8) / estimatedDuration),
-        status: 'processing' as 'processing' | 'ready' | 'failed' | 'draft', // Mark as processing - needs transcoding
+        duration: finalDuration,
+        width: finalWidth,
+        height: finalHeight,
+        bitrate: finalBitrate,
+        status: (muxStatus === 'ready' ? 'ready' : 'processing') as 'processing' | 'ready' | 'failed' | 'draft',
         uploadDate: new Date().toISOString(),
         views: 0,
         streamUrl: optimizedStreamUrl, // Use CloudFront URL if available
@@ -335,8 +414,12 @@ export async function POST(request: NextRequest) {
           publicUrl: publicUrl,
           cloudFrontUrl: optimizedStreamUrl,
           uploadMethod: 'presigned-url',
-          processingComplete: false, // Needs transcoding
-          needsTranscoding: true
+          processingComplete: muxStatus === 'ready', // True if synchronous processing completed
+          needsTranscoding: muxStatus !== 'ready',
+          muxProcessed: !!muxAssetId,
+          hasTranscript: !!transcriptText,
+          hasCaptions: !!captionsUrl,
+          aspectRatio: muxAspectRatio
         }
       };
 
@@ -349,6 +432,30 @@ export async function POST(request: NextRequest) {
         if (!process.env.DATABASE_URL) {
           throw new Error('DATABASE_URL not configured');
         }
+        
+        // Determine the best thumbnail URL to use
+        let finalThumbnailPath = jsonVideoRecord.thumbnailPath; // Default fallback
+        
+        if (muxThumbnailUrl) {
+          // Mux thumbnail is available immediately
+          finalThumbnailPath = muxThumbnailUrl;
+          console.log('🖼️ Using Mux thumbnail URL:', muxThumbnailUrl);
+        } else if (thumbnailCloudFrontUrl) {
+          // Client-provided thumbnail
+          finalThumbnailPath = thumbnailCloudFrontUrl;
+          console.log('🖼️ Using client-provided thumbnail URL:', thumbnailCloudFrontUrl);
+        } else if (muxAssetId) {
+          // Mux asset exists but thumbnail not ready yet - use Mux URL format
+          finalThumbnailPath = `https://image.mux.com/${muxPlaybackId || 'pending'}/thumbnail.jpg?time=10`;
+          console.log('🖼️ Using pending Mux thumbnail URL (will be updated by webhook):', finalThumbnailPath);
+        }
+        
+        console.log('🖼️ Final thumbnail decision:', {
+          muxThumbnailUrl: !!muxThumbnailUrl,
+          thumbnailCloudFrontUrl: !!thumbnailCloudFrontUrl,
+          muxAssetId: !!muxAssetId,
+          finalThumbnailPath
+        });
         
         // FIXED: Use direct create method to avoid infinite loop
         // Check for existing video first if we have a Mux Asset ID
@@ -367,20 +474,20 @@ export async function POST(request: NextRequest) {
           } else {
             console.log('➕ No existing video found, creating new one');
             savedVideo = await VideoDB.create({
-              title: videoRecord.title,
-              description: videoRecord.description,
-              filename: videoRecord.originalFilename,
-              file_path: videoRecord.streamUrl,
-              file_size: videoRecord.size,
-              duration: videoRecord.duration,
-              thumbnail_path: thumbnailCloudFrontUrl || videoRecord.thumbnailPath,
+              title: jsonVideoRecord.title,
+              description: jsonVideoRecord.description,
+              filename: jsonVideoRecord.originalFilename,
+              file_path: jsonVideoRecord.streamUrl,
+              file_size: jsonVideoRecord.size,
+              duration: jsonVideoRecord.duration,
+              thumbnail_path: finalThumbnailPath, // Use the determined thumbnail path
               video_quality: 'HD',
               uploaded_by: 'current-user', // TODO: Get from auth context
               course_id: undefined,
               s3_key: s3Key,
               s3_bucket: process.env.S3_BUCKET_NAME || undefined,
               is_processed: true, // Mark as processed since S3 upload is complete
-              is_public: visibility === 'public',
+              is_public: jsonVisibility === 'public',
               // Mux integration fields - will be saved if columns exist, ignored if not
               mux_asset_id: muxAssetId || undefined,
               mux_playback_id: muxPlaybackId || undefined,
@@ -407,20 +514,20 @@ export async function POST(request: NextRequest) {
         } else {
           console.log('➕ No Mux Asset ID, creating video directly');
           savedVideo = await VideoDB.create({
-            title: videoRecord.title,
-            description: videoRecord.description,
-            filename: videoRecord.originalFilename,
-            file_path: videoRecord.streamUrl,
-            file_size: videoRecord.size,
-            duration: videoRecord.duration,
-            thumbnail_path: thumbnailCloudFrontUrl || videoRecord.thumbnailPath,
+            title: jsonVideoRecord.title,
+            description: jsonVideoRecord.description,
+            filename: jsonVideoRecord.originalFilename,
+            file_path: jsonVideoRecord.streamUrl,
+            file_size: jsonVideoRecord.size,
+            duration: jsonVideoRecord.duration,
+            thumbnail_path: finalThumbnailPath, // Use the determined thumbnail path
             video_quality: 'HD',
             uploaded_by: 'current-user', // TODO: Get from auth context
             course_id: undefined,
             s3_key: s3Key,
             s3_bucket: process.env.S3_BUCKET_NAME || undefined,
             is_processed: true, // Mark as processed since S3 upload is complete
-            is_public: visibility === 'public'
+            is_public: jsonVisibility === 'public'
           });
           fallbackUsed = true;
         }
@@ -432,11 +539,13 @@ export async function POST(request: NextRequest) {
               videoId: savedVideo.id,
               muxAssetId,
               muxPlaybackId,
-              muxStatus
+              muxStatus,
+              thumbnailUrl: finalThumbnailPath
             });
           }
         } else {
           console.log('🎬 ✅ Video saved with full Mux integration fields');
+          console.log('🎬 📝 Mux thumbnail URL stored:', savedVideo.mux_thumbnail_url);
         }
         const dbSaveTime = dbTimer();
         console.log('🎬 Video saved to persistent database:', savedVideo.id);
@@ -494,16 +603,16 @@ export async function POST(request: NextRequest) {
           thumbnailPath: savedVideo.thumbnail_path || `/api/videos/thumbnail/${savedVideo.id}`,
           size: savedVideo.file_size,
           duration: savedVideo.duration,
-          width: videoRecord.width,
-          height: videoRecord.height,
-          bitrate: videoRecord.bitrate,
+          width: jsonVideoRecord.width,
+          height: jsonVideoRecord.height,
+          bitrate: jsonVideoRecord.bitrate,
           status: savedVideo.is_processed ? 'ready' : 'processing',
           uploadDate: savedVideo.uploaded_at,
           views: savedVideo.view_count || 0,
           streamUrl: `/api/videos/stream/${savedVideo.id}`, // Use streaming endpoint
           createdBy: 'Current User',
           metadata: {
-            ...videoRecord.metadata,
+            ...jsonVideoRecord.metadata,
             directUrl: savedVideo.file_path // Keep direct URL as backup
           }
         };

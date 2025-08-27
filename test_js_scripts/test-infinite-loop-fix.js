@@ -3,7 +3,7 @@
  * This script tests the fixed findOrCreateByMuxAsset method
  */
 
-const { VideoDB } = require('./src/lib/database');
+const { VideoDB } = require('../src/lib/database');
 
 async function testInfiniteLoopFix() {
   console.log('🧪 Testing infinite loop fix for findOrCreateByMuxAsset...');

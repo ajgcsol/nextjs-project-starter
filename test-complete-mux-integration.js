@@ -1,377 +1,465 @@
-// Test Complete Mux Integration - Comprehensive Testing Suite
+#!/usr/bin/env node
+
+/**
+ * Comprehensive Mux Integration Test
+ * Tests database migration, webhook processing, and video upload with Mux asset creation
+ */
+
 const https = require('https');
+const crypto = require('crypto');
 
-const PRODUCTION_URL = 'https://law-school-repository-7p5apcale-andrew-j-gregwares-projects.vercel.app';
+// Configuration
+const BASE_URL = process.env.VERCEL_URL ? 
+  `https://${process.env.VERCEL_URL}` : 
+  'https://nextjs-project-starter-nine-psi.vercel.app';
 
-console.log('🎭 Testing Complete Mux Integration...');
-console.log('=====================================');
+const TEST_CONFIG = {
+  baseUrl: BASE_URL,
+  timeout: 30000,
+  retries: 3
+};
 
-// Test 1: Mux Configuration Test
-function testMuxConfiguration() {
-    return new Promise((resolve, reject) => {
-        const url = `${PRODUCTION_URL}/api/mediaconvert/setup`;
-        
-        console.log('🧪 Testing Mux configuration...');
-        
-        https.get(url, (res) => {
-            let data = '';
-            
-            res.on('data', (chunk) => {
-                data += chunk;
-            });
-            
-            res.on('end', () => {
-                try {
-                    const result = JSON.parse(data);
-                    console.log(`   Status: ${res.statusCode}`);
-                    console.log(`   Success: ${result.success}`);
-                    
-                    if (result.success) {
-                        console.log('✅ Mux configuration is working!');
-                        console.log(`   Features available: ${Object.keys(result.features || {}).length}`);
-                        console.log(`   Plan: ${result.details?.plan || 'Unknown'}`);
-                        resolve(result);
-                    } else {
-                        console.log('❌ Mux configuration failed');
-                        console.log(`   Error: ${result.message || 'Unknown'}`);
-                        reject(new Error(result.message || 'Configuration failed'));
-                    }
-                } catch (error) {
-                    console.log('❌ Failed to parse configuration response:', error.message);
-                    reject(error);
-                }
-            });
-        }).on('error', reject);
+console.log('🧪 Starting Comprehensive Mux Integration Test');
+console.log('🌐 Base URL:', TEST_CONFIG.baseUrl);
+console.log('⏱️ Timeout:', TEST_CONFIG.timeout, 'ms');
+console.log('🔄 Retries:', TEST_CONFIG.retries);
+console.log('');
+
+/**
+ * Make HTTP request with retry logic
+ */
+async function makeRequest(options, data = null) {
+  return new Promise((resolve, reject) => {
+    const req = https.request(options, (res) => {
+      let body = '';
+      res.on('data', chunk => body += chunk);
+      res.on('end', () => {
+        try {
+          const result = {
+            statusCode: res.statusCode,
+            headers: res.headers,
+            body: res.headers['content-type']?.includes('application/json') ? 
+              JSON.parse(body) : body
+          };
+          resolve(result);
+        } catch (error) {
+          resolve({
+            statusCode: res.statusCode,
+            headers: res.headers,
+            body: body
+          });
+        }
+      });
     });
-}
 
-// Test 2: Video Upload with Mux Processing
-function testVideoUploadWithMux() {
-    return new Promise((resolve, reject) => {
-        // Simulate a video upload with S3 data (this would normally come from actual S3 upload)
-        const uploadData = {
-            title: 'Test Mux Integration Video',
-            description: 'Testing comprehensive Mux processing pipeline',
-            filename: 'test-mux-video.mp4',
-            size: 50 * 1024 * 1024, // 50MB
-            mimeType: 'video/mp4',
-            s3Key: 'videos/test-mux-integration-' + Date.now() + '.mp4',
-            publicUrl: 'https://law-school-repository-content.s3.us-east-1.amazonaws.com/videos/test-mux-integration.mp4',
-            visibility: 'public',
-            category: 'Test'
-        };
-        
-        const postData = JSON.stringify(uploadData);
-        
-        const options = {
-            hostname: new URL(PRODUCTION_URL).hostname,
-            port: 443,
-            path: '/api/videos/upload',
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Content-Length': Buffer.byteLength(postData)
-            }
-        };
-        
-        console.log('🎬 Testing video upload with Mux processing...');
-        
-        const req = https.request(options, (res) => {
-            let data = '';
-            
-            res.on('data', (chunk) => {
-                data += chunk;
-            });
-            
-            res.on('end', () => {
-                try {
-                    const result = JSON.parse(data);
-                    console.log(`   Status: ${res.statusCode}`);
-                    console.log(`   Success: ${result.success}`);
-                    
-                    if (result.success) {
-                        console.log('✅ Video upload with Mux processing successful!');
-                        console.log(`   Video ID: ${result.video?.id}`);
-                        console.log(`   Processing features: ${Object.keys(result.processing?.features || {}).length}`);
-                        
-                        // Check for Mux-specific features
-                        const features = result.processing?.features || {};
-                        console.log(`   Video conversion: ${features.videoConversion ? '✅' : '❌'}`);
-                        console.log(`   Audio enhancement: ${features.audioEnhancement ? '✅' : '❌'}`);
-                        console.log(`   Caption generation: ${features.captionGeneration ? '✅' : '❌'}`);
-                        console.log(`   Adaptive streaming: ${features.adaptiveStreaming ? '✅' : '❌'}`);
-                        
-                        resolve(result);
-                    } else {
-                        console.log('❌ Video upload failed');
-                        console.log(`   Error: ${result.error || 'Unknown'}`);
-                        reject(new Error(result.error || 'Upload failed'));
-                    }
-                } catch (error) {
-                    console.log('❌ Failed to parse upload response:', error.message);
-                    reject(error);
-                }
-            });
-        });
-        
-        req.on('error', (error) => {
-            console.log('❌ Upload request failed:', error.message);
-            reject(error);
-        });
-        
-        req.write(postData);
-        req.end();
+    req.on('error', reject);
+    req.setTimeout(TEST_CONFIG.timeout, () => {
+      req.destroy();
+      reject(new Error('Request timeout'));
     });
-}
 
-// Test 3: Thumbnail Generation with Mux
-function testMuxThumbnailGeneration() {
-    return new Promise((resolve, reject) => {
-        const url = `${PRODUCTION_URL}/api/videos/generate-thumbnails?action=list-videos-without-thumbnails&limit=1`;
-        
-        console.log('🖼️ Testing Mux thumbnail generation...');
-        
-        https.get(url, (res) => {
-            let data = '';
-            
-            res.on('data', (chunk) => {
-                data += chunk;
-            });
-            
-            res.on('end', () => {
-                try {
-                    const result = JSON.parse(data);
-                    
-                    if (result.success && result.count > 0) {
-                        const video = result.videos[0];
-                        console.log(`   Found video for thumbnail test: ${video.title}`);
-                        
-                        // Test thumbnail generation for this video
-                        const thumbnailData = JSON.stringify({
-                            videoId: video.id,
-                            batchMode: false,
-                            useMux: true
-                        });
-                        
-                        const options = {
-                            hostname: new URL(PRODUCTION_URL).hostname,
-                            port: 443,
-                            path: '/api/videos/generate-thumbnails',
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'Content-Length': Buffer.byteLength(thumbnailData)
-                            }
-                        };
-                        
-                        const req = https.request(options, (res) => {
-                            let data = '';
-                            
-                            res.on('data', (chunk) => {
-                                data += chunk;
-                            });
-                            
-                            res.on('end', () => {
-                                try {
-                                    const thumbnailResult = JSON.parse(data);
-                                    
-                                    if (thumbnailResult.success) {
-                                        console.log('✅ Mux thumbnail generation successful!');
-                                        console.log(`   Method: ${thumbnailResult.method || 'Unknown'}`);
-                                        console.log(`   Thumbnail URL: ${thumbnailResult.thumbnailUrl ? 'Generated' : 'None'}`);
-                                        resolve(thumbnailResult);
-                                    } else {
-                                        console.log('❌ Mux thumbnail generation failed');
-                                        console.log(`   Error: ${thumbnailResult.error || 'Unknown'}`);
-                                        reject(new Error(thumbnailResult.error || 'Thumbnail generation failed'));
-                                    }
-                                } catch (error) {
-                                    console.log('❌ Failed to parse thumbnail response:', error.message);
-                                    reject(error);
-                                }
-                            });
-                        });
-                        
-                        req.on('error', reject);
-                        req.write(thumbnailData);
-                        req.end();
-                        
-                    } else {
-                        console.log('ℹ️ No videos found needing thumbnails');
-                        resolve({ success: true, message: 'No videos to test' });
-                    }
-                } catch (error) {
-                    console.log('❌ Failed to parse video list response:', error.message);
-                    reject(error);
-                }
-            });
-        }).on('error', reject);
-    });
-}
-
-// Test 4: Video Streaming with Mux URLs
-function testMuxVideoStreaming() {
-    return new Promise((resolve, reject) => {
-        const url = `${PRODUCTION_URL}/api/videos`;
-        
-        console.log('🎥 Testing Mux video streaming...');
-        
-        https.get(url, (res) => {
-            let data = '';
-            
-            res.on('data', (chunk) => {
-                data += chunk;
-            });
-            
-            res.on('end', () => {
-                try {
-                    const result = JSON.parse(data);
-                    
-                    if (result.videos && result.videos.length > 0) {
-                        const video = result.videos[0];
-                        console.log(`   Testing streaming for: ${video.title}`);
-                        console.log(`   Stream URL: ${video.streamUrl}`);
-                        console.log(`   Thumbnail: ${video.thumbnailPath ? 'Available' : 'None'}`);
-                        console.log(`   Status: ${video.status}`);
-                        
-                        // Test the streaming endpoint
-                        const streamUrl = `${PRODUCTION_URL}${video.streamUrl}`;
-                        
-                        https.get(streamUrl, (streamRes) => {
-                            console.log(`   Streaming response: ${streamRes.statusCode}`);
-                            
-                            if (streamRes.statusCode === 200 || streamRes.statusCode === 302) {
-                                console.log('✅ Mux video streaming is working!');
-                                resolve({ success: true, video });
-                            } else {
-                                console.log('❌ Mux video streaming failed');
-                                reject(new Error(`Streaming failed with status: ${streamRes.statusCode}`));
-                            }
-                        }).on('error', reject);
-                        
-                    } else {
-                        console.log('ℹ️ No videos found for streaming test');
-                        resolve({ success: true, message: 'No videos to test' });
-                    }
-                } catch (error) {
-                    console.log('❌ Failed to parse video list response:', error.message);
-                    reject(error);
-                }
-            });
-        }).on('error', reject);
-    });
-}
-
-// Test 5: Audio Enhancement Status
-function testAudioEnhancementStatus() {
-    return new Promise((resolve, reject) => {
-        console.log('🎵 Testing audio enhancement status...');
-        
-        // This would test if audio enhancement is working
-        // For now, we'll simulate the test
-        setTimeout(() => {
-            console.log('✅ Audio enhancement pipeline is ready');
-            console.log('   Features: Noise reduction, normalization, clarity enhancement');
-            resolve({ success: true, features: ['noise_reduction', 'normalization', 'clarity'] });
-        }, 1000);
-    });
-}
-
-// Test 6: Transcription and Captions
-function testTranscriptionCapabilities() {
-    return new Promise((resolve, reject) => {
-        console.log('📝 Testing transcription and caption capabilities...');
-        
-        // This would test if transcription is working
-        // For now, we'll simulate the test
-        setTimeout(() => {
-            console.log('✅ Transcription pipeline is ready');
-            console.log('   Formats: WebVTT, SRT');
-            console.log('   Languages: Multiple language support');
-            console.log('   Features: Speaker identification, confidence scoring');
-            resolve({ 
-                success: true, 
-                formats: ['webvtt', 'srt'],
-                languages: ['en', 'es', 'fr'],
-                features: ['speaker_id', 'confidence_scoring']
-            });
-        }, 1000);
-    });
-}
-
-// Run comprehensive test suite
-async function runComprehensiveTests() {
-    try {
-        console.log(`🚀 Testing Mux integration on: ${PRODUCTION_URL}`);
-        console.log('');
-        
-        // Test 1: Configuration
-        console.log('=== Test 1: Mux Configuration ===');
-        await testMuxConfiguration();
-        console.log('');
-        
-        // Test 2: Video Upload
-        console.log('=== Test 2: Video Upload with Mux ===');
-        await testVideoUploadWithMux();
-        console.log('');
-        
-        // Test 3: Thumbnail Generation
-        console.log('=== Test 3: Mux Thumbnail Generation ===');
-        await testMuxThumbnailGeneration();
-        console.log('');
-        
-        // Test 4: Video Streaming
-        console.log('=== Test 4: Mux Video Streaming ===');
-        await testMuxVideoStreaming();
-        console.log('');
-        
-        // Test 5: Audio Enhancement
-        console.log('=== Test 5: Audio Enhancement ===');
-        await testAudioEnhancementStatus();
-        console.log('');
-        
-        // Test 6: Transcription
-        console.log('=== Test 6: Transcription & Captions ===');
-        await testTranscriptionCapabilities();
-        console.log('');
-        
-        console.log('🎉 ALL MUX INTEGRATION TESTS PASSED!');
-        console.log('=====================================');
-        console.log('');
-        console.log('✅ Mux configuration is working');
-        console.log('✅ Video upload with comprehensive processing');
-        console.log('✅ Real thumbnail generation from video frames');
-        console.log('✅ Adaptive streaming with quality switching');
-        console.log('✅ Audio enhancement pipeline ready');
-        console.log('✅ Transcription and caption generation ready');
-        console.log('');
-        console.log('🎯 The complete Mux integration is now functional!');
-        console.log('   Videos will be processed with:');
-        console.log('   • Automatic format conversion (WMV → MP4)');
-        console.log('   • Real thumbnail extraction at 10 seconds');
-        console.log('   • Audio enhancement and normalization');
-        console.log('   • Automatic transcription and captions');
-        console.log('   • Adaptive streaming for all devices');
-        console.log('   • Modern video player with advanced features');
-        
-    } catch (error) {
-        console.log('');
-        console.log('❌ MUX INTEGRATION TEST FAILED');
-        console.log('===============================');
-        console.log('Error:', error.message);
-        console.log('');
-        console.log('💡 This might indicate:');
-        console.log('   - Mux credentials not properly configured');
-        console.log('   - Environment variables missing in Vercel');
-        console.log('   - Network connectivity issue');
-        console.log('   - Database migration not executed');
-        console.log('');
-        console.log('🔧 Troubleshooting steps:');
-        console.log('   1. Check Vercel environment variables');
-        console.log('   2. Verify Mux credentials are correct');
-        console.log('   3. Ensure database migration was executed');
-        console.log('   4. Check application logs for detailed errors');
+    if (data) {
+      req.write(typeof data === 'string' ? data : JSON.stringify(data));
     }
+    req.end();
+  });
 }
 
-runComprehensiveTests();
+/**
+ * Test database migration status
+ */
+async function testMigrationStatus() {
+  console.log('🔍 Testing database migration status...');
+  
+  try {
+    const url = new URL('/api/database/execute-migration', TEST_CONFIG.baseUrl);
+    const options = {
+      hostname: url.hostname,
+      port: url.port || 443,
+      path: url.pathname,
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    };
+
+    const response = await makeRequest(options);
+    
+    console.log('📊 Migration status response:', {
+      status: response.statusCode,
+      hasMuxIntegration: response.body?.hasMuxIntegration,
+      muxColumnsCount: response.body?.muxColumnsCount,
+      hasWebhookTable: response.body?.hasWebhookTable,
+      migrationNeeded: response.body?.migrationNeeded
+    });
+
+    if (response.statusCode === 200) {
+      if (response.body?.migrationNeeded) {
+        console.log('⚠️ Database migration needed');
+        return { success: true, migrationNeeded: true, data: response.body };
+      } else {
+        console.log('✅ Database migration already complete');
+        return { success: true, migrationNeeded: false, data: response.body };
+      }
+    } else {
+      console.error('❌ Migration status check failed:', response.statusCode);
+      return { success: false, error: response.body };
+    }
+
+  } catch (error) {
+    console.error('❌ Migration status test failed:', error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Execute database migration
+ */
+async function executeMigration() {
+  console.log('🔧 Executing database migration...');
+  
+  try {
+    const url = new URL('/api/database/execute-migration', TEST_CONFIG.baseUrl);
+    const options = {
+      hostname: url.hostname,
+      port: url.port || 443,
+      path: url.pathname,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer test-migration-token'
+      }
+    };
+
+    const requestData = {
+      migrationName: '002_add_mux_integration_fields',
+      dryRun: false
+    };
+
+    const response = await makeRequest(options, requestData);
+    
+    console.log('📊 Migration execution response:', {
+      status: response.statusCode,
+      success: response.body?.success,
+      tablesCreated: response.body?.tablesCreated?.length || 0,
+      columnsAdded: response.body?.columnsAdded?.length || 0,
+      indexesCreated: response.body?.indexesCreated?.length || 0,
+      executionTime: response.body?.executionTime
+    });
+
+    if (response.statusCode === 200 && response.body?.success) {
+      console.log('✅ Database migration completed successfully');
+      return { success: true, data: response.body };
+    } else {
+      console.error('❌ Migration execution failed:', response.body?.error);
+      return { success: false, error: response.body?.error };
+    }
+
+  } catch (error) {
+    console.error('❌ Migration execution failed:', error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Test webhook endpoint
+ */
+async function testWebhookEndpoint() {
+  console.log('🔔 Testing webhook endpoint...');
+  
+  try {
+    const url = new URL('/api/mux/webhook', TEST_CONFIG.baseUrl);
+    const options = {
+      hostname: url.hostname,
+      port: url.port || 443,
+      path: url.pathname,
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    };
+
+    const response = await makeRequest(options);
+    
+    console.log('📊 Webhook endpoint response:', {
+      status: response.statusCode,
+      endpointStatus: response.body?.status,
+      features: response.body?.features?.length || 0
+    });
+
+    if (response.statusCode === 200) {
+      console.log('✅ Webhook endpoint is accessible');
+      return { success: true, data: response.body };
+    } else {
+      console.error('❌ Webhook endpoint test failed:', response.statusCode);
+      return { success: false, error: response.body };
+    }
+
+  } catch (error) {
+    console.error('❌ Webhook endpoint test failed:', error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Test webhook processing with mock event
+ */
+async function testWebhookProcessing() {
+  console.log('🎬 Testing webhook processing...');
+  
+  try {
+    const url = new URL('/api/mux/webhook', TEST_CONFIG.baseUrl);
+    const options = {
+      hostname: url.hostname,
+      port: url.port || 443,
+      path: url.pathname,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    };
+
+    // Mock Mux webhook event
+    const mockEvent = {
+      type: 'video.asset.ready',
+      object: {
+        type: 'asset',
+        id: 'test-asset-id-' + Date.now()
+      },
+      id: 'webhook-event-' + Date.now(),
+      created_at: new Date().toISOString(),
+      data: {
+        passthrough: 'test-video-id-' + Date.now(),
+        status: 'ready',
+        playback_ids: [{
+          id: 'test-playback-id-' + Date.now(),
+          policy: 'public'
+        }],
+        duration: 120.5,
+        aspect_ratio: '16:9',
+        mp4_support: 'none'
+      }
+    };
+
+    const response = await makeRequest(options, mockEvent);
+    
+    console.log('📊 Webhook processing response:', {
+      status: response.statusCode,
+      success: response.body?.success,
+      action: response.body?.action,
+      processingTime: response.body?.processingTime
+    });
+
+    if (response.statusCode === 200) {
+      console.log('✅ Webhook processing completed successfully');
+      return { success: true, data: response.body };
+    } else {
+      console.error('❌ Webhook processing failed:', response.body?.error);
+      return { success: false, error: response.body };
+    }
+
+  } catch (error) {
+    console.error('❌ Webhook processing test failed:', error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Test Mux configuration
+ */
+async function testMuxConfiguration() {
+  console.log('🎭 Testing Mux configuration...');
+  
+  try {
+    // We'll test this by checking if the Mux processor can be initialized
+    // This is a basic connectivity test
+    const url = new URL('/api/videos', TEST_CONFIG.baseUrl);
+    const options = {
+      hostname: url.hostname,
+      port: url.port || 443,
+      path: url.pathname + '?test=mux',
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    };
+
+    const response = await makeRequest(options);
+    
+    console.log('📊 Mux configuration test response:', {
+      status: response.statusCode,
+      hasVideos: Array.isArray(response.body?.videos),
+      videoCount: response.body?.videos?.length || 0
+    });
+
+    if (response.statusCode === 200) {
+      console.log('✅ Mux configuration appears to be working');
+      return { success: true, data: response.body };
+    } else {
+      console.error('❌ Mux configuration test failed:', response.statusCode);
+      return { success: false, error: response.body };
+    }
+
+  } catch (error) {
+    console.error('❌ Mux configuration test failed:', error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Test video upload with Mux integration
+ */
+async function testVideoUploadWithMux() {
+  console.log('📤 Testing video upload with Mux integration...');
+  
+  try {
+    const url = new URL('/api/videos/upload', TEST_CONFIG.baseUrl);
+    const options = {
+      hostname: url.hostname,
+      port: url.port || 443,
+      path: url.pathname,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    };
+
+    // Mock S3 upload data
+    const uploadData = {
+      title: 'Test Video - Mux Integration',
+      description: 'Test video for Mux integration validation',
+      category: 'Test',
+      tags: 'test,mux,integration',
+      visibility: 'private',
+      s3Key: 'test-videos/test-mux-integration-' + Date.now() + '.mp4',
+      publicUrl: 'https://test-bucket.s3.amazonaws.com/test-video.mp4',
+      filename: 'test-mux-integration.mp4',
+      size: 10485760, // 10MB
+      mimeType: 'video/mp4'
+    };
+
+    const response = await makeRequest(options, uploadData);
+    
+    console.log('📊 Video upload response:', {
+      status: response.statusCode,
+      success: response.body?.success,
+      videoId: response.body?.video?.id,
+      hasThumbnail: !!response.body?.video?.thumbnailPath,
+      message: response.body?.message
+    });
+
+    if (response.statusCode === 200 && response.body?.success) {
+      console.log('✅ Video upload with Mux integration completed');
+      return { success: true, data: response.body };
+    } else {
+      console.error('❌ Video upload failed:', response.body?.error);
+      return { success: false, error: response.body };
+    }
+
+  } catch (error) {
+    console.error('❌ Video upload test failed:', error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Run all tests
+ */
+async function runAllTests() {
+  console.log('🚀 Starting comprehensive Mux integration tests...\n');
+  
+  const results = {
+    migrationStatus: null,
+    migrationExecution: null,
+    webhookEndpoint: null,
+    webhookProcessing: null,
+    muxConfiguration: null,
+    videoUpload: null
+  };
+
+  // Test 1: Check migration status
+  results.migrationStatus = await testMigrationStatus();
+  console.log('');
+
+  // Test 2: Execute migration if needed
+  if (results.migrationStatus.success && results.migrationStatus.migrationNeeded) {
+    results.migrationExecution = await executeMigration();
+    console.log('');
+  } else {
+    console.log('⏭️ Skipping migration execution - not needed\n');
+  }
+
+  // Test 3: Test webhook endpoint
+  results.webhookEndpoint = await testWebhookEndpoint();
+  console.log('');
+
+  // Test 4: Test webhook processing
+  results.webhookProcessing = await testWebhookProcessing();
+  console.log('');
+
+  // Test 5: Test Mux configuration
+  results.muxConfiguration = await testMuxConfiguration();
+  console.log('');
+
+  // Test 6: Test video upload with Mux
+  results.videoUpload = await testVideoUploadWithMux();
+  console.log('');
+
+  // Summary
+  console.log('📋 Test Results Summary:');
+  console.log('========================');
+  
+  const testResults = [
+    { name: 'Migration Status', result: results.migrationStatus },
+    { name: 'Migration Execution', result: results.migrationExecution },
+    { name: 'Webhook Endpoint', result: results.webhookEndpoint },
+    { name: 'Webhook Processing', result: results.webhookProcessing },
+    { name: 'Mux Configuration', result: results.muxConfiguration },
+    { name: 'Video Upload', result: results.videoUpload }
+  ];
+
+  let passedTests = 0;
+  let totalTests = 0;
+
+  testResults.forEach(test => {
+    if (test.result !== null) {
+      totalTests++;
+      const status = test.result.success ? '✅ PASS' : '❌ FAIL';
+      console.log(`${status} ${test.name}`);
+      if (test.result.success) passedTests++;
+      if (!test.result.success && test.result.error) {
+        console.log(`    Error: ${test.result.error}`);
+      }
+    }
+  });
+
+  console.log('');
+  console.log(`📊 Overall Results: ${passedTests}/${totalTests} tests passed`);
+  
+  if (passedTests === totalTests) {
+    console.log('🎉 All tests passed! Mux integration is working correctly.');
+  } else {
+    console.log('⚠️ Some tests failed. Please review the errors above.');
+  }
+
+  return {
+    success: passedTests === totalTests,
+    passed: passedTests,
+    total: totalTests,
+    results
+  };
+}
+
+// Run tests if called directly
+if (require.main === module) {
+  runAllTests()
+    .then(results => {
+      process.exit(results.success ? 0 : 1);
+    })
+    .catch(error => {
+      console.error('❌ Test execution failed:', error);
+      process.exit(1);
+    });
+}
+
+module.exports = { runAllTests, testMigrationStatus, testWebhookEndpoint };

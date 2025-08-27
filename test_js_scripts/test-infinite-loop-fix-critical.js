@@ -3,7 +3,7 @@
  * Tests the essential functionality to ensure the fix works
  */
 
-const { VideoDB } = require('./src/lib/database');
+const { VideoDB } = require('../src/lib/database');
 
 async function testCriticalPath() {
   console.log('🧪 Starting Critical Path Testing for Infinite Loop Fix...\n');

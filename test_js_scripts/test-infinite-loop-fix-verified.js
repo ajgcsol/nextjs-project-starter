@@ -2,7 +2,7 @@
  * Test to verify the infinite loop fix is working
  */
 
-const { VideoDB } = require('./src/lib/database');
+const { VideoDB } = require('../src/lib/database');
 
 async function testInfiniteLoopFix() {
   console.log('🧪 Testing Infinite Loop Fix...\n');
