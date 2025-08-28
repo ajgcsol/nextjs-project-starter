@@ -365,10 +365,10 @@ export function UploadFirstServerlessModal({
       }
 
       // Step 3: Update Video Record (or create if doesn't exist)
-      await processStep('database', async () => {
-        const videoRecord = await updateVideoRecord(currentUploadResults);
-        setUploadResults(prev => ({ ...prev, videoId: videoRecord.id }));
-        return videoRecord;
+      const videoRecord = await processStep('database', async () => {
+        const record = await updateVideoRecord(currentUploadResults);
+        setUploadResults(prev => ({ ...prev, videoId: record.id }));
+        return record;
       });
 
       // Step 4: Mux Processing (async)
@@ -378,7 +378,7 @@ export function UploadFirstServerlessModal({
 
       // Step 5: Process Thumbnail (async)
       await processStep('thumbnail', async () => {
-        await processThumbnail();
+        await processThumbnail(videoRecord.id);
       });
 
       // Step 6: Generate Transcription (async)
@@ -395,8 +395,8 @@ export function UploadFirstServerlessModal({
       setTimeout(() => {
         onComplete(true, { 
           message: 'Video published successfully!',
-          videoId: uploadResults.videoId,
-          videoUrl: `/videos/${uploadResults.videoId}`
+          videoId: videoRecord.id,
+          videoUrl: `/videos/${videoRecord.id}`
         });
       }, 1000);
 
@@ -597,10 +597,11 @@ export function UploadFirstServerlessModal({
     await new Promise(resolve => setTimeout(resolve, 1000));
   };
 
-  const processThumbnail = async () => {
+  const processThumbnail = async (videoId?: string) => {
     updateStepStatus('thumbnail', 'processing', 20, 'Video ready for thumbnail generation...');
     
-    if (!uploadResults.videoId) {
+    const currentVideoId = videoId || uploadResults.videoId;
+    if (!currentVideoId) {
       throw new Error('Video ID not available for thumbnail generation');
     }
     
@@ -617,7 +618,7 @@ export function UploadFirstServerlessModal({
         const formData = new FormData();
         formData.append('thumbnail', customThumbnail);
         
-        const response = await fetch(`/api/videos/thumbnail/${uploadResults.videoId}`, {
+        const response = await fetch(`/api/videos/thumbnail/${currentVideoId}`, {
           method: 'POST',
           body: formData,
         });
