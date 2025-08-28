@@ -253,7 +253,7 @@ export function UploadFirstServerlessModal({
     setError(null);
 
     try {
-      // Step 1: Validate Content - FIXED: Check for video file properly
+      // Step 1: Validate Content - ENHANCED: Better validation with fallback logic
       await processStep('validate', async () => {
         console.log('🎬 Validating content data:', {
           title: contentData.title,
@@ -261,34 +261,48 @@ export function UploadFirstServerlessModal({
           pendingFileType: contentData.metadata.pendingFile?.constructor.name,
           pendingFileName: contentData.metadata.pendingFile?.name,
           pendingFileSize: contentData.metadata.pendingFile?.size,
-          metadataKeys: Object.keys(contentData.metadata)
+          metadataKeys: Object.keys(contentData.metadata),
+          hasS3Key: !!contentData.metadata.s3Key,
+          hasPublicUrl: !!contentData.metadata.publicUrl
         });
         
         if (!contentData.title.trim()) {
-          throw new Error('Title is required');
+          throw new Error('Title is required. Please enter a title for your video.');
         }
         
-        // FIXED: Better video file validation
+        // ENHANCED: Better video file validation with fallback logic
         const videoFile = contentData.metadata.pendingFile;
-        if (!videoFile) {
-          console.error('🎬 ❌ No video file found in contentData.metadata.pendingFile');
+        const hasS3Data = contentData.metadata.s3Key && contentData.metadata.publicUrl;
+        
+        if (!videoFile && !hasS3Data) {
+          console.error('🎬 ❌ No video file or S3 data found');
           console.error('🎬 Available metadata:', contentData.metadata);
-          throw new Error('No video file selected. Please upload a video first.');
+          throw new Error('No video file found. Please upload a video first using the video upload component above.');
         }
         
-        // Verify the file is actually a File object
-        if (!(videoFile instanceof File)) {
-          console.error('🎬 ❌ pendingFile is not a File object:', typeof videoFile);
-          throw new Error('Invalid video file format');
+        if (videoFile) {
+          // Verify the file is actually a File object
+          if (!(videoFile instanceof File)) {
+            console.error('🎬 ❌ pendingFile is not a File object:', typeof videoFile);
+            throw new Error('Invalid video file format. Please try uploading the video again.');
+          }
+          
+          // Check file size (5GB max)
+          const maxSize = 5 * 1024 * 1024 * 1024;
+          if (videoFile.size > maxSize) {
+            throw new Error(`File too large. Maximum size is 5GB (current: ${(videoFile.size / (1024 * 1024 * 1024)).toFixed(2)}GB). Please use a smaller video file.`);
+          }
+          
+          // Check file type
+          if (!videoFile.type.startsWith('video/')) {
+            throw new Error('Invalid file type. Please upload a video file (MP4, MOV, AVI, etc.).');
+          }
+          
+          console.log('🎬 ✅ Validation passed - video file found:', videoFile.name, `(${(videoFile.size / (1024*1024)).toFixed(1)}MB)`);
+        } else if (hasS3Data) {
+          console.log('🎬 ✅ Validation passed - using existing S3 data:', contentData.metadata.s3Key);
         }
         
-        // Check file size (5GB max)
-        const maxSize = 5 * 1024 * 1024 * 1024;
-        if (videoFile.size > maxSize) {
-          throw new Error(`File too large. Maximum size is 5GB (current: ${(videoFile.size / (1024 * 1024 * 1024)).toFixed(2)}GB)`);
-        }
-        
-        console.log('🎬 ✅ Validation passed - video file found:', videoFile.name, `(${(videoFile.size / (1024*1024)).toFixed(1)}MB)`);
         await new Promise(resolve => setTimeout(resolve, 1000));
       });
 

@@ -237,7 +237,8 @@ export function SteppedVideoUpload({ onUploadComplete, onUploadError }: SteppedV
       publicUrl: completeResult.publicUrl,
       filename: file.name,
       size: file.size,
-      mimeType: file.type
+      mimeType: file.type,
+      autoThumbnail: autoThumbnail
     };
   };
 
@@ -260,7 +261,8 @@ export function SteppedVideoUpload({ onUploadComplete, onUploadError }: SteppedV
       publicUrl,
       filename: file.name,
       size: file.size,
-      mimeType: file.type
+      mimeType: file.type,
+      autoThumbnail: null // Regular uploads don't generate thumbnails
     };
   };
 
@@ -303,8 +305,43 @@ export function SteppedVideoUpload({ onUploadComplete, onUploadError }: SteppedV
         // Start polling for transcript completion
         pollTranscriptProgress(result.videoId);
         
-        if (onUploadComplete && result.video) {
-          onUploadComplete(result.video);
+        if (onUploadComplete) {
+          // FIXED: Preserve the original File object and all required metadata
+          const uploadCompleteData = {
+            // Video data from the API response
+            ...(result.video || {}),
+            
+            // Original file and metadata that needs to be preserved
+            pendingFile: selectedFile,
+            originalFilename: selectedFile.name,
+            size: selectedFile.size,
+            mimeType: selectedFile.type,
+            
+            // Upload metadata
+            uploadMethod: selectedFile.size > 100 * 1024 * 1024 ? 'multipart' : 'single',
+            s3Key: s3Data.s3Key,
+            publicUrl: s3Data.publicUrl,
+            
+            // Auto-generated thumbnail if available
+            autoThumbnail: s3Data.autoThumbnail || null,
+            
+            // Content metadata for the editor
+            title: selectedFile.name.replace(/\.[^/.]+$/, ''),
+            description: `Uploaded ${new Date().toLocaleDateString()}`,
+            category: 'Lecture', // Default category
+            
+            // Generate a unique monitor session ID for tracking
+            monitorSessionId: `upload_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+          };
+          
+          console.log('🎬 ✅ Upload complete, calling onUploadComplete with preserved data:', {
+            hasFile: !!uploadCompleteData.pendingFile,
+            filename: uploadCompleteData.originalFilename,
+            size: uploadCompleteData.size,
+            uploadMethod: uploadCompleteData.uploadMethod
+          });
+          
+          onUploadComplete(uploadCompleteData);
         }
       } else {
         if (onUploadError) {

@@ -764,16 +764,24 @@ export function ContentEditor({
               {config.showVideoUrl && (
                 <div className="space-y-4">
                   <SteppedVideoUpload
-                    onUploadComplete={(videoData) => {
-                      // Store the video data for later upload when saving/publishing
+                  onUploadComplete={(videoData) => {
+                      console.log('🎬 ContentEditor received upload data:', {
+                        hasFile: !!videoData.pendingFile,
+                        filename: videoData.originalFilename,
+                        size: videoData.size,
+                        uploadMethod: videoData.uploadMethod,
+                        hasAutoThumbnail: !!videoData.autoThumbnail
+                      });
+                      
+                      // FIXED: Store the complete video data structure for later upload when saving/publishing
                       setContent({
                         ...content,
                         title: content.title || videoData.title,
                         description: content.description || videoData.description,
-                        category: videoData.category,
+                        category: videoData.category || content.category,
                         metadata: {
                           ...content.metadata,
-                          // Store pending file data instead of creating video immediately
+                          // Store ALL the data from SteppedVideoUpload
                           pendingFile: videoData.pendingFile,
                           autoThumbnail: videoData.autoThumbnail,
                           customThumbnail: videoData.customThumbnail,
@@ -781,9 +789,22 @@ export function ContentEditor({
                           monitorSessionId: videoData.monitorSessionId,
                           duration: videoData.duration,
                           fileSize: videoData.size,
-                          originalFilename: videoData.originalFilename
+                          originalFilename: videoData.originalFilename,
+                          mimeType: videoData.mimeType,
+                          s3Key: videoData.s3Key,
+                          publicUrl: videoData.publicUrl,
+                          // Video processing data if available
+                          id: videoData.id,
+                          streamUrl: videoData.streamUrl,
+                          thumbnailPath: videoData.thumbnailPath,
+                          muxPlaybackId: videoData.muxPlaybackId,
+                          status: videoData.status,
+                          transcriptStatus: videoData.transcriptStatus,
+                          transcriptText: videoData.transcriptText
                         }
                       });
+                      
+                      console.log('🎬 ✅ ContentEditor updated with complete video data');
                     }}
                     onUploadError={(error) => {
                       console.error("Video upload preparation failed:", error);

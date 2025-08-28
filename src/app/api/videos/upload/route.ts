@@ -473,7 +473,7 @@ export async function POST(request: NextRequest) {
             muxFieldsUsed = true;
           } else {
             console.log('➕ No existing video found, creating new one');
-            savedVideo = await VideoDB.create({
+            savedVideo = await VideoDB.createWithId(jsonFileId, {
               title: jsonVideoRecord.title,
               description: jsonVideoRecord.description,
               filename: jsonVideoRecord.originalFilename,
@@ -513,7 +513,7 @@ export async function POST(request: NextRequest) {
           }
         } else {
           console.log('➕ No Mux Asset ID, creating video directly');
-          savedVideo = await VideoDB.create({
+          savedVideo = await VideoDB.createWithId(jsonFileId, {
             title: jsonVideoRecord.title,
             description: jsonVideoRecord.description,
             filename: jsonVideoRecord.originalFilename,
