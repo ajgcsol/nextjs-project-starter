@@ -103,6 +103,45 @@ export async function POST(request: NextRequest) {
         estimatedTime: `${SynchronousMuxProcessor.estimateProcessingTime(size, mimeType || 'video/mp4') / 1000}s`
       });
 
+      // CRITICAL: Create database record IMMEDIATELY after S3 upload
+      // This prevents race condition where Mux webhooks arrive before DB record exists
+      console.log('📝 Creating initial database record to prevent webhook race condition...');
+      
+      const cloudFrontDomain = process.env.CLOUDFRONT_DOMAIN;
+      const initialStreamUrl = cloudFrontDomain 
+        ? `https://${cloudFrontDomain}/${s3Key}`
+        : publicUrl;
+      
+      let savedVideo;
+      try {
+        savedVideo = await VideoDB.createWithId(jsonFileId, {
+          title: jsonTitle || filename.replace(/\.[^/.]+$/, ''),
+          description: jsonDescription || '',
+          filename: filename,
+          file_path: initialStreamUrl,
+          file_size: size,
+          duration: 0, // Will be updated after Mux processing
+          thumbnail_path: `/api/videos/thumbnail/${jsonFileId}`, // Default fallback
+          video_quality: 'HD',
+          uploaded_by: 'current-user',
+          course_id: undefined,
+          s3_key: s3Key,
+          s3_bucket: process.env.S3_BUCKET_NAME || undefined,
+          is_processed: false, // Will be updated after processing
+          is_public: jsonVisibility === 'public',
+          // Initialize Mux fields as null - will be populated by webhooks
+          mux_status: 'pending',
+          transcript_status: 'pending',
+          captions_status: 'pending'
+        });
+        
+        console.log('✅ Initial database record created:', savedVideo.id);
+        
+      } catch (dbError) {
+        console.error('❌ Failed to create initial database record:', dbError);
+        throw new Error('Database record creation failed - aborting to prevent webhook issues');
+      }
+
       // Initialize Mux processing variables
       let muxAssetId = null;
       let muxPlaybackId = null;
@@ -119,7 +158,7 @@ export async function POST(request: NextRequest) {
       let muxBitrate = null;
       
       try {
-        console.log('🎬 🎭 Starting Mux processing for:', filename);
+        console.log('🎬 🎭 Starting Mux processing for:', filename, 'with existing DB record:', savedVideo.id);
         
         if (shouldProcessSync) {
           console.log('⚡ Using SYNCHRONOUS Mux processing - thumbnails and transcripts will be ready immediately');
@@ -328,8 +367,7 @@ export async function POST(request: NextRequest) {
             })
           );
 
-          // Define cloudFrontDomain here to avoid scoping issues
-          const cloudFrontDomain = process.env.CLOUDFRONT_DOMAIN;
+          // Use existing cloudFrontDomain variable from above
           thumbnailCloudFrontUrl = cloudFrontDomain 
             ? `https://${cloudFrontDomain}/${thumbnailS3Key}`
             : `https://${process.env.S3_BUCKET_NAME}.s3.${process.env.AWS_REGION || 'us-east-1'}.amazonaws.com/${thumbnailS3Key}`;
@@ -374,7 +412,6 @@ export async function POST(request: NextRequest) {
       });
 
       // Create video record with S3 data - use CloudFront URL for better performance
-      const cloudFrontDomain = process.env.CLOUDFRONT_DOMAIN;
       const optimizedStreamUrl = cloudFrontDomain 
         ? `https://${cloudFrontDomain}/${s3Key}`
         : publicUrl; // Fallback to direct S3 URL

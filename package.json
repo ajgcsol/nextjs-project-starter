@@ -20,6 +20,7 @@
     "@aws-sdk/client-mediaconvert": "^3.864.0",
     "@aws-sdk/client-rds": "^3.864.0",
     "@aws-sdk/client-s3": "^3.864.0",
+    "@aws-sdk/client-transcribe": "^3.876.0",
     "@aws-sdk/credential-providers": "^3.864.0",
     "@aws-sdk/s3-request-presigner": "^3.864.0",
     "@azure/msal-browser": "^4.20.0",

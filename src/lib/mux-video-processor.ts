@@ -27,6 +27,7 @@ export interface MuxProcessingOptions {
   mp4Support: 'none' | 'standard' | 'high';
   maxResolution: '1080p' | '1440p' | '2160p';
   enableSpeakerDiarization?: boolean;
+  generateSubtitles?: boolean;
 }
 
 export interface MuxTranscriptionOptions {
@@ -99,12 +100,28 @@ export class MuxVideoProcessor {
       console.log('📹 Mux asset creation with options:', {
         videoUrl,
         videoId,
-        options
+        options,
+        generateCaptions: options.generateCaptions,
+        generateSubtitles: options.generateSubtitles,
+        captionLanguage: options.captionLanguage
       });
 
       // Create comprehensive Mux asset with all processing options
+      const inputSettings: any = { url: videoUrl };
+      
+      // Enable automatic caption generation if requested
+      // This MUST be in the input object, not at the root level
+      if (options.generateCaptions || options.generateSubtitles) {
+        inputSettings.generated_subtitles = [{
+          language_code: options.captionLanguage || 'en',
+          name: 'English (Auto-generated)',
+          passthrough: `${videoId}_subtitles`
+        }];
+        console.log('📝 Enabled automatic caption generation for language:', options.captionLanguage || 'en');
+      }
+
       const assetParams: any = {
-        inputs: [{ url: videoUrl }],
+        inputs: [inputSettings],
         playback_policy: [options.playbackPolicy],
         master_access: 'temporary',
         normalize_audio: options.normalizeAudio,
@@ -122,22 +139,23 @@ export class MuxVideoProcessor {
         assetParams.max_resolution_tier = options.maxResolution;
       }
 
-      // Enable automatic caption generation if requested
-      if (options.generateCaptions) {
-        assetParams.generated_subtitles = [{
-          language_code: options.captionLanguage || 'en',
-          name: 'English (Auto-generated)'
-        }];
-        console.log('📝 Enabled automatic caption generation for language:', options.captionLanguage || 'en');
-      }
-
+      console.log('📤 Sending Mux asset creation request with parameters:', JSON.stringify(assetParams, null, 2));
+      
       const asset = await mux.video.assets.create(assetParams);
 
       console.log('✅ Mux asset created:', {
         assetId: asset.id,
         status: asset.status,
-        playbackIds: asset.playback_ids?.length || 0
+        playbackIds: asset.playback_ids?.length || 0,
+        inputs: asset.inputs?.length || 0,
+        tracks: asset.tracks?.length || 0
       });
+      
+      if (asset.inputs && asset.inputs[0] && asset.inputs[0].generated_subtitles) {
+        console.log('📝 Subtitle generation confirmed in response:', asset.inputs[0].generated_subtitles);
+      } else {
+        console.warn('⚠️ No subtitle generation found in Mux response');
+      }
 
       // Get playback ID for streaming and thumbnails
       const playbackId = asset.playback_ids?.[0]?.id;
@@ -201,6 +219,17 @@ export class MuxVideoProcessor {
       // Add MP4 support for pay-as-you-go plan
       if (options.mp4Support !== 'none') {
         uploadParams.new_asset_settings.mp4_support = options.mp4Support;
+      }
+
+      // Add subtitle generation if requested
+      // For direct uploads, subtitles are generated after upload
+      if (options.generateSubtitles || options.generateCaptions) {
+        uploadParams.new_asset_settings.generated_subtitles = [{
+          name: 'Auto-generated English captions',
+          language_code: options.captionLanguage || 'en',
+          passthrough: `video_${videoId}_subtitles`
+        }];
+        console.log('📄 Subtitle generation enabled for upload');
       }
 
       const upload = await mux.video.uploads.create(uploadParams);
@@ -630,31 +659,15 @@ export class MuxVideoProcessor {
   ): Promise<MuxTranscriptionResult> {
     try {
       console.log('🎤 Requesting Mux transcription for asset:', assetId);
+      console.log('⚠️ Note: Mux can only generate subtitles during asset creation.');
+      console.log('🔄 For existing assets, consider recreating with subtitle generation enabled.');
       
-      const mux = this.getMuxClient();
-
-      // Create generated subtitles for the asset - simplified approach
-      const trackParams: any = {
-        type: 'text',
-        text_type: 'subtitles',
-        language_code: options.language || 'en',
-        closed_captions: options.enableSpeakerDiarization || false,
-        generated_subtitles: [{
-          name: `Auto-generated ${options.language || 'English'} captions`,
-          language_code: options.language || 'en'
-        }]
-      };
-
-      console.log('🎤 Creating Mux track with params:', JSON.stringify(trackParams, null, 2));
-      
-      const subtitle = await mux.video.assets.createTrack(assetId, trackParams);
-
-      console.log('✅ Mux transcription requested:', subtitle.id);
-
+      // Since subtitles can only be generated during asset creation,
+      // we'll return a message indicating this limitation
       return {
-        success: true,
-        jobId: subtitle.id,
-        status: 'processing'
+        success: false,
+        status: 'failed',
+        error: 'Subtitles can only be generated during asset creation. Please recreate the asset with generated_subtitles enabled.'
       };
 
     } catch (error) {
@@ -677,20 +690,54 @@ export class MuxVideoProcessor {
       
       const mux = this.getMuxClient();
 
-      // Get asset details including tracks
+      // Get asset details including tracks and inputs
       const asset = await mux.video.assets.retrieve(assetId);
       
-      if (!asset.tracks) {
+      console.log('🔍 Asset details for transcription check:', {
+        assetId,
+        status: asset.status,
+        tracks: asset.tracks?.length || 0,
+        inputs: asset.inputs?.length || 0,
+        hasGeneratedSubtitles: asset.inputs?.[0]?.generated_subtitles?.length || 0
+      });
+      
+      // Check if asset has generated subtitles configured
+      const hasSubtitleGeneration = asset.inputs && 
+        asset.inputs[0] && 
+        asset.inputs[0].generated_subtitles && 
+        asset.inputs[0].generated_subtitles.length > 0;
+      
+      if (!hasSubtitleGeneration) {
+        console.warn('⚠️ Asset was created without subtitle generation enabled');
         return {
           success: true,
-          status: 'not_available'
+          status: 'not_configured',
+          error: 'Asset was not created with subtitle generation enabled'
+        };
+      }
+      
+      if (!asset.tracks) {
+        console.log('🕰️ No tracks available yet, subtitles may still be generating');
+        return {
+          success: true,
+          status: 'preparing'
         };
       }
 
       // Find text tracks (subtitles/captions)
       const textTracks = asset.tracks.filter((track: any) => track.type === 'text');
       
+      console.log('📝 Found text tracks:', textTracks.length);
+      
       if (textTracks.length === 0) {
+        console.log('🕰️ No text tracks found yet, checking if still generating...');
+        // If asset is still processing and has subtitle generation configured, return preparing
+        if (asset.status === 'preparing' && hasSubtitleGeneration) {
+          return {
+            success: true,
+            status: 'preparing'
+          };
+        }
         return {
           success: true,
           status: 'not_available'

@@ -283,6 +283,11 @@ export class MuxWebhookHandler {
           console.log('🖼️ Thumbnail URL generated:', thumbnailUrl);
         }
 
+        // Trigger AWS Transcribe for speaker diarization after Mux processing completes
+        this.triggerAWSTranscribe(videoId).catch(error => {
+          console.error('❌ Failed to trigger AWS Transcribe:', error);
+        });
+
         return {
           success: true,
           action: 'asset_ready',
@@ -527,6 +532,50 @@ export class MuxWebhookHandler {
         error: error instanceof Error ? error.message : 'Unknown error',
         processingTime: Date.now() - startTime
       };
+    }
+  }
+
+  /**
+   * Trigger AWS Transcribe for speaker diarization after Mux processing completes
+   */
+  private static async triggerAWSTranscribe(videoId: string): Promise<void> {
+    try {
+      console.log('🎤 Triggering AWS Transcribe for video:', videoId);
+      
+      const response = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/videos/aws-transcribe`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          videoId,
+          enableSpeakerDiarization: true,
+          maxSpeakers: 4,
+          language: 'en-US'
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(`AWS Transcribe API failed: ${response.status} ${response.statusText} - ${errorData.error || 'Unknown error'}`);
+      }
+
+      const result = await response.json();
+      console.log('✅ AWS Transcribe job started successfully:', result.jobId);
+      
+    } catch (error) {
+      console.error('❌ Failed to trigger AWS Transcribe for video:', videoId, error);
+      
+      // Update video record to indicate transcription failed to start
+      try {
+        await VideoDB.update(videoId, {
+          transcript_status: 'failed'
+        });
+      } catch (dbError) {
+        console.error('❌ Failed to update transcript status after AWS Transcribe trigger failure:', dbError);
+      }
+      
+      throw error;
     }
   }
 

@@ -24,7 +24,13 @@ export async function POST(request: NextRequest) {
       'ALTER TABLE videos ADD COLUMN IF NOT EXISTS captions_webvtt_url TEXT',
       'ALTER TABLE videos ADD COLUMN IF NOT EXISTS captions_srt_url TEXT',
       'ALTER TABLE videos ADD COLUMN IF NOT EXISTS transcript_text TEXT',
-      'ALTER TABLE videos ADD COLUMN IF NOT EXISTS transcript_confidence DECIMAL(3,2)'
+      'ALTER TABLE videos ADD COLUMN IF NOT EXISTS transcript_confidence DECIMAL(3,2)',
+      "ALTER TABLE videos ADD COLUMN IF NOT EXISTS transcript_status VARCHAR(50) DEFAULT 'pending'",
+      'ALTER TABLE videos ADD COLUMN IF NOT EXISTS captions_url TEXT',
+      "ALTER TABLE videos ADD COLUMN IF NOT EXISTS captions_status VARCHAR(50) DEFAULT 'pending'",
+      'ALTER TABLE videos ADD COLUMN IF NOT EXISTS speaker_count INTEGER DEFAULT 0',
+      'ALTER TABLE videos ADD COLUMN IF NOT EXISTS thumbnail_timestamp INTEGER',
+      "ALTER TABLE videos ADD COLUMN IF NOT EXISTS thumbnail_method VARCHAR(20) DEFAULT 'auto'"
     ];
 
     console.log('🔧 Executing migration commands...');
