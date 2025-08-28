@@ -403,7 +403,7 @@ export function UploadFirstServerlessModal({
 
       // Step 6: Generate Transcription (async)
       await processStep('transcription', async () => {
-        await generateTranscription();
+        await generateTranscription(videoRecord.id);
       });
 
       // Step 7: Complete
@@ -707,13 +707,15 @@ export function UploadFirstServerlessModal({
     }
   };
 
-  const generateTranscription = async () => {
+  const generateTranscription = async (videoId?: string) => {
     updateStepStatus('transcription', 'processing', 20, 'Analyzing audio track for speech...');
     
-    const currentVideoId = uploadResults.videoId;
+    const currentVideoId = videoId || uploadResults.videoId;
     if (!currentVideoId) {
       throw new Error('Video ID not available for transcription');
     }
+    
+    console.log('🎤 Starting transcription for video ID:', currentVideoId);
     
     try {
       // Call the Mux transcription API endpoint
