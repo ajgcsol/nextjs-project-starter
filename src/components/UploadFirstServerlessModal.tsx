@@ -459,6 +459,17 @@ export function UploadFirstServerlessModal({
   const createVideoRecord = async () => {
     updateStepStatus('database', 'processing', 30, 'Creating video record...');
     
+    // If we already have a video ID from multipart upload, just return that
+    if (contentData.metadata.id) {
+      updateStepStatus('database', 'processing', 100, 'Using existing video record...');
+      console.log('🎬 Video already exists from multipart upload:', contentData.metadata.id);
+      return {
+        id: contentData.metadata.id,
+        title: contentData.title,
+        description: contentData.description
+      };
+    }
+    
     // Use metadata for file info if we don't have the actual file object
     const filename = contentData.metadata.pendingFile 
       ? (contentData.metadata.pendingFile as File).name 
@@ -492,7 +503,9 @@ export function UploadFirstServerlessModal({
     });
 
     if (!uploadResponse.ok) {
-      throw new Error('Failed to create video record');
+      const errorText = await uploadResponse.text();
+      console.error('Upload API error:', errorText);
+      throw new Error(`Failed to create video record: ${uploadResponse.status} - ${errorText}`);
     }
 
     updateStepStatus('database', 'processing', 80, 'Updating search index...');
