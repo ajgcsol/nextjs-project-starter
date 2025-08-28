@@ -14,15 +14,27 @@ import {
   ChevronUp,
   Copy,
   Download,
-  Play
+  Play,
+  UserCheck
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { SpeakerIdentification } from './SpeakerIdentification';
 
 interface TranscriptSegment {
   speaker: string;
   text: string;
   timestamp?: number;
   confidence?: number;
+}
+
+interface Speaker {
+  id: string;
+  originalLabel: string;
+  name: string;
+  color: string;
+  segments: number;
+  screenshot?: string;
+  confidence: number;
 }
 
 interface TranscriptDisplayProps {
@@ -34,6 +46,8 @@ interface TranscriptDisplayProps {
   showSpeakerStats?: boolean;
   showSearch?: boolean;
   showDownload?: boolean;
+  showSpeakerIdentification?: boolean;
+  videoRef?: React.RefObject<HTMLVideoElement>;
 }
 
 export function TranscriptDisplay({
@@ -44,13 +58,17 @@ export function TranscriptDisplay({
   onTimestampClick,
   showSpeakerStats = true,
   showSearch = true,
-  showDownload = true
+  showDownload = true,
+  showSpeakerIdentification = true,
+  videoRef
 }: TranscriptDisplayProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [transcript, setTranscript] = useState<TranscriptSegment[]>([]);
   const [filteredTranscript, setFilteredTranscript] = useState<TranscriptSegment[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [speakers, setSpeakers] = useState<Speaker[]>([]);
+  const [showIdentificationPanel, setShowIdentificationPanel] = useState(false);
 
   // Parse transcript text into segments
   useEffect(() => {
@@ -144,21 +162,23 @@ export function TranscriptDisplay({
     URL.revokeObjectURL(url);
   };
 
+  // Handle speaker updates from the identification component
+  const handleSpeakersUpdated = (updatedSpeakers: Speaker[]) => {
+    setSpeakers(updatedSpeakers);
+  };
+
+  // Get speaker display name and color
+  const getSpeakerDisplayInfo = (speakerLabel: string) => {
+    const speaker = speakers.find(s => s.originalLabel === speakerLabel);
+    return {
+      name: speaker?.name || speakerLabel,
+      color: speaker?.color || 'bg-gray-100 text-gray-800 border-gray-200'
+    };
+  };
+
   const getSpeakerColor = (speaker: string) => {
-    const colors = [
-      'bg-blue-100 text-blue-800 border-blue-200',
-      'bg-green-100 text-green-800 border-green-200', 
-      'bg-purple-100 text-purple-800 border-purple-200',
-      'bg-orange-100 text-orange-800 border-orange-200',
-      'bg-pink-100 text-pink-800 border-pink-200'
-    ];
-    
-    const hash = speaker.split('').reduce((a, b) => {
-      a = ((a << 5) - a) + b.charCodeAt(0);
-      return a & a;
-    }, 0);
-    
-    return colors[Math.abs(hash) % colors.length];
+    const info = getSpeakerDisplayInfo(speaker);
+    return info.color;
   };
 
   if (isLoading) {
@@ -203,6 +223,17 @@ export function TranscriptDisplay({
           </CardTitle>
           
           <div className="flex items-center space-x-2">
+            {showSpeakerIdentification && speakerCount > 1 && (
+              <Button
+                variant={showIdentificationPanel ? "default" : "ghost"}
+                size="sm"
+                onClick={() => setShowIdentificationPanel(!showIdentificationPanel)}
+                className="h-8 px-3"
+              >
+                <UserCheck className="h-4 w-4 mr-1" />
+                <span className="text-xs">ID Speakers</span>
+              </Button>
+            )}
             {showDownload && (
               <Button
                 variant="ghost"
@@ -270,7 +301,7 @@ export function TranscriptDisplay({
                       getSpeakerColor(segment.speaker)
                     )}
                   >
-                    {segment.speaker}
+                    {getSpeakerDisplayInfo(segment.speaker).name}
                   </Badge>
                   
                   <div className="flex-1 min-w-0">
@@ -298,6 +329,20 @@ export function TranscriptDisplay({
           </div>
         )}
       </CardContent>
+      
+      {/* Speaker Identification Panel */}
+      {showIdentificationPanel && showSpeakerIdentification && transcriptText && (
+        <CardContent className="pt-0">
+          <div className="border-t pt-4">
+            <SpeakerIdentification
+              videoId={videoId}
+              transcript={transcriptText}
+              videoRef={videoRef}
+              onSpeakersUpdated={handleSpeakersUpdated}
+            />
+          </div>
+        </CardContent>
+      )}
     </Card>
   );
 }

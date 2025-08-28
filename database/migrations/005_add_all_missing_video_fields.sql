@@ -1,5 +1,5 @@
--- Migration: Add Mux integration fields to videos table
--- This migration adds fields to store Mux asset information for video processing
+-- Migration: Add all missing video fields for complete schema
+-- This migration adds both Mux fields and additional missing fields
 
 -- Add Mux-related columns to videos table
 ALTER TABLE videos 
@@ -22,11 +22,38 @@ ADD COLUMN IF NOT EXISTS captions_srt_url TEXT,
 ADD COLUMN IF NOT EXISTS transcript_text TEXT,
 ADD COLUMN IF NOT EXISTS transcript_confidence DECIMAL(3,2);
 
--- Create index on mux_asset_id for faster lookups
+-- Add additional missing columns
+ALTER TABLE videos 
+ADD COLUMN IF NOT EXISTS thumbnail_timestamp INTEGER DEFAULT 0,
+ADD COLUMN IF NOT EXISTS streaming_url TEXT,
+ADD COLUMN IF NOT EXISTS s3_key VARCHAR(255),
+ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'pending',
+ADD COLUMN IF NOT EXISTS visibility VARCHAR(20) DEFAULT 'private',
+ADD COLUMN IF NOT EXISTS category VARCHAR(100),
+ADD COLUMN IF NOT EXISTS tags TEXT,
+ADD COLUMN IF NOT EXISTS views INTEGER DEFAULT 0,
+ADD COLUMN IF NOT EXISTS created_by VARCHAR(255),
+ADD COLUMN IF NOT EXISTS stream_url TEXT,
+ADD COLUMN IF NOT EXISTS size BIGINT,
+ADD COLUMN IF NOT EXISTS processing_status VARCHAR(50),
+ADD COLUMN IF NOT EXISTS audio_job_id VARCHAR(255),
+ADD COLUMN IF NOT EXISTS audio_status VARCHAR(50),
+ADD COLUMN IF NOT EXISTS transcript VARCHAR(500),
+ADD COLUMN IF NOT EXISTS transcript_word_count INTEGER,
+ADD COLUMN IF NOT EXISTS captions_url TEXT,
+ADD COLUMN IF NOT EXISTS captions_status VARCHAR(50),
+ADD COLUMN IF NOT EXISTS webhook_received_at TIMESTAMP,
+ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+
+-- Create indexes for performance
 CREATE INDEX IF NOT EXISTS idx_videos_mux_asset_id ON videos(mux_asset_id);
 CREATE INDEX IF NOT EXISTS idx_videos_mux_status ON videos(mux_status);
+CREATE INDEX IF NOT EXISTS idx_videos_s3_key ON videos(s3_key);
+CREATE INDEX IF NOT EXISTS idx_videos_status ON videos(status);
+CREATE INDEX IF NOT EXISTS idx_videos_visibility ON videos(visibility);
+CREATE INDEX IF NOT EXISTS idx_videos_created_by ON videos(created_by);
 
--- Create table for tracking Mux webhook events
+-- Create table for tracking Mux webhook events (without foreign key constraint)
 CREATE TABLE IF NOT EXISTS mux_webhook_events (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     event_type VARCHAR(100) NOT NULL,
@@ -39,11 +66,11 @@ CREATE TABLE IF NOT EXISTS mux_webhook_events (
     processed_at TIMESTAMP
 );
 
--- Create index on webhook events for processing
+-- Create indexes for webhook events
 CREATE INDEX IF NOT EXISTS idx_mux_webhook_events_processed ON mux_webhook_events(processed, created_at);
 CREATE INDEX IF NOT EXISTS idx_mux_webhook_events_asset_id ON mux_webhook_events(mux_asset_id);
 
--- Create table for audio enhancement jobs
+-- Create table for audio enhancement jobs (without foreign key constraint)
 CREATE TABLE IF NOT EXISTS audio_enhancement_jobs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     video_id UUID,
@@ -59,7 +86,7 @@ CREATE TABLE IF NOT EXISTS audio_enhancement_jobs (
     completed_at TIMESTAMP
 );
 
--- Create table for transcription jobs
+-- Create table for transcription jobs (without foreign key constraint)
 CREATE TABLE IF NOT EXISTS transcription_jobs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     video_id UUID,
@@ -84,15 +111,3 @@ CREATE INDEX IF NOT EXISTS idx_audio_jobs_video_id ON audio_enhancement_jobs(vid
 CREATE INDEX IF NOT EXISTS idx_audio_jobs_status ON audio_enhancement_jobs(status);
 CREATE INDEX IF NOT EXISTS idx_transcription_jobs_video_id ON transcription_jobs(video_id);
 CREATE INDEX IF NOT EXISTS idx_transcription_jobs_status ON transcription_jobs(status);
-
--- Add comments for documentation
-COMMENT ON COLUMN videos.mux_asset_id IS 'Mux Asset ID for video processing and streaming';
-COMMENT ON COLUMN videos.mux_playback_id IS 'Mux Playback ID for video streaming';
-COMMENT ON COLUMN videos.mux_status IS 'Mux asset processing status: pending, preparing, ready, errored';
-COMMENT ON COLUMN videos.mux_thumbnail_url IS 'URL for Mux-generated thumbnail';
-COMMENT ON COLUMN videos.audio_enhanced IS 'Whether audio enhancement has been applied';
-COMMENT ON COLUMN videos.transcript_text IS 'Full transcript text from transcription service';
-
-COMMENT ON TABLE mux_webhook_events IS 'Stores Mux webhook events for processing video status updates';
-COMMENT ON TABLE audio_enhancement_jobs IS 'Tracks audio enhancement processing jobs';
-COMMENT ON TABLE transcription_jobs IS 'Tracks video transcription and captioning jobs';

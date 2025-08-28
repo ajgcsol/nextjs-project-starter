@@ -18,13 +18,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Video not found' }, { status: 404 });
     }
 
-    if (!video.muxAssetId) {
+    if (!video.mux_asset_id) {
       return NextResponse.json({ error: 'Video not processed by Mux yet' }, { status: 400 });
     }
 
     // Request transcription from Mux
     const transcriptionResult = await MuxVideoProcessor.requestTranscription(
-      video.muxAssetId,
+      video.mux_asset_id,
       {
         enableSpeakerDiarization,
         generateCaptions,

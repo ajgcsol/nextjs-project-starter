@@ -23,7 +23,7 @@ export async function GET(
       return NextResponse.json({ error: 'Video not found' }, { status: 404 });
     }
 
-    if (!video.muxAssetId) {
+    if (!video.mux_asset_id) {
       return NextResponse.json({ 
         status: 'not_available',
         message: 'Video not processed by Mux yet'
@@ -31,7 +31,7 @@ export async function GET(
     }
 
     // Check Mux asset for transcription status
-    const transcriptionStatus = await MuxVideoProcessor.getTranscriptionStatus(video.muxAssetId);
+    const transcriptionStatus = await MuxVideoProcessor.getTranscriptionStatus(video.mux_asset_id);
 
     // Update local database with latest status
     if (transcriptionStatus.status === 'ready' && transcriptionStatus.transcript) {

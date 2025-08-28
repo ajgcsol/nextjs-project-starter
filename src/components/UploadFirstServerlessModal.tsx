@@ -72,6 +72,7 @@ export function UploadFirstServerlessModal({
   contentData
 }: UploadFirstServerlessModalProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const scrubVideoRef = useRef<HTMLVideoElement>(null); // Separate ref for thumbnail scrubbing
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
@@ -199,11 +200,17 @@ export function UploadFirstServerlessModal({
   // Handle video metadata loaded
   useEffect(() => {
     const video = videoRef.current;
+    const scrubVideo = scrubVideoRef.current;
     if (!video) return;
 
     const handleLoadedMetadata = () => {
       setVideoDuration(video.duration);
       setSelectedThumbnailTime(Math.min(10, video.duration / 2));
+      
+      // Also ensure scrubbing video has the same initial time
+      if (scrubVideo) {
+        scrubVideo.currentTime = Math.min(10, video.duration / 2);
+      }
     };
 
     const handleTimeUpdate = () => {
@@ -213,21 +220,29 @@ export function UploadFirstServerlessModal({
     video.addEventListener('loadedmetadata', handleLoadedMetadata);
     video.addEventListener('timeupdate', handleTimeUpdate);
 
+    // Also set up scrubbing video if available
+    if (scrubVideo) {
+      scrubVideo.addEventListener('loadedmetadata', handleLoadedMetadata);
+    }
+
     return () => {
       video.removeEventListener('loadedmetadata', handleLoadedMetadata);
       video.removeEventListener('timeupdate', handleTimeUpdate);
+      if (scrubVideo) {
+        scrubVideo.removeEventListener('loadedmetadata', handleLoadedMetadata);
+      }
     };
   }, [videoPreviewUrl]);
 
   // Generate thumbnail preview when timestamp changes
   useEffect(() => {
-    if (thumbnailMethod === 'timestamp' && videoRef.current && canvasRef.current && videoDuration > 0) {
+    if (thumbnailMethod === 'timestamp' && scrubVideoRef.current && canvasRef.current && videoDuration > 0) {
       generateThumbnailFromTimestamp(selectedThumbnailTime);
     }
   }, [selectedThumbnailTime, thumbnailMethod, videoDuration]);
 
   const generateThumbnailFromTimestamp = (time: number) => {
-    const video = videoRef.current;
+    const video = scrubVideoRef.current;
     const canvas = canvasRef.current;
     
     if (!video || !canvas) return;
@@ -1037,7 +1052,7 @@ export function UploadFirstServerlessModal({
                               <div className="relative bg-black rounded-lg overflow-hidden aspect-video max-h-48">
                                 {videoPreviewUrl && (
                                   <video
-                                    ref={videoRef}
+                                    ref={scrubVideoRef}
                                     src={videoPreviewUrl}
                                     className="w-full h-full object-contain"
                                     muted
@@ -1051,9 +1066,9 @@ export function UploadFirstServerlessModal({
                                   value={[selectedThumbnailTime]}
                                   onValueChange={([value]) => {
                                     setSelectedThumbnailTime(value);
-                                    // Update video time for preview
-                                    if (videoRef.current) {
-                                      videoRef.current.currentTime = value;
+                                    // Update scrubbing video time for preview
+                                    if (scrubVideoRef.current) {
+                                      scrubVideoRef.current.currentTime = value;
                                     }
                                   }}
                                   max={videoDuration || 100}

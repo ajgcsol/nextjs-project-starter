@@ -1,0 +1,2 @@
+ALTER TABLE videos ADD COLUMN IF NOT EXISTS speaker_identifications JSONB;
+ALTER TABLE videos ADD COLUMN IF NOT EXISTS speaker_count INTEGER DEFAULT 0;
