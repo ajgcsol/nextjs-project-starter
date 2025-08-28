@@ -94,6 +94,9 @@ export function UploadFirstServerlessModal({
   const [thumbnailAccepted, setThumbnailAccepted] = useState(false);
   const [thumbnailStepWaiting, setThumbnailStepWaiting] = useState(false);
   
+  // Promise-based thumbnail acceptance
+  const [thumbnailAcceptanceResolver, setThumbnailAcceptanceResolver] = useState<(() => void) | null>(null);
+  
   // Upload results
   const [uploadResults, setUploadResults] = useState<{
     s3Key?: string;
@@ -279,6 +282,14 @@ export function UploadFirstServerlessModal({
     console.log('🎯 Thumbnail acceptance starting...');
     setThumbnailAccepted(true);
     setThumbnailStepWaiting(false);
+    
+    // Resolve the promise waiting for acceptance
+    if (thumbnailAcceptanceResolver) {
+      console.log('🎯 Resolving thumbnail acceptance promise...');
+      thumbnailAcceptanceResolver();
+      setThumbnailAcceptanceResolver(null);
+    }
+    
     console.log('🎯 Thumbnail accepted! Method:', thumbnailMethod, 'Time:', selectedThumbnailTime);
   };
 
@@ -622,10 +633,11 @@ export function UploadFirstServerlessModal({
       // Show thumbnail selection UI and wait for user to accept
       updateStepStatus('thumbnail', 'processing', 30, 'Choose your thumbnail method below, then click "Accept Thumbnail" to continue');
       
-      // Wait for user to accept thumbnail choice - optimized polling
-      while (!thumbnailAccepted) {
-        await new Promise(resolve => setTimeout(resolve, 100)); // Faster polling for better responsiveness
-      }
+      // Wait for user to accept thumbnail choice - using Promise instead of polling
+      console.log('⏳ Waiting for thumbnail acceptance...');
+      await new Promise<void>((resolve) => {
+        setThumbnailAcceptanceResolver(() => resolve);
+      });
       
       console.log('🎯 Thumbnail accepted! Processing selection. Method:', thumbnailMethod);
       
