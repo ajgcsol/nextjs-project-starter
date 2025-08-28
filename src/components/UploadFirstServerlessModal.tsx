@@ -646,15 +646,19 @@ export function UploadFirstServerlessModal({
           throw new Error('Failed to upload custom thumbnail');
         }
         
-        updateStepStatus('thumbnail', 'processing', 90, 'Custom thumbnail uploaded successfully');
+        updateStepStatus('thumbnail', 'processing', 100, 'Custom thumbnail uploaded successfully');
         
       } else if (thumbnailMethod === 'timestamp' && thumbnailPreview) {
         updateStepStatus('thumbnail', 'processing', 60, 'Using selected video frame as thumbnail...');
         
-        // Convert canvas data to blob and upload
+        // Convert canvas data to blob and upload - fixed async handling
         const canvas = canvasRef.current;
         if (canvas) {
-          canvas.toBlob(async (blob) => {
+          try {
+            const blob = await new Promise<Blob | null>((resolve) => {
+              canvas.toBlob(resolve, 'image/jpeg', 0.8);
+            });
+            
             if (blob) {
               const formData = new FormData();
               formData.append('thumbnail', blob, 'thumbnail.jpg');
@@ -666,18 +670,24 @@ export function UploadFirstServerlessModal({
               
               if (!response.ok) {
                 console.warn('Failed to upload timestamp thumbnail, using Mux auto-generation');
+              } else {
+                console.log('✅ Timestamp thumbnail uploaded successfully');
               }
             }
-          }, 'image/jpeg', 0.8);
+          } catch (error) {
+            console.warn('Failed to process timestamp thumbnail:', error);
+          }
         }
         
-        updateStepStatus('thumbnail', 'processing', 90, 'Video frame thumbnail saved');
+        updateStepStatus('thumbnail', 'processing', 100, 'Video frame thumbnail saved');
         
       } else {
         updateStepStatus('thumbnail', 'processing', 60, 'Using Mux automatic thumbnail generation...');
         updateStepStatus('thumbnail', 'processing', 90, 'Mux will generate optimal thumbnail automatically');
       }
       
+      // Complete the thumbnail step
+      updateStepStatus('thumbnail', 'processing', 100, 'Thumbnail processing complete');
       await new Promise(resolve => setTimeout(resolve, 200));
       
     } catch (error) {
