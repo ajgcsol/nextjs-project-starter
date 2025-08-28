@@ -12,7 +12,6 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
-import { SteppedVideoUpload } from "./SteppedVideoUpload";
 import { UploadFirstServerlessModal } from "./UploadFirstServerlessModal";
 
 interface ContentData {
@@ -763,53 +762,35 @@ export function ContentEditor({
 
               {config.showVideoUrl && (
                 <div className="space-y-4">
-                  <SteppedVideoUpload
-                  onUploadComplete={(videoData) => {
-                      console.log('🎬 ContentEditor received upload data:', {
-                        hasFile: !!videoData.pendingFile,
-                        filename: videoData.originalFilename,
-                        size: videoData.size,
-                        uploadMethod: videoData.uploadMethod,
-                        hasAutoThumbnail: !!videoData.autoThumbnail
-                      });
-                      
-                      // FIXED: Store the complete video data structure for later upload when saving/publishing
-                      setContent({
-                        ...content,
-                        title: content.title || videoData.title,
-                        description: content.description || videoData.description,
-                        category: videoData.category || content.category,
-                        metadata: {
-                          ...content.metadata,
-                          // Store ALL the data from SteppedVideoUpload
-                          pendingFile: videoData.pendingFile,
-                          autoThumbnail: videoData.autoThumbnail,
-                          customThumbnail: videoData.customThumbnail,
-                          uploadMethod: videoData.uploadMethod,
-                          monitorSessionId: videoData.monitorSessionId,
-                          duration: videoData.duration,
-                          fileSize: videoData.size,
-                          originalFilename: videoData.originalFilename,
-                          mimeType: videoData.mimeType,
-                          s3Key: videoData.s3Key,
-                          publicUrl: videoData.publicUrl,
-                          // Video processing data if available
-                          id: videoData.id,
-                          streamUrl: videoData.streamUrl,
-                          thumbnailPath: videoData.thumbnailPath,
-                          muxPlaybackId: videoData.muxPlaybackId,
-                          status: videoData.status,
-                          transcriptStatus: videoData.transcriptStatus,
-                          transcriptText: videoData.transcriptText
+                  <div>
+                    <Label htmlFor="video-file">Video File</Label>
+                    <Input
+                      id="video-file"
+                      type="file"
+                      accept="video/*"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          console.log('🎬 Video file selected:', file.name, file.size);
+                          setContent(prev => ({
+                            ...prev,
+                            metadata: {
+                              ...prev.metadata,
+                              pendingFile: file,
+                              originalFilename: file.name,
+                              fileSize: file.size,
+                              mimeType: file.type,
+                              uploadMethod: file.size > 50 * 1024 * 1024 ? 'multipart' : 'single'
+                            }
+                          }));
                         }
-                      });
-                      
-                      console.log('🎬 ✅ ContentEditor updated with complete video data');
-                    }}
-                    onUploadError={(error) => {
-                      console.error("Video upload preparation failed:", error);
-                    }}
-                  />
+                      }}
+                      className="cursor-pointer"
+                    />
+                    <p className="text-xs text-slate-500 mt-1">
+                      Select a video file to upload. Large files will automatically use multipart upload for reliability.
+                    </p>
+                  </div>
                 </div>
               )}
 

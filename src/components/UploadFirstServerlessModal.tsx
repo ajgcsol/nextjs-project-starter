@@ -100,70 +100,96 @@ export function UploadFirstServerlessModal({
   }>({});
 
   // Processing steps - Upload first workflow
-  const [steps, setSteps] = useState<ProcessingStep[]>([
-    {
-      id: 'validate',
-      title: 'Validating Content',
-      description: 'Checking video file and metadata',
-      icon: <CheckCircle className="h-4 w-4 sm:h-5 sm:w-5" />,
-      status: 'pending'
-    },
-    {
-      id: 'upload',
-      title: 'Verify Video',
-      description: 'Verifying uploaded video and preparing metadata',
-      icon: <Upload className="h-4 w-4 sm:h-5 sm:w-5" />,
-      status: 'pending'
-    },
-    {
-      id: 'database',
-      title: 'Update Metadata',
-      description: 'Updating video information and settings',
-      icon: <Database className="h-4 w-4 sm:h-5 sm:w-5" />,
-      status: 'pending'
-    },
-    {
-      id: 'mux',
-      title: 'Video Processing',
-      description: 'Optimizing for streaming with Mux',
-      icon: <Video className="h-4 w-4 sm:h-5 sm:w-5" />,
-      status: 'pending'
-    },
-    {
-      id: 'thumbnail',
-      title: 'Processing Thumbnail',
-      description: 'Generating or uploading thumbnail',
-      icon: <Image className="h-4 w-4 sm:h-5 sm:w-5" />,
-      status: 'pending'
-    },
-    {
-      id: 'transcription',
-      title: 'Generating Transcript',
-      description: 'Creating automatic captions',
-      icon: <FileText className="h-4 w-4 sm:h-5 sm:w-5" />,
-      status: 'pending'
-    },
-    {
-      id: 'complete',
-      title: 'Publishing Complete',
-      description: 'Video is now live',
-      icon: <Zap className="h-4 w-4 sm:h-5 sm:w-5" />,
-      status: 'pending'
+  const [steps, setSteps] = useState<ProcessingStep[]>(() => {
+    const baseSteps = [
+      {
+        id: 'validate',
+        title: 'Validating Content',
+        description: 'Checking video file and metadata',
+        icon: <CheckCircle className="h-4 w-4 sm:h-5 sm:w-5" />,
+        status: 'pending' as const
+      }
+    ];
+
+    // Add upload step only if no existing S3 data
+    const hasExistingVideo = contentData.metadata.s3Key && contentData.metadata.publicUrl;
+    if (!hasExistingVideo) {
+      baseSteps.push({
+        id: 'upload',
+        title: 'Upload Video',
+        description: 'Uploading video file to cloud storage',
+        icon: <UploadCloud className="h-4 w-4 sm:h-5 sm:w-5" />,
+        status: 'pending' as const
+      });
     }
-  ]);
+
+    baseSteps.push(
+      {
+        id: 'database',
+        title: hasExistingVideo ? 'Update Metadata' : 'Create Record',
+        description: hasExistingVideo ? 'Updating video information and settings' : 'Creating video database record',
+        icon: <Database className="h-4 w-4 sm:h-5 sm:w-5" />,
+        status: 'pending' as const
+      },
+      {
+        id: 'mux',
+        title: 'Video Processing',
+        description: 'Optimizing for streaming with Mux',
+        icon: <Video className="h-4 w-4 sm:h-5 sm:w-5" />,
+        status: 'pending' as const
+      },
+      {
+        id: 'thumbnail',
+        title: 'Generate Thumbnail',
+        description: 'Creating thumbnail from processed video',
+        icon: <Image className="h-4 w-4 sm:h-5 sm:w-5" />,
+        status: 'pending' as const
+      },
+      {
+        id: 'transcription',
+        title: 'Generate Transcript',
+        description: 'Creating automatic captions with Mux AI',
+        icon: <Mic className="h-4 w-4 sm:h-5 sm:w-5" />,
+        status: 'pending' as const
+      },
+      {
+        id: 'complete',
+        title: 'Publishing Complete',
+        description: 'Video is now live and ready',
+        icon: <Zap className="h-4 w-4 sm:h-5 sm:w-5" />,
+        status: 'pending' as const
+      }
+    );
+
+    return baseSteps;
+  });
 
   // Initialize video preview when modal opens
   useEffect(() => {
-    if (isOpen && contentData.metadata.pendingFile) {
-      const file = contentData.metadata.pendingFile as File;
-      const url = URL.createObjectURL(file);
-      setVideoPreviewUrl(url);
-      
-      return () => {
-        URL.revokeObjectURL(url);
-      };
+    if (isOpen) {
+      // Check for pending file first
+      if (contentData.metadata.pendingFile) {
+        const file = contentData.metadata.pendingFile as File;
+        const url = URL.createObjectURL(file);
+        setVideoPreviewUrl(url);
+        
+        return () => {
+          URL.revokeObjectURL(url);
+        };
+      }
+      // Check for existing video URL
+      else if (contentData.metadata.videoUrl || contentData.metadata.streamUrl) {
+        const videoUrl = contentData.metadata.videoUrl || contentData.metadata.streamUrl;
+        setVideoPreviewUrl(videoUrl);
+        console.log('🎬 Using existing video URL for preview:', videoUrl);
+      }
+      // Check for existing public URL
+      else if (contentData.metadata.publicUrl) {
+        setVideoPreviewUrl(contentData.metadata.publicUrl);
+        console.log('🎬 Using existing public URL for preview:', contentData.metadata.publicUrl);
+      }
     }
-  }, [isOpen, contentData.metadata.pendingFile]);
+  }, [isOpen, contentData.metadata.pendingFile, contentData.metadata.videoUrl, contentData.metadata.streamUrl, contentData.metadata.publicUrl]);
 
   // Handle video metadata loaded
   useEffect(() => {
@@ -287,6 +313,11 @@ export function UploadFirstServerlessModal({
           return; // Skip file validation since we'll use S3 data
         }
         
+        // If we have neither file nor S3 data, we need to start the upload process
+        if (!videoFile && !hasS3Data) {
+          throw new Error('Please select a video file using the upload component above before publishing.');
+        }
+        
         if (videoFile) {
           // Verify the file is actually a File object
           if (!(videoFile instanceof File)) {
@@ -313,25 +344,23 @@ export function UploadFirstServerlessModal({
         await new Promise(resolve => setTimeout(resolve, 1000));
       });
 
-      // Step 2: Use Existing Video (skip upload if already done)
-      await processStep('upload', async () => {
-        if (contentData.metadata.s3Key && contentData.metadata.publicUrl) {
-          console.log('🎬 Video already uploaded, using existing S3 data');
-          updateStepStatus('upload', 'processing', 100, 'Video already uploaded, using existing data...');
-          setUploadResults({
-            s3Key: contentData.metadata.s3Key,
-            publicUrl: contentData.metadata.publicUrl
-          });
-          return {
-            s3Key: contentData.metadata.s3Key,
-            publicUrl: contentData.metadata.publicUrl
-          };
-        } else {
+      // Step 2: Upload Video (only if not already uploaded)
+      const hasExistingVideo = contentData.metadata.s3Key && contentData.metadata.publicUrl;
+      
+      if (!hasExistingVideo) {
+        await processStep('upload', async () => {
           const results = await uploadVideo();
           setUploadResults(results);
           return results;
-        }
-      });
+        });
+      } else {
+        console.log('🎬 Video already uploaded, skipping upload step');
+        setUploadResults({
+          s3Key: contentData.metadata.s3Key,
+          publicUrl: contentData.metadata.publicUrl,
+          videoId: contentData.metadata.id
+        });
+      }
 
       // Step 3: Update Video Record (or create if doesn't exist)
       await processStep('database', async () => {
@@ -566,21 +595,45 @@ export function UploadFirstServerlessModal({
   };
 
   const processThumbnail = async () => {
-    updateStepStatus('thumbnail', 'processing', 20, 'Processing thumbnail...');
+    updateStepStatus('thumbnail', 'processing', 20, 'Setting up thumbnail generation...');
     
-    if (thumbnailMethod === 'custom' && customThumbnail) {
-      updateStepStatus('thumbnail', 'processing', 50, 'Uploading custom thumbnail...');
-      await new Promise(resolve => setTimeout(resolve, 1500));
-    } else if (thumbnailMethod === 'timestamp') {
-      updateStepStatus('thumbnail', 'processing', 50, 'Generating thumbnail from video...');
-      await new Promise(resolve => setTimeout(resolve, 1000));
-    } else {
-      updateStepStatus('thumbnail', 'processing', 50, 'Using auto-generated thumbnail...');
-      await new Promise(resolve => setTimeout(resolve, 800));
+    if (!uploadResults.videoId) {
+      throw new Error('Video ID not available for thumbnail generation');
     }
     
-    updateStepStatus('thumbnail', 'processing', 90, 'Optimizing thumbnail...');
-    await new Promise(resolve => setTimeout(resolve, 500));
+    try {
+      if (thumbnailMethod === 'custom' && customThumbnail) {
+        updateStepStatus('thumbnail', 'processing', 50, 'Uploading custom thumbnail...');
+        
+        const formData = new FormData();
+        formData.append('thumbnail', customThumbnail);
+        
+        const response = await fetch(`/api/videos/thumbnail/${uploadResults.videoId}`, {
+          method: 'POST',
+          body: formData,
+        });
+        
+        if (!response.ok) {
+          throw new Error('Failed to upload custom thumbnail');
+        }
+        
+        updateStepStatus('thumbnail', 'processing', 90, 'Custom thumbnail uploaded successfully');
+        
+      } else {
+        updateStepStatus('thumbnail', 'processing', 50, 'Thumbnail will be auto-generated by Mux...');
+        
+        // Mux will automatically generate thumbnails via webhook when video is ready
+        // We don't need to make an API call here - it happens automatically
+        updateStepStatus('thumbnail', 'processing', 90, 'Mux will generate thumbnail automatically when video is ready');
+      }
+      
+      await new Promise(resolve => setTimeout(resolve, 800));
+      
+    } catch (error) {
+      console.warn('Thumbnail setup failed, continuing with auto-generation:', error);
+      updateStepStatus('thumbnail', 'processing', 100, 'Will use Mux auto-generated thumbnail');
+      await new Promise(resolve => setTimeout(resolve, 300));
+    }
   };
 
   const generateTranscription = async () => {
