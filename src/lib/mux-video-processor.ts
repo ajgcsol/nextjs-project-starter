@@ -713,18 +713,29 @@ export class MuxVideoProcessor {
         hasGeneratedSubtitles: asset.inputs?.[0]?.generated_subtitles?.length || 0
       });
       
-      // Check if asset has generated subtitles configured
+      // Check if asset has generated subtitles configured OR has text tracks
       const hasSubtitleGeneration = asset.inputs && 
         asset.inputs[0] && 
         asset.inputs[0].generated_subtitles && 
         asset.inputs[0].generated_subtitles.length > 0;
       
-      if (!hasSubtitleGeneration) {
-        console.warn('⚠️ Asset was created without subtitle generation enabled');
+      // Also check if there are text tracks (alternative caption method)
+      const hasTextTracks = asset.tracks && 
+        asset.tracks.some(track => track.type === 'text');
+      
+      console.log('🔍 Subtitle availability check:', {
+        hasSubtitleGeneration,
+        hasTextTracks,
+        trackCount: asset.tracks?.length || 0,
+        textTracks: asset.tracks?.filter(track => track.type === 'text').length || 0
+      });
+      
+      if (!hasSubtitleGeneration && !hasTextTracks) {
+        console.warn('⚠️ Asset has no subtitle generation or text tracks');
         return {
           success: true,
           status: 'not_configured',
-          error: 'Asset was not created with subtitle generation enabled'
+          error: 'Asset was not created with subtitle generation and has no text tracks'
         };
       }
       
