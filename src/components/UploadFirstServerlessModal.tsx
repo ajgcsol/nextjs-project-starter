@@ -667,6 +667,8 @@ export function UploadFirstServerlessModal({
         
         // Use Mux thumbnail generation with specified timestamp
         try {
+          console.log('🔧 Setting thumbnail timestamp:', selectedThumbnailTime, 'for video:', currentVideoId);
+          
           const response = await fetch(`/api/videos/${currentVideoId}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
@@ -677,14 +679,16 @@ export function UploadFirstServerlessModal({
           });
           
           if (response.ok) {
-            console.log('✅ Thumbnail timestamp set for Mux generation');
+            const result = await response.json();
+            console.log('✅ Thumbnail timestamp API response:', result);
             updateStepStatus('thumbnail', 'processing', 100, `Mux will generate thumbnail at ${Math.floor(selectedThumbnailTime)}s`);
           } else {
-            console.warn('Failed to set timestamp, using Mux auto-generation');
+            const errorText = await response.text();
+            console.warn('❌ Failed to set timestamp, API error:', response.status, errorText);
             updateStepStatus('thumbnail', 'processing', 100, 'Using Mux auto-generated thumbnail as fallback');
           }
         } catch (error) {
-          console.warn('Failed to set timestamp:', error);
+          console.warn('❌ Failed to set timestamp, network error:', error);
           updateStepStatus('thumbnail', 'processing', 100, 'Using Mux auto-generated thumbnail as fallback');
         }
         
@@ -721,6 +725,8 @@ export function UploadFirstServerlessModal({
       // Call the Mux transcription API endpoint
       updateStepStatus('transcription', 'processing', 40, 'Requesting Mux transcription with speaker identification...');
       
+      console.log('🎤 Calling transcription API for video:', currentVideoId);
+      
       const transcriptionResponse = await fetch('/api/videos/generate-transcription', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -732,8 +738,12 @@ export function UploadFirstServerlessModal({
         }),
       });
       
+      console.log('🎤 Transcription API response status:', transcriptionResponse.status);
+      
       if (!transcriptionResponse.ok) {
-        throw new Error('Failed to initiate transcription process');
+        const errorText = await transcriptionResponse.text();
+        console.error('❌ Transcription API error:', transcriptionResponse.status, errorText);
+        throw new Error(`Failed to initiate transcription process: ${transcriptionResponse.status} - ${errorText}`);
       }
       
       const transcriptionResult = await transcriptionResponse.json();
