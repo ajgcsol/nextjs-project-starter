@@ -1,114 +1,124 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { v4 as uuidv4 } from 'uuid';
 
-// Sanitize credentials helper
-const sanitizeCredential = (credential: string | undefined): string | undefined => {
-  if (!credential) return undefined;
-  return credential.replace(/[\s\r\n\t\u0000-\u001f\u007f-\u009f]/g, '').trim();
-};
-
-// Create S3 client
-const createS3Client = () => {
-  const region = process.env.AWS_REGION || 'us-east-1';
-  const accessKeyId = sanitizeCredential(process.env.AWS_ACCESS_KEY_ID);
-  const secretAccessKey = sanitizeCredential(process.env.AWS_SECRET_ACCESS_KEY);
-  
-  if (!accessKeyId || !secretAccessKey) {
-    throw new Error('AWS credentials not configured');
-  }
-  
-  return new S3Client({
-    region,
-    credentials: {
-      accessKeyId,
-      secretAccessKey
-    }
-  });
-};
+export const runtime = 'nodejs';
 
 export async function POST(request: NextRequest) {
   try {
     const { filename, contentType, fileSize } = await request.json();
-    
-    console.log('🔗 Presigned URL Request:', {
-      filename,
-      contentType,
-      fileSize: fileSize ? `${(fileSize / (1024*1024)).toFixed(2)}MB` : 'unknown',
-      timestamp: new Date().toISOString()
-    });
-    
-    if (!filename || !contentType) {
+
+    if (!filename || !contentType || !fileSize) {
       return NextResponse.json(
-        { error: 'Filename and content type are required' },
+        { error: 'Missing required fields: filename, contentType, fileSize' },
         { status: 400 }
       );
     }
-    
-    // Validate file size (5GB max for videos)
-    const isVideo = contentType.startsWith('video/');
-    const maxSize = isVideo ? 5 * 1024 * 1024 * 1024 : 100 * 1024 * 1024;
-    
-    if (fileSize && fileSize > maxSize) {
+
+    // Validate file size (5GB max)
+    const maxSize = 5 * 1024 * 1024 * 1024;
+    if (fileSize > maxSize) {
       return NextResponse.json(
-        { error: `File too large. Maximum size is ${isVideo ? '5GB' : '100MB'}` },
+        { error: `File too large. Maximum size is 5GB (current: ${(fileSize / (1024 * 1024 * 1024)).toFixed(2)}GB)` },
         { status: 400 }
       );
     }
-    
+
+    // Validate content type
+    const allowedTypes = [
+      'video/mp4',
+      'video/webm',
+      'video/ogg',
+      'video/quicktime',
+      'video/x-msvideo',
+      'video/x-matroska',
+      'video/x-m4v',
+      'video/avi',
+      'video/mov'
+    ];
+
+    if (!allowedTypes.includes(contentType) && !contentType.startsWith('video/')) {
+      return NextResponse.json(
+        { error: 'Invalid file type. Please upload a video file.' },
+        { status: 400 }
+      );
+    }
+
     // Generate unique S3 key
     const timestamp = Date.now();
-    const randomString = Math.random().toString(36).substring(2, 15);
-    const extension = filename.split('.').pop();
-    const s3Key = `videos/${timestamp}-${randomString}.${extension}`;
-    
-    // Create presigned URL for direct upload
-    const s3Client = createS3Client();
-    const bucketName = process.env.S3_BUCKET_NAME || 'law-school-repository-content';
-    
+    const randomId = uuidv4().substring(0, 8);
+    const fileExtension = filename.split('.').pop() || 'mp4';
+    const sanitizedFilename = filename.replace(/[^a-zA-Z0-9.-]/g, '_');
+    const s3Key = `videos/${timestamp}_${randomId}_${sanitizedFilename}`;
+
+    // Initialize S3 client
+    const s3Client = new S3Client({
+      region: process.env.AWS_REGION || 'us-east-1',
+      credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+      },
+    });
+
+    const bucketName = process.env.S3_BUCKET_NAME;
+    if (!bucketName) {
+      return NextResponse.json(
+        { error: 'S3 bucket not configured' },
+        { status: 500 }
+      );
+    }
+
+    // Create presigned URL for PUT operation
     const command = new PutObjectCommand({
       Bucket: bucketName,
       Key: s3Key,
       ContentType: contentType,
-      // Don't set ContentLength - let the browser handle it
+      ContentLength: fileSize,
+      CacheControl: 'max-age=31536000', // 1 year cache
       Metadata: {
         'original-filename': filename,
-        'upload-date': new Date().toISOString(),
-        'file-size': fileSize?.toString() || '0'
+        'upload-timestamp': timestamp.toString(),
+        'file-size': fileSize.toString()
       }
     });
-    
-    // Generate presigned URL (valid for 1 hour)
-    const presignedUrl = await getSignedUrl(s3Client, command, { expiresIn: 3600 });
-    
-    console.log('🔗 Generated Presigned URL:', {
-      s3Key,
-      bucketName,
-      region: process.env.AWS_REGION || 'us-east-1',
-      urlLength: presignedUrl.length,
-      expiresIn: 3600
+
+    const presignedUrl = await getSignedUrl(s3Client, command, {
+      expiresIn: 3600, // 1 hour
     });
-    
-    // Return presigned URL and S3 details
+
+    // Generate public URL
+    const cloudFrontDomain = process.env.CLOUDFRONT_DOMAIN;
+    const publicUrl = cloudFrontDomain 
+      ? `https://${cloudFrontDomain}/${s3Key}`
+      : `https://${bucketName}.s3.${process.env.AWS_REGION || 'us-east-1'}.amazonaws.com/${s3Key}`;
+
+    console.log('✅ Generated presigned URL for:', filename, `(${(fileSize / (1024*1024)).toFixed(1)}MB)`);
+
     return NextResponse.json({
       presignedUrl,
       s3Key,
-      publicUrl: `https://${bucketName}.s3.${process.env.AWS_REGION || 'us-east-1'}.amazonaws.com/${s3Key}`,
-      expiresIn: 3600
+      publicUrl,
+      expiresIn: 3600,
+      maxFileSize: maxSize,
+      uploadInstructions: {
+        method: 'PUT',
+        headers: {
+          'Content-Type': contentType,
+        },
+        note: 'Upload directly to the presignedUrl using PUT method'
+      }
     });
-    
+
   } catch (error) {
-    console.error('Presigned URL generation error:', error);
+    console.error('❌ Presigned URL generation failed:', error);
+    
     return NextResponse.json(
-      { error: 'Failed to generate upload URL', details: error instanceof Error ? error.message : 'Unknown error' },
+      { 
+        error: 'Failed to generate upload URL',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      },
       { status: 500 }
     );
   }
-}
-
-export async function GET(request: NextRequest) {
-  return NextResponse.json(
-    { error: 'Method not allowed. Use POST to generate presigned URLs.' },
-    { status: 405 }
-  );
 }

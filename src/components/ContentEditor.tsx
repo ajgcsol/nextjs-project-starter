@@ -13,7 +13,7 @@ import { Separator } from "@/components/ui/separator";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 import { SteppedVideoUpload } from "./SteppedVideoUpload";
-import { ServerlessPublishModal } from "./ServerlessPublishModal";
+import { UploadFirstServerlessModal } from "./UploadFirstServerlessModal";
 
 interface ContentData {
   title: string;
@@ -1143,9 +1143,9 @@ export function ContentEditor({
         </CardContent>
       </Card>
 
-      {/* Serverless Publish Modal with Video Preview */}
+      {/* Upload-First Serverless Publish Modal with Video Preview */}
       {showServerlessPublishModal && (
-        <ServerlessPublishModal
+        <UploadFirstServerlessModal
           isOpen={showServerlessPublishModal}
           onClose={() => setShowServerlessPublishModal(false)}
           onComplete={handleServerlessPublishComplete}
