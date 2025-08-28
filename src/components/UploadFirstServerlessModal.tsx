@@ -346,25 +346,27 @@ export function UploadFirstServerlessModal({
 
       // Step 2: Upload Video (only if not already uploaded)
       const hasExistingVideo = contentData.metadata.s3Key && contentData.metadata.publicUrl;
+      let currentUploadResults;
       
       if (!hasExistingVideo) {
-        await processStep('upload', async () => {
+        currentUploadResults = await processStep('upload', async () => {
           const results = await uploadVideo();
           setUploadResults(results);
           return results;
         });
       } else {
         console.log('🎬 Video already uploaded, skipping upload step');
-        setUploadResults({
+        currentUploadResults = {
           s3Key: contentData.metadata.s3Key,
           publicUrl: contentData.metadata.publicUrl,
           videoId: contentData.metadata.id
-        });
+        };
+        setUploadResults(currentUploadResults);
       }
 
       // Step 3: Update Video Record (or create if doesn't exist)
       await processStep('database', async () => {
-        const videoRecord = await updateVideoRecord();
+        const videoRecord = await updateVideoRecord(currentUploadResults);
         setUploadResults(prev => ({ ...prev, videoId: videoRecord.id }));
         return videoRecord;
       });
@@ -498,7 +500,7 @@ export function UploadFirstServerlessModal({
     });
   };
 
-  const updateVideoRecord = async () => {
+  const updateVideoRecord = async (uploadData?: {s3Key: string, publicUrl: string, videoId?: string}) => {
     updateStepStatus('database', 'processing', 30, 'Updating video metadata...');
     
     // If we already have a video ID from multipart upload, update that record
@@ -562,9 +564,9 @@ export function UploadFirstServerlessModal({
         size: fileSize,
         mimeType: mimeType,
         autoThumbnail: thumbnailPreview || contentData.metadata.autoThumbnail,
-        // Ensure S3 data is properly included
-        s3Key: uploadResults.s3Key || contentData.metadata.s3Key,
-        publicUrl: uploadResults.publicUrl || contentData.metadata.publicUrl
+        // Ensure S3 data is properly included - use uploadData parameter first
+        s3Key: uploadData?.s3Key || uploadResults.s3Key || contentData.metadata.s3Key,
+        publicUrl: uploadData?.publicUrl || uploadResults.publicUrl || contentData.metadata.publicUrl
       }),
     });
 
