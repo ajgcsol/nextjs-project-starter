@@ -581,32 +581,30 @@ export function UploadFirstServerlessModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={() => {}}>
-      <DialogContent className="w-[90vw] max-w-6xl h-[85vh] max-h-[900px] overflow-hidden flex flex-col p-0">
-        <DialogHeader className="flex-shrink-0 px-6 py-4 sm:px-8 sm:py-5 border-b bg-white">
-          <div className="flex items-center justify-between">
-            <DialogTitle className="flex items-center gap-2 text-base sm:text-lg md:text-xl lg:text-2xl">
-              <Zap className="h-4 w-4 sm:h-5 sm:w-5 md:h-6 md:w-6 text-blue-500 flex-shrink-0" />
-              <span className="truncate">
-                Publishing Video with Upload-First Workflow
-              </span>
+      <DialogContent className="fixed left-[50%] top-[50%] z-50 translate-x-[-50%] translate-y-[-50%] w-[90vw] max-w-5xl h-[90vh] max-h-[800px] overflow-hidden flex flex-col p-0 bg-white rounded-lg shadow-xl">
+        <DialogHeader className="flex-shrink-0 px-8 py-6 border-b bg-white">
+          <div className="flex items-center justify-between w-full">
+            <DialogTitle className="flex items-center gap-3 text-xl font-semibold">
+              <Zap className="h-6 w-6 text-blue-500 flex-shrink-0" />
+              <span>Publishing Video with Upload-First Workflow</span>
             </DialogTitle>
             {!isProcessing && (
-              <Button variant="ghost" size="icon" onClick={onClose} className="flex-shrink-0">
-                <X className="h-4 w-4" />
+              <Button variant="ghost" size="icon" onClick={onClose} className="flex-shrink-0 ml-4">
+                <X className="h-5 w-5" />
               </Button>
             )}
           </div>
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto px-6 py-4 sm:px-8 sm:py-6 bg-gray-50">
+        <div className="flex-1 overflow-y-auto px-8 py-6 bg-gray-50">
           {!isProcessing ? (
             // Preview Phase - Responsive Layout
-            <div className="space-y-6 sm:space-y-8">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8">
+            <div className="space-y-8">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 {/* Video Preview */}
-                <div className="bg-white rounded-xl p-4 sm:p-6 shadow-sm border border-gray-200">
-                  <h3 className="text-lg sm:text-xl font-semibold flex items-center gap-2 mb-4">
-                    <Video className="h-4 w-4 sm:h-5 sm:w-5" />
+                <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
+                  <h3 className="text-lg font-semibold flex items-center gap-3 mb-6">
+                    <Video className="h-5 w-5" />
                     Video Preview
                   </h3>
                   
@@ -641,22 +639,22 @@ export function UploadFirstServerlessModal({
                 </div>
 
                 {/* Thumbnail Selection */}
-                <div className="bg-white rounded-xl p-4 sm:p-6 shadow-sm border border-gray-200">
-                  <h3 className="text-lg sm:text-xl font-semibold flex items-center gap-2 mb-4">
-                    <Image className="h-4 w-4 sm:h-5 sm:w-5" />
+                <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
+                  <h3 className="text-lg font-semibold flex items-center gap-3 mb-6">
+                    <Image className="h-5 w-5" />
                     Thumbnail Selection
                   </h3>
                   
                   <Tabs value={thumbnailMethod} onValueChange={(value) => setThumbnailMethod(value as any)}>
-                    <TabsList className="grid w-full grid-cols-3 text-xs sm:text-sm">
-                      <TabsTrigger value="timestamp">From Video</TabsTrigger>
-                      <TabsTrigger value="custom">Upload Custom</TabsTrigger>
-                      <TabsTrigger value="auto">Auto Generate</TabsTrigger>
+                    <TabsList className="grid w-full grid-cols-3 text-sm">
+                      <TabsTrigger value="timestamp" className="py-2">From Video</TabsTrigger>
+                      <TabsTrigger value="custom" className="py-2">Upload Custom</TabsTrigger>
+                      <TabsTrigger value="auto" className="py-2">Auto Generate</TabsTrigger>
                     </TabsList>
                     
-                    <TabsContent value="timestamp" className="space-y-3 sm:space-y-4">
-                      <div className="space-y-2">
-                        <Label className="text-sm">Select Timestamp</Label>
+                    <TabsContent value="timestamp" className="mt-6 space-y-4">
+                      <div className="space-y-3">
+                        <Label className="text-sm font-medium">Select Timestamp</Label>
                         <Slider
                           value={[selectedThumbnailTime]}
                           onValueChange={([value]) => setSelectedThumbnailTime(value)}
@@ -664,7 +662,7 @@ export function UploadFirstServerlessModal({
                           step={1}
                           className="w-full"
                         />
-                        <div className="flex justify-between text-xs sm:text-sm text-gray-500">
+                        <div className="flex justify-between text-sm text-gray-500">
                           <span>0:00</span>
                           <span>{formatTime(selectedThumbnailTime)}</span>
                           <span>{formatTime(videoDuration)}</span>
@@ -672,21 +670,21 @@ export function UploadFirstServerlessModal({
                       </div>
                     </TabsContent>
                     
-                    <TabsContent value="custom" className="space-y-3 sm:space-y-4">
-                      <div className="space-y-2">
-                        <Label className="text-sm">Upload Custom Thumbnail</Label>
+                    <TabsContent value="custom" className="mt-6 space-y-4">
+                      <div className="space-y-3">
+                        <Label className="text-sm font-medium">Upload Custom Thumbnail</Label>
                         <Input
                           ref={fileInputRef}
                           type="file"
                           accept="image/*"
                           onChange={handleCustomThumbnailUpload}
-                          className="text-sm"
+                          className="text-sm p-3"
                         />
                       </div>
                     </TabsContent>
                     
-                    <TabsContent value="auto" className="space-y-3 sm:space-y-4">
-                      <p className="text-xs sm:text-sm text-gray-600">
+                    <TabsContent value="auto" className="mt-6">
+                      <p className="text-sm text-gray-600 p-4 bg-blue-50 rounded-md">
                         A thumbnail will be automatically generated from the middle of your video.
                       </p>
                     </TabsContent>
@@ -694,8 +692,8 @@ export function UploadFirstServerlessModal({
                   
                   {/* Thumbnail Preview */}
                   {thumbnailPreview && (
-                    <div className="space-y-2">
-                      <Label className="text-sm">Thumbnail Preview</Label>
+                    <div className="mt-6 space-y-3">
+                      <Label className="text-sm font-medium">Thumbnail Preview</Label>
                       <div className="relative bg-gray-100 rounded-lg overflow-hidden aspect-video">
                         <img
                           src={thumbnailPreview}
@@ -731,11 +729,11 @@ export function UploadFirstServerlessModal({
               </div>
 
               {/* Action Buttons */}
-              <div className="flex flex-col sm:flex-row justify-end gap-3 sm:gap-4 pt-6 mt-6 border-t border-gray-200">
-                <Button variant="outline" onClick={onClose} className="text-sm">
+              <div className="flex justify-end gap-4 pt-8 mt-8 border-t border-gray-200">
+                <Button variant="outline" onClick={onClose} className="px-6 py-2">
                   Cancel
                 </Button>
-                <Button onClick={startPublishProcess} className="bg-blue-600 hover:bg-blue-700 text-sm">
+                <Button onClick={startPublishProcess} className="bg-blue-600 hover:bg-blue-700 px-6 py-2">
                   <Zap className="h-4 w-4 mr-2" />
                   Start Upload & Processing
                 </Button>
@@ -745,56 +743,58 @@ export function UploadFirstServerlessModal({
             // Processing Phase - Responsive Layout
             <div className="space-y-6 sm:space-y-8">
               {/* Overall Progress */}
-              <div className="bg-white rounded-xl p-4 sm:p-6 shadow-sm border border-gray-200">
-                <div className="space-y-3">
+              <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
+                <div className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <span className="text-base font-semibold">Overall Progress</span>
-                    <span className="text-lg font-medium text-blue-600">{overallProgress}%</span>
+                    <span className="text-lg font-semibold">Overall Progress</span>
+                    <span className="text-xl font-bold text-blue-600">{overallProgress}%</span>
                   </div>
-                  <Progress value={overallProgress} className="h-3" />
+                  <Progress value={overallProgress} className="h-4" />
                 </div>
               </div>
 
               {/* Error Display */}
               {error && (
-                <div className="p-3 sm:p-4 bg-red-50 border border-red-200 rounded-lg">
-                  <div className="flex items-center gap-2 text-red-700">
-                    <AlertCircle className="h-4 w-4 sm:h-5 sm:w-5" />
-                    <span className="font-medium text-sm sm:text-base">Publishing Failed</span>
+                <div className="p-5 bg-red-50 border border-red-200 rounded-xl">
+                  <div className="flex items-center gap-3 text-red-700">
+                    <AlertCircle className="h-5 w-5" />
+                    <span className="font-medium text-base">Publishing Failed</span>
                   </div>
-                  <p className="text-red-600 mt-1 text-sm">{error}</p>
+                  <p className="text-red-600 mt-2 text-sm">{error}</p>
                 </div>
               )}
 
               {/* Steps List - Responsive */}
-              <div className="space-y-4 sm:space-y-5">
+              <div className="space-y-5">
                 {steps.map((step) => (
                   <div
                     key={step.id}
-                    className={`p-4 sm:p-5 md:p-6 rounded-xl shadow-sm transition-all duration-300 ${
+                    className={`p-6 rounded-xl shadow-sm transition-all duration-300 ${
                       step.status === 'processing'
-                        ? 'border-blue-200 bg-blue-50'
+                        ? 'border-blue-200 bg-blue-50 border-2'
                         : step.status === 'completed'
-                        ? 'border-green-200 bg-green-50'
+                        ? 'border-green-200 bg-green-50 border-2'
                         : step.status === 'error'
-                        ? 'border-red-200 bg-red-50'
-                        : 'border-gray-200 bg-gray-50'
+                        ? 'border-red-200 bg-red-50 border-2'
+                        : 'border-gray-200 bg-white border'
                     }`}
                   >
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2 sm:gap-3">
-                        {getStepIcon(step)}
-                        <div>
-                          <h4 className="font-medium text-sm sm:text-base">{step.title}</h4>
-                          <p className="text-xs sm:text-sm text-gray-600">{step.description}</p>
+                      <div className="flex items-center gap-4">
+                        <div className="flex-shrink-0">
+                          {getStepIcon(step)}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <h4 className="font-semibold text-base">{step.title}</h4>
+                          <p className="text-sm text-gray-600 mt-1">{step.description}</p>
                           {step.details && (
-                            <p className="text-xs text-gray-500 mt-1">{step.details}</p>
+                            <p className="text-sm text-gray-500 mt-2">{step.details}</p>
                           )}
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-3 flex-shrink-0">
                         {step.duration && (
-                          <span className="text-xs text-gray-500">
+                          <span className="text-sm text-gray-500 font-medium">
                             {(step.duration / 1000).toFixed(1)}s
                           </span>
                         )}
@@ -803,8 +803,8 @@ export function UploadFirstServerlessModal({
                     </div>
                     
                     {step.status === 'processing' && step.progress !== undefined && (
-                      <div className="mt-3">
-                        <Progress value={step.progress} className="h-1" />
+                      <div className="mt-4">
+                        <Progress value={step.progress} className="h-2" />
                       </div>
                     )}
                   </div>
@@ -812,14 +812,14 @@ export function UploadFirstServerlessModal({
               </div>
 
               {/* Action Buttons */}
-              <div className="flex flex-col sm:flex-row justify-end gap-2 pt-4 border-t">
+              <div className="flex justify-end gap-4 pt-8 mt-8 border-t border-gray-200">
                 {error && (
-                  <Button variant="outline" onClick={() => startPublishProcess()}>
+                  <Button variant="outline" onClick={() => startPublishProcess()} className="px-6 py-2">
                     Retry
                   </Button>
                 )}
                 {!isProcessing && (
-                  <Button variant="outline" onClick={onClose}>
+                  <Button variant="outline" onClick={onClose} className="px-6 py-2">
                     {error ? 'Close' : 'Cancel'}
                   </Button>
                 )}
