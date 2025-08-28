@@ -104,6 +104,15 @@ export class MuxVideoProcessor {
         assetParams.max_resolution_tier = options.maxResolution;
       }
 
+      // Enable automatic caption generation if requested
+      if (options.generateCaptions) {
+        assetParams.generated_subtitles = [{
+          language_code: options.captionLanguage || 'en',
+          name: 'English (Auto-generated)'
+        }];
+        console.log('📝 Enabled automatic caption generation for language:', options.captionLanguage || 'en');
+      }
+
       const asset = await mux.video.assets.create(assetParams);
 
       console.log('✅ Mux asset created:', {

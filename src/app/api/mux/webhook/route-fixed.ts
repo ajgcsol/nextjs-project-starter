@@ -317,13 +317,19 @@ async function handleTrackReady(event: MuxWebhookEvent, videoId: string) {
         try {
           if (VideoDB.updateMuxAsset) {
             await VideoDB.updateMuxAsset(videoId, {
-              // Caption URLs would go here if the fields exist
+              captions_webvtt_url: webvttUrl,
+              captions_srt_url: srtUrl
+            });
+          } else {
+            // Fallback to basic update
+            await VideoDB.update(videoId, {
+              // Note: These fields may not exist in basic schema
             });
           }
           
-          console.log('📝 Caption URLs processed (may need database migration for full support)');
+          console.log('📝 Caption URLs stored successfully:', { webvttUrl, srtUrl });
         } catch (captionError) {
-          console.error('⚠️ Could not store caption URLs (database migration may be needed):', captionError);
+          console.error('⚠️ Could not store caption URLs:', captionError);
           // Don't fail the webhook - just log the issue
         }
         

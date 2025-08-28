@@ -607,10 +607,10 @@ export function UploadFirstServerlessModal({
     
     try {
       // Pause here to let user choose thumbnail method if they want
-      updateStepStatus('thumbnail', 'processing', 30, 'Choose thumbnail method or continue with auto-generation');
+      updateStepStatus('thumbnail', 'processing', 30, 'Choose thumbnail method or wait 10 seconds for auto-generation');
       
-      // Give user a moment to see the thumbnail options (they'll be shown in the UI during this step)
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // Give user 10 seconds to make a choice, then proceed with their selection
+      await new Promise(resolve => setTimeout(resolve, 10000));
       
       if (thumbnailMethod === 'custom' && customThumbnail) {
         updateStepStatus('thumbnail', 'processing', 50, 'Uploading custom thumbnail...');
