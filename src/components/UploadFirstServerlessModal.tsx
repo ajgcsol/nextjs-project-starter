@@ -783,10 +783,10 @@ export function UploadFirstServerlessModal({
             console.log(`⏳ Mux asset still processing (${video.mux_status}), waiting...`);
             updateStepStatus('transcription', 'processing', 20 + (attempts * 2), `Waiting for video processing... (${video.mux_status})`);
             await new Promise(resolve => setTimeout(resolve, 10000)); // Wait 10 seconds
-            attempts++;
+            pollAttempts++;
           }
         } else {
-          attempts++;
+          pollAttempts++;
           await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds on API error
         }
       }
@@ -827,10 +827,10 @@ export function UploadFirstServerlessModal({
       updateStepStatus('transcription', 'processing', 60, 'Mux is processing audio and identifying speakers...');
       
       // Poll for transcription completion (in real implementation, use webhooks)
-      let attempts = 0;
-      const maxAttempts = 30; // 5 minutes timeout
+      let pollAttempts = 0;
+      const maxPollAttempts = 30; // 5 minutes timeout
       
-      while (attempts < maxAttempts) {
+      while (pollAttempts < maxPollAttempts) {
         await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds for faster testing
         
         const statusResponse = await fetch(`/api/videos/transcription-status/${currentVideoId}`);
@@ -871,10 +871,10 @@ export function UploadFirstServerlessModal({
           }
         }
         
-        attempts++;
+        pollAttempts++;
       }
       
-      if (attempts >= maxAttempts) {
+      if (pollAttempts >= maxPollAttempts) {
         console.warn('Transcription timed out, but may complete in background');
         updateStepStatus('transcription', 'processing', 95, 'Transcription taking longer than expected but will complete in background');
         setTranscriptData({
