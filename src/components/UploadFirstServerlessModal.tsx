@@ -30,8 +30,11 @@ import {
   Settings,
   Smartphone,
   Tablet,
-  Monitor
+  Monitor,
+  Users,
+  UserCheck
 } from 'lucide-react';
+import { SpeakerIdentification } from './SpeakerIdentification';
 
 interface UploadFirstServerlessModalProps {
   isOpen: boolean;
@@ -104,6 +107,14 @@ export function UploadFirstServerlessModal({
     publicUrl?: string;
     videoId?: string;
   }>({});
+  
+  // Transcript and speaker data
+  const [transcriptData, setTranscriptData] = useState<{
+    text: string;
+    speakerCount: number;
+    captionUrl: string | null;
+  } | null>(null);
+  const [showSpeakerIdentification, setShowSpeakerIdentification] = useState(false);
 
   // Processing steps - Upload first workflow
   const [steps, setSteps] = useState<ProcessingStep[]>(() => {
@@ -156,6 +167,13 @@ export function UploadFirstServerlessModal({
         title: 'Generate Transcript',
         description: 'Creating automatic captions with Mux AI',
         icon: <Mic className="h-4 w-4 sm:h-5 sm:w-5" />,
+        status: 'pending' as const
+      },
+      {
+        id: 'speaker_identification',
+        title: 'Identify Speakers',
+        description: 'Name speakers and edit transcript',
+        icon: <Users className="h-4 w-4 sm:h-5 sm:w-5" />,
         status: 'pending' as const
       },
       {
@@ -421,7 +439,14 @@ export function UploadFirstServerlessModal({
         await generateTranscription(videoRecord.id);
       });
 
-      // Step 7: Complete
+      // Step 7: Speaker Identification (if transcript has multiple speakers)
+      if (transcriptData && transcriptData.speakerCount > 1) {
+        await processStep('speaker_identification', async () => {
+          await handleSpeakerIdentification(videoRecord.id);
+        });
+      }
+
+      // Step 8: Complete
       await processStep('complete', async () => {
         await new Promise(resolve => setTimeout(resolve, 500));
       });
@@ -688,8 +713,8 @@ export function UploadFirstServerlessModal({
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              thumbnailTimestamp: selectedThumbnailTime,
-              thumbnailMethod: 'timestamp'
+              thumbnail_timestamp: selectedThumbnailTime,
+              thumbnail_method: thumbnailMethod
             }),
           });
           
@@ -778,7 +803,8 @@ export function UploadFirstServerlessModal({
           const statusResult = await statusResponse.json();
           
           if (statusResult.status === 'ready') {
-            updateStepStatus('transcription', 'processing', 90, `Transcript ready with ${statusResult.speakerCount || 'multiple'} speakers identified`);
+            const captionStatus = statusResult.captionUrl ? ' and closed captions' : '';
+            updateStepStatus('transcription', 'processing', 90, `Transcript ready with ${statusResult.speakerCount || 'multiple'} speakers identified${captionStatus}`);
             
             // Store transcript in database
             if (statusResult.transcript) {
@@ -786,13 +812,20 @@ export function UploadFirstServerlessModal({
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                  transcriptText: statusResult.transcript,
-                  transcriptStatus: 'completed',
-                  captionUrl: statusResult.captionUrl,
-                  speakerCount: statusResult.speakerCount
+                  transcript_text: statusResult.transcript,
+                  transcript_status: 'completed',
+                  captions_url: statusResult.captionUrl,
+                  speaker_count: statusResult.speakerCount
                 }),
               });
             }
+            
+            // Set transcript data for speaker identification
+            setTranscriptData({
+              text: statusResult.transcript,
+              speakerCount: statusResult.speakerCount || 0,
+              captionUrl: statusResult.captionUrl
+            });
             
             break;
           } else if (statusResult.status === 'processing') {
@@ -808,9 +841,15 @@ export function UploadFirstServerlessModal({
       if (attempts >= maxAttempts) {
         console.warn('Transcription timed out, but may complete in background');
         updateStepStatus('transcription', 'processing', 95, 'Transcription taking longer than expected but will complete in background');
+        setTranscriptData({
+          text: '',
+          speakerCount: 0,
+          captionUrl: null
+        });
       }
       
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      updateStepStatus('transcription', 'completed', 100, 'Transcript ready for speaker identification');
+      await new Promise(resolve => setTimeout(resolve, 500));
       
     } catch (error) {
       console.warn('Transcription failed, video will still be available:', error);
@@ -821,9 +860,47 @@ export function UploadFirstServerlessModal({
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          transcriptStatus: 'failed'
+          transcript_status: 'failed'
         }),
       });
+    }
+  };
+
+  const handleSpeakerIdentification = async (videoId: string) => {
+    updateStepStatus('speaker_identification', 'processing', 10, 'Setting up speaker identification interface...');
+    
+    if (!transcriptData || transcriptData.speakerCount <= 1) {
+      updateStepStatus('speaker_identification', 'completed', 100, 'No multiple speakers detected, skipping identification');
+      return;
+    }
+
+    updateStepStatus('speaker_identification', 'processing', 30, 'Loading transcript with speakers...');
+    
+    // Show the speaker identification interface
+    setShowSpeakerIdentification(true);
+    updateStepStatus('speaker_identification', 'processing', 50, `Please name the ${transcriptData.speakerCount} speakers identified in the transcript`);
+    
+    // Wait for user to complete speaker identification
+    // This will be resolved when the user clicks "Save" in the SpeakerIdentification component
+    await new Promise<void>((resolve) => {
+      // Set up a resolver that will be called when speakers are saved
+      (window as any).resolveSpeakerIdentification = resolve;
+    });
+
+    updateStepStatus('speaker_identification', 'processing', 90, 'Saving speaker identifications...');
+    setShowSpeakerIdentification(false);
+    
+    updateStepStatus('speaker_identification', 'completed', 100, `Speaker identification completed for ${transcriptData.speakerCount} speakers`);
+    await new Promise(resolve => setTimeout(resolve, 500));
+  };
+
+  // Handle speaker identification completion
+  const onSpeakersUpdated = (speakers: any[]) => {
+    console.log('Speakers updated:', speakers);
+    // This will be called when speakers are saved
+    if ((window as any).resolveSpeakerIdentification) {
+      (window as any).resolveSpeakerIdentification();
+      (window as any).resolveSpeakerIdentification = null;
     }
   };
 
@@ -1161,6 +1238,44 @@ export function UploadFirstServerlessModal({
                   </Button>
                 )}
               </div>
+            </div>
+          )}
+
+          {/* Speaker Identification Interface */}
+          {showSpeakerIdentification && transcriptData && (
+            <div className="mt-8 p-6 bg-white border border-gray-200 rounded-lg">
+              <div className="mb-4">
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                  Speaker Identification Required
+                </h3>
+                <p className="text-sm text-gray-600 mb-4">
+                  We found {transcriptData.speakerCount} speakers in your transcript. Please name each speaker to improve the transcript quality.
+                </p>
+                
+                <div className="flex justify-end mb-4">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      // Skip speaker identification
+                      if ((window as any).resolveSpeakerIdentification) {
+                        (window as any).resolveSpeakerIdentification();
+                        (window as any).resolveSpeakerIdentification = null;
+                      }
+                      setShowSpeakerIdentification(false);
+                    }}
+                    className="text-sm"
+                  >
+                    Skip Speaker Identification
+                  </Button>
+                </div>
+              </div>
+              
+              <SpeakerIdentification
+                videoId={uploadResults.videoId || ''}
+                transcript={transcriptData.text}
+                videoRef={videoRef}
+                onSpeakersUpdated={onSpeakersUpdated}
+              />
             </div>
           )}
         </div>

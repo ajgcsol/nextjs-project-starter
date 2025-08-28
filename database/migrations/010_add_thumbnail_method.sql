@@ -1,0 +1,1 @@
+ALTER TABLE videos ADD COLUMN IF NOT EXISTS thumbnail_method VARCHAR(20) DEFAULT 'auto';

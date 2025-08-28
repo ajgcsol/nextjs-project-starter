@@ -16,7 +16,10 @@ import {
   User,
   UserCircle,
   Settings,
-  Save
+  Save,
+  FileText,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -50,6 +53,9 @@ export function SpeakerIdentification({
   const [editName, setEditName] = useState('');
   const [isCapturingScreenshot, setIsCapturingScreenshot] = useState<string | null>(null);
   const [showIdentificationDialog, setShowIdentificationDialog] = useState(false);
+  const [showTranscriptEditor, setShowTranscriptEditor] = useState(false);
+  const [editedTranscript, setEditedTranscript] = useState(transcript);
+  const [transcriptPreviewMode, setTranscriptPreviewMode] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   // Speaker colors for consistent UI
@@ -178,6 +184,62 @@ export function SpeakerIdentification({
     setEditName('');
   };
 
+  // Save edited transcript
+  const saveEditedTranscript = async () => {
+    try {
+      const response = await fetch(`/api/videos/${videoId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ transcript: editedTranscript })
+      });
+
+      if (response.ok) {
+        console.log('✅ Transcript updated successfully');
+        setShowTranscriptEditor(false);
+        setTranscriptPreviewMode(false);
+        
+        // Update local transcript and re-parse speakers
+        const lines = editedTranscript.split('\n').filter(line => line.trim());
+        const speakerMap = new Map<string, { segments: number; confidence: number; texts: string[] }>();
+        
+        lines.forEach(line => {
+          const speakerMatch = line.match(/^(Speaker \d+|[^:]+):\s*(.+)$/);
+          if (speakerMatch) {
+            const speakerLabel = speakerMatch[1];
+            const text = speakerMatch[2].trim();
+            
+            if (!speakerMap.has(speakerLabel)) {
+              speakerMap.set(speakerLabel, { segments: 0, confidence: 0.9, texts: [] });
+            }
+            
+            const speaker = speakerMap.get(speakerLabel)!;
+            speaker.segments++;
+            speaker.texts.push(text);
+          }
+        });
+
+        const updatedSpeakers: Speaker[] = Array.from(speakerMap.entries()).map(
+          ([label, data], index) => ({
+            id: `speaker-${index}`,
+            originalLabel: label,
+            name: speakers.find(s => s.originalLabel === label)?.name || label, // Preserve custom names
+            color: speakerColors[index % speakerColors.length],
+            segments: data.segments,
+            confidence: data.confidence,
+            screenshot: speakers.find(s => s.originalLabel === label)?.screenshot // Preserve screenshots
+          })
+        );
+
+        setSpeakers(updatedSpeakers);
+        onSpeakersUpdated?.(updatedSpeakers);
+      } else {
+        console.error('❌ Failed to save transcript');
+      }
+    } catch (error) {
+      console.error('Error saving transcript:', error);
+    }
+  };
+
   // Save all speaker identifications
   const saveIdentifications = async () => {
     try {
@@ -190,6 +252,9 @@ export function SpeakerIdentification({
       if (response.ok) {
         console.log('✅ Speaker identifications saved');
         setShowIdentificationDialog(false);
+        
+        // Notify parent component and resolve upload workflow
+        onSpeakersUpdated?.(speakers);
       } else {
         console.error('❌ Failed to save speaker identifications');
       }
@@ -224,15 +289,30 @@ export function SpeakerIdentification({
               </Badge>
             </CardTitle>
             
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowIdentificationDialog(true)}
-              className="flex items-center space-x-1"
-            >
-              <Settings className="h-4 w-4" />
-              <span>Manage</span>
-            </Button>
+            <div className="flex items-center space-x-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setEditedTranscript(transcript);
+                  setShowTranscriptEditor(true);
+                }}
+                className="flex items-center space-x-1"
+              >
+                <FileText className="h-4 w-4" />
+                <span>Edit Transcript</span>
+              </Button>
+              
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowIdentificationDialog(true)}
+                className="flex items-center space-x-1"
+              >
+                <Settings className="h-4 w-4" />
+                <span>Manage</span>
+              </Button>
+            </div>
           </div>
         </CardHeader>
 
@@ -385,6 +465,102 @@ export function SpeakerIdentification({
               <Button onClick={saveIdentifications}>
                 <Save className="h-4 w-4 mr-2" />
                 Save Identifications
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Transcript Editing Dialog */}
+      <Dialog open={showTranscriptEditor} onOpenChange={setShowTranscriptEditor}>
+        <DialogContent className="max-w-4xl max-h-[80vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center space-x-2">
+              <FileText className="h-5 w-5" />
+              <span>Edit Transcript</span>
+              <div className="flex items-center ml-auto space-x-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setTranscriptPreviewMode(!transcriptPreviewMode)}
+                  className="flex items-center space-x-1"
+                >
+                  {transcriptPreviewMode ? (
+                    <>
+                      <Edit3 className="h-4 w-4" />
+                      <span>Edit</span>
+                    </>
+                  ) : (
+                    <>
+                      <Eye className="h-4 w-4" />
+                      <span>Preview</span>
+                    </>
+                  )}
+                </Button>
+              </div>
+            </DialogTitle>
+          </DialogHeader>
+          
+          <div className="flex-1 overflow-hidden">
+            {transcriptPreviewMode ? (
+              <div className="h-full overflow-y-auto p-4 border rounded-lg bg-gray-50">
+                <div className="whitespace-pre-wrap font-mono text-sm">
+                  {editedTranscript.split('\n').map((line, index) => {
+                    const speakerMatch = line.match(/^(Speaker \d+|[^:]+):\s*(.+)$/);
+                    if (speakerMatch) {
+                      const speakerLabel = speakerMatch[1];
+                      const text = speakerMatch[2];
+                      const speaker = speakers.find(s => s.originalLabel === speakerLabel);
+                      
+                      return (
+                        <div key={index} className="mb-3">
+                          <div className="flex items-center space-x-2 mb-1">
+                            <Badge 
+                              variant="outline" 
+                              className={cn("text-xs font-medium", speaker?.color || "bg-gray-100")}
+                            >
+                              {speaker?.name || speakerLabel}
+                            </Badge>
+                          </div>
+                          <div className="pl-2 text-gray-700">{text}</div>
+                        </div>
+                      );
+                    }
+                    return (
+                      <div key={index} className="text-gray-500 italic text-xs mb-1">
+                        {line || '\u00A0'}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              <textarea
+                value={editedTranscript}
+                onChange={(e) => setEditedTranscript(e.target.value)}
+                className="w-full h-full p-4 border rounded-lg resize-none font-mono text-sm"
+                placeholder="Edit your transcript here. Use format: Speaker 1: Text content"
+              />
+            )}
+          </div>
+          
+          <div className="flex justify-between items-center pt-4">
+            <div className="text-sm text-gray-500">
+              Tip: Use "Speaker 1:", "Speaker 2:" etc. format for proper speaker identification
+            </div>
+            <div className="flex items-center space-x-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowTranscriptEditor(false);
+                  setTranscriptPreviewMode(false);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button onClick={saveEditedTranscript}>
+                <Save className="h-4 w-4 mr-2" />
+                Save Changes
               </Button>
             </div>
           </div>
