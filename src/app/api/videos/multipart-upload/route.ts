@@ -433,9 +433,13 @@ export async function PATCH(request: NextRequest) {
         s3Key,
         publicUrl,
         cloudFrontUrl,
+        muxAssetId,
+        muxPlaybackId,
         video: {
           id: savedVideo.id,
           title: savedVideo.title,
+          description: savedVideo.description,
+          thumbnailPath: savedVideo.thumbnail_path,
           muxAssetId,
           muxPlaybackId,
           muxStatus,

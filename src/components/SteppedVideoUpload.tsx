@@ -232,13 +232,17 @@ export function SteppedVideoUpload({ onUploadComplete, onUploadError }: SteppedV
       throw new Error(completeResult.error || 'Failed to complete multipart upload');
     }
     
+    // Return the complete data including video details from server
     return {
       s3Key,
       publicUrl: completeResult.publicUrl,
       filename: file.name,
       size: file.size,
       mimeType: file.type,
-      autoThumbnail: autoThumbnail
+      autoThumbnail: autoThumbnail,
+      video: completeResult.video, // Include video record from server
+      muxAssetId: completeResult.muxAssetId,
+      muxPlaybackId: completeResult.muxPlaybackId
     };
   };
 
@@ -284,6 +288,29 @@ export function SteppedVideoUpload({ onUploadComplete, onUploadError }: SteppedV
       console.log('📤 Uploading file to S3...');
       const s3Data = await uploadToS3(selectedFile);
       setUploadData(s3Data);
+
+      // For multipart uploads that already created the video, call the callback immediately
+      if (s3Data.video) {
+        console.log('🎬 Multipart upload completed with video data, calling onUploadComplete...');
+        if (onUploadComplete) {
+          const uploadCompleteData = {
+            ...s3Data.video,
+            pendingFile: selectedFile,
+            originalFilename: selectedFile.name,
+            size: selectedFile.size,
+            mimeType: selectedFile.type,
+            s3Key: s3Data.s3Key,
+            publicUrl: s3Data.publicUrl,
+            autoThumbnail: s3Data.autoThumbnail,
+            uploadMethod: 'multipart',
+            muxAssetId: s3Data.muxAssetId,
+            muxPlaybackId: s3Data.muxPlaybackId
+          };
+          onUploadComplete(uploadCompleteData);
+        }
+        setIsUploading(false);
+        return;
+      }
 
       // Step 1-3: Start the stepped processing
       const response = await fetch('/api/videos/upload-perfect-stepped', {
