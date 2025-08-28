@@ -274,10 +274,17 @@ export function UploadFirstServerlessModal({
         const videoFile = contentData.metadata.pendingFile;
         const hasS3Data = contentData.metadata.s3Key && contentData.metadata.publicUrl;
         
+        // For multipart uploads, we'll have S3 data but maybe not the file object
         if (!videoFile && !hasS3Data) {
           console.error('🎬 ❌ No video file or S3 data found');
           console.error('🎬 Available metadata:', contentData.metadata);
           throw new Error('No video file found. Please upload a video first using the video upload component above.');
+        }
+        
+        // If we have S3 data, we can skip the file upload since it's already done
+        if (hasS3Data && !videoFile) {
+          console.log('🎬 Using existing S3 upload data, skipping file validation');
+          return; // Skip file validation since we'll use S3 data
         }
         
         if (videoFile) {
@@ -386,6 +393,16 @@ export function UploadFirstServerlessModal({
   };
 
   const uploadVideo = async () => {
+    // Check if video is already uploaded to S3
+    if (contentData.metadata.s3Key && contentData.metadata.publicUrl) {
+      updateStepStatus('upload', 'processing', 100, 'Using existing S3 upload...');
+      console.log('🎬 Video already uploaded to S3:', contentData.metadata.s3Key);
+      return {
+        s3Key: contentData.metadata.s3Key,
+        publicUrl: contentData.metadata.publicUrl
+      };
+    }
+    
     const file = contentData.metadata.pendingFile!;
     
     updateStepStatus('upload', 'processing', 5, 'Getting upload URL...');
@@ -442,6 +459,19 @@ export function UploadFirstServerlessModal({
   const createVideoRecord = async () => {
     updateStepStatus('database', 'processing', 30, 'Creating video record...');
     
+    // Use metadata for file info if we don't have the actual file object
+    const filename = contentData.metadata.pendingFile 
+      ? (contentData.metadata.pendingFile as File).name 
+      : contentData.metadata.originalFilename || 'video.mp4';
+    
+    const fileSize = contentData.metadata.pendingFile 
+      ? (contentData.metadata.pendingFile as File).size 
+      : contentData.metadata.fileSize || 0;
+    
+    const mimeType = contentData.metadata.pendingFile 
+      ? (contentData.metadata.pendingFile as File).type 
+      : contentData.metadata.mimeType || 'video/mp4';
+    
     // Call the actual upload API to create the database record
     const uploadResponse = await fetch('/api/videos/upload', {
       method: 'POST',
@@ -452,10 +482,10 @@ export function UploadFirstServerlessModal({
         category: contentData.category,
         tags: contentData.tags.join(','),
         visibility: contentData.metadata.visibility || 'private',
-        filename: (contentData.metadata.pendingFile as File).name,
-        size: (contentData.metadata.pendingFile as File).size,
-        mimeType: (contentData.metadata.pendingFile as File).type,
-        autoThumbnail: thumbnailPreview,
+        filename: filename,
+        size: fileSize,
+        mimeType: mimeType,
+        autoThumbnail: thumbnailPreview || contentData.metadata.autoThumbnail,
         s3Key: uploadResults.s3Key,
         publicUrl: uploadResults.publicUrl
       }),
