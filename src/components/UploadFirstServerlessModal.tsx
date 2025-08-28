@@ -767,7 +767,7 @@ export function UploadFirstServerlessModal({
       
       let assetReady = false;
       let waitAttempts = 0;
-      const maxWaitAttempts = 15; // Wait up to 2.5 minutes for asset to be ready
+      const maxWaitAttempts = 30; // Wait up to 5 minutes for asset to be ready
       
       while (!assetReady && waitAttempts < maxWaitAttempts) {
         // Check video status
@@ -777,7 +777,10 @@ export function UploadFirstServerlessModal({
           const video = videoData.video;
           
           if (video.mux_status === 'ready' && video.mux_playback_id) {
-            console.log('✅ Mux asset is ready for transcription');
+            console.log('✅ Mux asset is fully ready for transcription');
+            assetReady = true;
+          } else if (video.mux_asset_id && (video.mux_status === 'preparing' || video.mux_status === 'ready')) {
+            console.log('✅ Mux asset exists and is processing, should be ready for transcription');
             assetReady = true;
           } else {
             console.log(`⏳ Mux asset still processing (${video.mux_status}), waiting...`);
@@ -792,10 +795,9 @@ export function UploadFirstServerlessModal({
       }
       
       if (!assetReady) {
-        console.log('⚠️ Mux asset not ready yet, will retry transcription later');
-        updateStepStatus('transcription', 'processing', 50, 'Video still processing, transcription will be available later');
-        setTranscriptData(null);
-        return null; // Don't fail the upload, just skip transcription for now
+        console.log('⚠️ Mux asset not fully ready, attempting transcription anyway...');
+        updateStepStatus('transcription', 'processing', 50, 'Asset still processing, but attempting transcription...');
+        // Don't return here - try transcription anyway in case Mux accepts it
       }
       
       // Now call the Mux transcription API endpoint
