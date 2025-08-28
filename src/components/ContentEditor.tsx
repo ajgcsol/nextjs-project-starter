@@ -12,7 +12,8 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
-import { VideoUploadLarge } from "./VideoUploadLarge";
+import { SteppedVideoUpload } from "./SteppedVideoUpload";
+import { ServerlessPublishModal } from "./ServerlessPublishModal";
 
 interface ContentData {
   title: string;
@@ -91,6 +92,7 @@ export function ContentEditor({
     percentage: 0
   });
   const [hasUploadedVideo, setHasUploadedVideo] = useState(false);
+  const [showServerlessPublishModal, setShowServerlessPublishModal] = useState(false);
 
   // Auto-save functionality
   useEffect(() => {
@@ -131,38 +133,50 @@ export function ContentEditor({
 
   const handlePublish = async () => {
     // Prevent multiple simultaneous publish attempts
-    if (isSaving) {
+    if (isSaving || showServerlessPublishModal) {
       console.log('🎬 ⚠️ Publish already in progress, ignoring duplicate request');
       return;
     }
 
-    console.log('🎬 Publishing content:', { 
-      title: content.title, 
-      hasPendingFile: !!content.metadata.pendingFile,
-      metadata: content.metadata 
-    });
+    console.log('🎬 Starting serverless publish with video preview and stepped modal...');
     
-    setIsSaving(true);
-    try {
-      // If there's a pending video file, upload it first
-      if (content.metadata.pendingFile) {
-        console.log('🎬 Starting video upload before publish...');
-        await handleActualVideoUpload();
-        console.log('🎬 Video upload completed, proceeding with publish...');
-      }
+    // Show the serverless stepped progress modal
+    setShowServerlessPublishModal(true);
+  };
+
+  const handleServerlessPublishComplete = async (success: boolean, result?: any) => {
+    setShowServerlessPublishModal(false);
+    
+    if (success) {
+      console.log('🎬 ✅ Serverless publish completed successfully:', result);
+      
+      // Update content status and call onPublish if provided
+      const publishedContent = { ...content, status: "published" };
+      setContent(publishedContent);
       
       if (onPublish) {
-        onPublish({ ...content, status: "published" });
-      } else {
-        console.log('🎬 No onPublish handler provided, content published locally');
+        onPublish(publishedContent);
       }
+      
       setLastSaved(new Date());
-      console.log('🎬 ✅ Publish completed successfully');
-    } catch (error) {
-      console.error('🎬 ❌ Publish failed:', error);
-      alert(`Publish failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    } finally {
-      setIsSaving(false);
+      setHasUploadedVideo(true);
+      
+      // Clear pending file data since it's now published
+      setContent(prev => ({
+        ...prev,
+        metadata: {
+          ...prev.metadata,
+          pendingFile: undefined,
+          autoThumbnail: undefined,
+          customThumbnail: undefined,
+          uploadMethod: undefined,
+          monitorSessionId: undefined
+        }
+      }));
+      
+    } else {
+      console.error('🎬 ❌ Serverless publish failed:', result?.error);
+      alert(`Publish failed: ${result?.error || 'Unknown error'}`);
     }
   };
 
@@ -749,7 +763,7 @@ export function ContentEditor({
 
               {config.showVideoUrl && (
                 <div className="space-y-4">
-                  <VideoUploadLarge
+                  <SteppedVideoUpload
                     onUploadComplete={(videoData) => {
                       // Store the video data for later upload when saving/publishing
                       setContent({
@@ -1128,6 +1142,16 @@ export function ContentEditor({
           )}
         </CardContent>
       </Card>
+
+      {/* Serverless Publish Modal with Video Preview */}
+      {showServerlessPublishModal && (
+        <ServerlessPublishModal
+          isOpen={showServerlessPublishModal}
+          onClose={() => setShowServerlessPublishModal(false)}
+          onComplete={handleServerlessPublishComplete}
+          contentData={content}
+        />
+      )}
     </div>
   );
 }

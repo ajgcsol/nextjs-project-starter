@@ -210,7 +210,7 @@ export async function PUT(request: NextRequest) {
 // Complete multipart upload
 export async function PATCH(request: NextRequest) {
   try {
-    const { uploadId, s3Key, parts, title, description, category, tags, visibility, filename, fileSize, mimeType } = await request.json();
+    const { uploadId, s3Key, parts, title, description, category, tags, visibility, filename, fileSize, mimeType, autoThumbnail } = await request.json();
     
     if (!uploadId || !s3Key || !parts || !Array.isArray(parts)) {
       return NextResponse.json(
@@ -317,6 +317,51 @@ export async function PATCH(request: NextRequest) {
       console.error('🎬 ⚠️ Mux processing failed for multipart upload, but continuing:', muxError);
       // Don't fail the entire upload if Mux processing fails
     }
+
+    // Handle client-side thumbnail upload to S3 if provided (mirroring single-part upload)
+    let thumbnailS3Key = null;
+    let thumbnailCloudFrontUrl = null;
+    
+    if (autoThumbnail) {
+      try {
+        console.log('🎬 Processing auto-generated thumbnail for multipart upload...');
+        
+        // Convert base64 thumbnail to buffer
+        const base64Data = autoThumbnail.split(',')[1]; // Remove data:image/jpeg;base64, prefix
+        const thumbnailBuffer = Buffer.from(base64Data, 'base64');
+        
+        // Generate S3 key for thumbnail
+        const videoFileName = filename?.split('.')[0] || 'video';
+        thumbnailS3Key = `thumbnails/${videoFileName}-${Date.now()}.jpg`;
+        
+        // Import AWS SDK for thumbnail upload
+        const { PutObjectCommand } = await import('@aws-sdk/client-s3');
+        
+        // Upload thumbnail to S3
+        await s3Client.send(
+          new PutObjectCommand({
+            Bucket: bucketName,
+            Key: thumbnailS3Key,
+            Body: thumbnailBuffer,
+            ContentType: 'image/jpeg',
+            CacheControl: 'max-age=31536000', // 1 year cache
+          })
+        );
+
+        // Generate CloudFront URL for thumbnail
+        const cloudFrontDomain = process.env.CLOUDFRONT_DOMAIN;
+        thumbnailCloudFrontUrl = cloudFrontDomain 
+          ? `https://${cloudFrontDomain}/${thumbnailS3Key}`
+          : `https://${bucketName}.s3.${process.env.AWS_REGION || 'us-east-1'}.amazonaws.com/${thumbnailS3Key}`;
+        
+        console.log('🎬 ✅ Thumbnail uploaded to S3 for multipart upload:', thumbnailS3Key);
+        console.log('🎬 📸 Thumbnail URL:', thumbnailCloudFrontUrl);
+        
+      } catch (thumbnailError) {
+        console.error('🎬 ⚠️ Thumbnail upload failed for multipart upload:', thumbnailError);
+        // Continue without thumbnail - don't fail the entire upload
+      }
+    }
     
     // Save video to database
     try {
@@ -331,6 +376,30 @@ export async function PATCH(request: NextRequest) {
         ? `https://${process.env.CLOUDFRONT_DOMAIN}/${s3Key}`
         : publicUrl;
       
+      // Determine the best thumbnail URL to use (mirroring single-part upload logic)
+      let finalThumbnailPath = `/api/videos/thumbnail/${fileId}`; // Default fallback
+      
+      if (muxThumbnailUrl) {
+        // Mux thumbnail is available immediately
+        finalThumbnailPath = muxThumbnailUrl;
+        console.log('🖼️ Using Mux thumbnail URL for multipart upload:', muxThumbnailUrl);
+      } else if (thumbnailCloudFrontUrl) {
+        // Client-provided thumbnail
+        finalThumbnailPath = thumbnailCloudFrontUrl;
+        console.log('🖼️ Using client-provided thumbnail URL for multipart upload:', thumbnailCloudFrontUrl);
+      } else if (muxAssetId) {
+        // Mux asset exists but thumbnail not ready yet - use Mux URL format
+        finalThumbnailPath = `https://image.mux.com/${muxPlaybackId || 'pending'}/thumbnail.jpg?time=10`;
+        console.log('🖼️ Using pending Mux thumbnail URL for multipart upload (will be updated by webhook):', finalThumbnailPath);
+      }
+      
+      console.log('🖼️ Final thumbnail decision for multipart upload:', {
+        muxThumbnailUrl: !!muxThumbnailUrl,
+        thumbnailCloudFrontUrl: !!thumbnailCloudFrontUrl,
+        muxAssetId: !!muxAssetId,
+        finalThumbnailPath
+      });
+      
         const savedVideo = await VideoDB.create({
           title: title || filename?.replace(/\.[^/.]+$/, '') || 'Untitled Video',
           description: description || '',
@@ -338,7 +407,7 @@ export async function PATCH(request: NextRequest) {
           file_path: cloudFrontUrl,
           file_size: fileSize || 0,
           duration: Math.floor(Math.random() * 3600) + 600, // Estimated duration
-          thumbnail_path: muxThumbnailUrl || `/api/videos/thumbnail/${fileId}`,
+          thumbnail_path: finalThumbnailPath, // Use the determined thumbnail path
           video_quality: 'HD',
           uploaded_by: 'current-user',
           course_id: undefined,

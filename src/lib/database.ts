@@ -407,6 +407,17 @@ export const VideoDB = {
   }) {
     console.log('🎬 VideoDB.create: Attempting to create video record with Mux fields...');
     
+    // CRITICAL FIX: Convert decimal duration to integer for database compatibility
+    const safeDuration = videoData.duration ? Math.round(Number(videoData.duration)) : undefined;
+    const safeMuxDuration = videoData.mux_duration_seconds ? Math.round(Number(videoData.mux_duration_seconds)) : undefined;
+    
+    console.log('🔧 VideoDB.create: Data type conversion:', {
+      originalDuration: videoData.duration,
+      safeDuration,
+      originalMuxDuration: videoData.mux_duration_seconds,
+      safeMuxDuration
+    });
+    
     try {
       // First try with all Mux fields
       const { rows } = await query(
@@ -422,12 +433,12 @@ export const VideoDB = {
                  $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32)
          RETURNING *`,
         [videoData.title, videoData.description, videoData.filename, videoData.file_path,
-         videoData.file_size, videoData.duration, videoData.thumbnail_path, 
+         videoData.file_size, safeDuration, videoData.thumbnail_path, 
          videoData.video_quality || 'HD', videoData.uploaded_by, videoData.course_id,
          videoData.s3_key, videoData.s3_bucket, videoData.is_processed || false, videoData.is_public || false,
          videoData.mux_asset_id, videoData.mux_playback_id, videoData.mux_upload_id, videoData.mux_status,
          videoData.mux_thumbnail_url, videoData.mux_streaming_url, videoData.mux_mp4_url,
-         videoData.mux_duration_seconds, videoData.mux_aspect_ratio, videoData.mux_created_at, videoData.mux_ready_at,
+         safeMuxDuration, videoData.mux_aspect_ratio, videoData.mux_created_at, videoData.mux_ready_at,
          videoData.audio_enhanced || false, videoData.audio_enhancement_job_id, videoData.transcription_job_id,
          videoData.captions_webvtt_url, videoData.captions_srt_url, videoData.transcript_text, videoData.transcript_confidence]
       );
@@ -452,7 +463,7 @@ export const VideoDB = {
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
              RETURNING *`,
             [videoData.title, videoData.description, videoData.filename, videoData.file_path,
-             videoData.file_size, videoData.duration, videoData.thumbnail_path, 
+             videoData.file_size, safeDuration, videoData.thumbnail_path, 
              videoData.video_quality || 'HD', videoData.uploaded_by, videoData.course_id,
              videoData.s3_key, videoData.s3_bucket, videoData.is_processed || false, videoData.is_public || false]
           );
@@ -465,15 +476,52 @@ export const VideoDB = {
               videoId: rows[0].id,
               muxAssetId: videoData.mux_asset_id,
               muxPlaybackId: videoData.mux_playback_id,
-              muxStatus: videoData.mux_status
+              muxStatus: videoData.mux_status,
+              originalDuration: videoData.duration,
+              convertedDuration: safeDuration
             });
           }
           
           return rows[0];
           
         } catch (basicError) {
-          console.error('❌ VideoDB.create: Failed to create video even with basic fields:', basicError);
-          throw basicError;
+          // Check if it's still a data type error
+          if (basicError instanceof Error && basicError.message.includes('invalid input syntax for type integer')) {
+            console.error('❌ VideoDB.create: Data type error even after conversion:', {
+              error: basicError.message,
+              originalDuration: videoData.duration,
+              convertedDuration: safeDuration,
+              durationType: typeof safeDuration
+            });
+            
+            // Try one more time with a more aggressive conversion
+            try {
+              const ultraSafeDuration = videoData.duration ? parseInt(String(videoData.duration).split('.')[0]) : null;
+              console.log('🔧 VideoDB.create: Ultra-safe duration conversion:', ultraSafeDuration);
+              
+              const { rows } = await query(
+                `INSERT INTO videos (title, description, filename, file_path, file_size, duration, 
+                                    thumbnail_path, video_quality, uploaded_by, course_id, 
+                                    s3_key, s3_bucket, is_processed, is_public)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                 RETURNING *`,
+                [videoData.title, videoData.description, videoData.filename, videoData.file_path,
+                 videoData.file_size, ultraSafeDuration, videoData.thumbnail_path, 
+                 videoData.video_quality || 'HD', videoData.uploaded_by, videoData.course_id,
+                 videoData.s3_key, videoData.s3_bucket, videoData.is_processed || false, videoData.is_public || false]
+              );
+              
+              console.log('✅ VideoDB.create: Successfully created video with ultra-safe duration conversion');
+              return rows[0];
+              
+            } catch (ultraError) {
+              console.error('❌ VideoDB.create: Failed even with ultra-safe conversion:', ultraError);
+              throw ultraError;
+            }
+          } else {
+            console.error('❌ VideoDB.create: Failed to create video with basic fields:', basicError);
+            throw basicError;
+          }
         }
       } else {
         // Re-throw if it's not a column-related error

@@ -105,6 +105,54 @@ export function SteppedVideoUpload({ onUploadComplete, onUploadError }: SteppedV
     const { uploadId, s3Key, partSize, totalParts } = uploadInfo.uploadInfo;
     const parts = [];
     
+    // Generate thumbnail from video file for multipart uploads
+    let autoThumbnail = null;
+    try {
+      console.log('🖼️ Generating thumbnail for multipart upload...');
+      const canvas = document.createElement('canvas');
+      const video = document.createElement('video');
+      
+      // Create object URL for the video file
+      const videoUrl = URL.createObjectURL(file);
+      video.src = videoUrl;
+      video.muted = true;
+      
+      // Wait for video to load metadata
+      await new Promise((resolve, reject) => {
+        video.onloadedmetadata = resolve;
+        video.onerror = reject;
+        setTimeout(reject, 10000); // 10 second timeout
+      });
+      
+      // Seek to 10% of video duration for thumbnail
+      video.currentTime = video.duration * 0.1;
+      
+      // Wait for seek to complete
+      await new Promise((resolve) => {
+        video.onseeked = resolve;
+        setTimeout(resolve, 2000); // 2 second timeout
+      });
+      
+      // Set canvas dimensions
+      canvas.width = video.videoWidth || 1920;
+      canvas.height = video.videoHeight || 1080;
+      
+      // Draw video frame to canvas
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        autoThumbnail = canvas.toDataURL('image/jpeg', 0.8);
+        console.log('🖼️ ✅ Thumbnail generated for multipart upload');
+      }
+      
+      // Clean up
+      URL.revokeObjectURL(videoUrl);
+      
+    } catch (thumbnailError) {
+      console.error('🖼️ ⚠️ Thumbnail generation failed for multipart upload:', thumbnailError);
+      // Continue without thumbnail
+    }
+    
     // Upload each part
     for (let partNumber = 1; partNumber <= totalParts; partNumber++) {
       const start = (partNumber - 1) * partSize;
@@ -173,7 +221,8 @@ export function SteppedVideoUpload({ onUploadComplete, onUploadError }: SteppedV
         fileSize: file.size,
         mimeType: file.type,
         title: file.name.replace(/\.[^/.]+$/, ''),
-        description: `Multipart upload completed ${new Date().toLocaleDateString()}`
+        description: `Multipart upload completed ${new Date().toLocaleDateString()}`,
+        autoThumbnail // Include the generated thumbnail
       }),
     });
     
