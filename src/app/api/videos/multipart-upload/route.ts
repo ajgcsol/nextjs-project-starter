@@ -400,7 +400,7 @@ export async function PATCH(request: NextRequest) {
         finalThumbnailPath
       });
       
-        const savedVideo = await VideoDB.create({
+        const savedVideo = await VideoDB.createWithId(fileId, {
           title: title || filename?.replace(/\.[^/.]+$/, '') || 'Untitled Video',
           description: description || '',
           filename: filename || s3Key.split('/').pop() || 'unknown.mp4',

@@ -551,8 +551,8 @@ export function UploadFirstServerlessModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={() => {}}>
-      <DialogContent className="w-[95vw] max-w-7xl h-[95vh] max-h-[95vh] overflow-hidden flex flex-col p-0">
-        <DialogHeader className="flex-shrink-0 p-3 sm:p-4 md:p-6 border-b">
+      <DialogContent className="w-[90vw] max-w-6xl h-[85vh] max-h-[900px] overflow-hidden flex flex-col p-0">
+        <DialogHeader className="flex-shrink-0 px-6 py-4 sm:px-8 sm:py-5 border-b bg-white">
           <div className="flex items-center justify-between">
             <DialogTitle className="flex items-center gap-2 text-base sm:text-lg md:text-xl lg:text-2xl">
               <Zap className="h-4 w-4 sm:h-5 sm:w-5 md:h-6 md:w-6 text-blue-500 flex-shrink-0" />
@@ -568,14 +568,14 @@ export function UploadFirstServerlessModal({
           </div>
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto p-3 sm:p-4 md:p-6">
+        <div className="flex-1 overflow-y-auto px-6 py-4 sm:px-8 sm:py-6 bg-gray-50">
           {!isProcessing ? (
             // Preview Phase - Responsive Layout
-            <div className="space-y-4 sm:space-y-6">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+            <div className="space-y-6 sm:space-y-8">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8">
                 {/* Video Preview */}
-                <div className="space-y-3 sm:space-y-4">
-                  <h3 className="text-base sm:text-lg font-semibold flex items-center gap-2">
+                <div className="bg-white rounded-xl p-4 sm:p-6 shadow-sm border border-gray-200">
+                  <h3 className="text-lg sm:text-xl font-semibold flex items-center gap-2 mb-4">
                     <Video className="h-4 w-4 sm:h-5 sm:w-5" />
                     Video Preview
                   </h3>
@@ -611,8 +611,8 @@ export function UploadFirstServerlessModal({
                 </div>
 
                 {/* Thumbnail Selection */}
-                <div className="space-y-3 sm:space-y-4">
-                  <h3 className="text-base sm:text-lg font-semibold flex items-center gap-2">
+                <div className="bg-white rounded-xl p-4 sm:p-6 shadow-sm border border-gray-200">
+                  <h3 className="text-lg sm:text-xl font-semibold flex items-center gap-2 mb-4">
                     <Image className="h-4 w-4 sm:h-5 sm:w-5" />
                     Thumbnail Selection
                   </h3>
@@ -679,7 +679,7 @@ export function UploadFirstServerlessModal({
               </div>
 
               {/* Responsive Device Preview */}
-              <div className="bg-gray-50 rounded-lg p-3 sm:p-4">
+              <div className="bg-white rounded-xl p-4 sm:p-6 shadow-sm border border-gray-200">
                 <h4 className="text-sm sm:text-base font-medium mb-3 flex items-center gap-2">
                   <Eye className="h-4 w-4" />
                   Responsive Preview
@@ -701,7 +701,7 @@ export function UploadFirstServerlessModal({
               </div>
 
               {/* Action Buttons */}
-              <div className="flex flex-col sm:flex-row justify-end gap-2 sm:gap-3 pt-4 border-t">
+              <div className="flex flex-col sm:flex-row justify-end gap-3 sm:gap-4 pt-6 mt-6 border-t border-gray-200">
                 <Button variant="outline" onClick={onClose} className="text-sm">
                   Cancel
                 </Button>
@@ -713,14 +713,16 @@ export function UploadFirstServerlessModal({
             </div>
           ) : (
             // Processing Phase - Responsive Layout
-            <div className="space-y-4 sm:space-y-6">
+            <div className="space-y-6 sm:space-y-8">
               {/* Overall Progress */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">Overall Progress</span>
-                  <span className="text-sm text-gray-500">{overallProgress}%</span>
+              <div className="bg-white rounded-xl p-4 sm:p-6 shadow-sm border border-gray-200">
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-base font-semibold">Overall Progress</span>
+                    <span className="text-lg font-medium text-blue-600">{overallProgress}%</span>
+                  </div>
+                  <Progress value={overallProgress} className="h-3" />
                 </div>
-                <Progress value={overallProgress} className="h-2" />
               </div>
 
               {/* Error Display */}
@@ -735,11 +737,11 @@ export function UploadFirstServerlessModal({
               )}
 
               {/* Steps List - Responsive */}
-              <div className="space-y-3 sm:space-y-4">
+              <div className="space-y-4 sm:space-y-5">
                 {steps.map((step) => (
                   <div
                     key={step.id}
-                    className={`p-3 sm:p-4 rounded-lg border transition-all duration-300 ${
+                    className={`p-4 sm:p-5 md:p-6 rounded-xl shadow-sm transition-all duration-300 ${
                       step.status === 'processing'
                         ? 'border-blue-200 bg-blue-50'
                         : step.status === 'completed'
