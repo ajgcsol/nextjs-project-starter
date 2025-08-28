@@ -28,7 +28,9 @@ export async function GET(request: NextRequest) {
         duration: video.duration || 0,
         views: video.view_count || 0,
         uploadDate: video.uploaded_at || video.created_at,
-        thumbnailUrl: video.thumbnail_path || `/api/videos/thumbnail/${video.id}`,
+        thumbnailUrl: (video.mux_playback_id && video.thumbnail_timestamp && video.thumbnail_method === 'timestamp') 
+          ? `https://image.mux.com/${video.mux_playback_id}/thumbnail.jpg?time=${video.thumbnail_timestamp}`
+          : video.thumbnail_path || `/api/videos/thumbnail/${video.id}`,
         category: video.category || 'General',
         status: video.is_processed ? 'ready' : 'processing',
         size: video.file_size?.toString() || '0'

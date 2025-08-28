@@ -129,6 +129,11 @@ export async function GET(
       streamUrl: video.stream_url,
       thumbnailUrl: video.thumbnail_path,
       thumbnail_path: video.thumbnail_path,
+      // Override thumbnail URL with user-selected timestamp if available
+      ...(video.mux_playback_id && video.thumbnail_timestamp && video.thumbnail_method === 'timestamp' ? {
+        thumbnailUrl: `https://image.mux.com/${video.mux_playback_id}/thumbnail.jpg?time=${video.thumbnail_timestamp}`,
+        thumbnail_path: `https://image.mux.com/${video.mux_playback_id}/thumbnail.jpg?time=${video.thumbnail_timestamp}`
+      } : {}),
       s3Key: video.s3_key,
       // Mux integration fields
       mux_asset_id: video.mux_asset_id,

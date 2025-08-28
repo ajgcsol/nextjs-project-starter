@@ -766,10 +766,10 @@ export function UploadFirstServerlessModal({
       updateStepStatus('transcription', 'processing', 20, 'Waiting for Mux video processing to complete...');
       
       let assetReady = false;
-      let attempts = 0;
+      let waitAttempts = 0;
       const maxWaitAttempts = 15; // Wait up to 2.5 minutes for asset to be ready
       
-      while (!assetReady && attempts < maxWaitAttempts) {
+      while (!assetReady && waitAttempts < maxWaitAttempts) {
         // Check video status
         const statusResponse = await fetch(`/api/videos/${currentVideoId}`);
         if (statusResponse.ok) {
@@ -781,12 +781,12 @@ export function UploadFirstServerlessModal({
             assetReady = true;
           } else {
             console.log(`⏳ Mux asset still processing (${video.mux_status}), waiting...`);
-            updateStepStatus('transcription', 'processing', 20 + (attempts * 2), `Waiting for video processing... (${video.mux_status})`);
+            updateStepStatus('transcription', 'processing', 20 + (waitAttempts * 2), `Waiting for video processing... (${video.mux_status})`);
             await new Promise(resolve => setTimeout(resolve, 10000)); // Wait 10 seconds
-            pollAttempts++;
+            waitAttempts++;
           }
         } else {
-          pollAttempts++;
+          waitAttempts++;
           await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds on API error
         }
       }

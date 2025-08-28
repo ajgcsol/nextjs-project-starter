@@ -788,6 +788,8 @@ export async function POST(request: NextRequest) {
     };
 
     // Save to database using persistent storage
+    console.log('🔧 Starting database record creation...');
+    const dbStartTime = Date.now();
     const savedVideo = await VideoDB.create({
       title: videoRecord.title,
       description: videoRecord.description,
@@ -802,7 +804,8 @@ export async function POST(request: NextRequest) {
       is_processed: true,
       is_public: videoRecord.visibility === 'public'
     });
-    console.log('🎬 Video saved to database:', savedVideo.id);
+    const dbEndTime = Date.now();
+    console.log('🎬 Video saved to database:', savedVideo.id, `(took ${dbEndTime - dbStartTime}ms)`);
 
     // In production, you would:
     // 1. Upload to AWS S3
