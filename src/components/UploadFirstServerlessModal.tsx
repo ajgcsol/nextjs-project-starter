@@ -276,14 +276,10 @@ export function UploadFirstServerlessModal({
   };
 
   const handleAcceptThumbnail = () => {
+    console.log('🎯 Thumbnail acceptance starting...');
     setThumbnailAccepted(true);
     setThumbnailStepWaiting(false);
-    console.log('🎯 Thumbnail accepted:', {
-      method: thumbnailMethod,
-      timestamp: selectedThumbnailTime,
-      hasCustom: !!customThumbnail,
-      hasPreview: !!thumbnailPreview
-    });
+    console.log('🎯 Thumbnail accepted! Method:', thumbnailMethod, 'Time:', selectedThumbnailTime);
   };
 
   const startPublishProcess = async () => {
@@ -631,19 +627,9 @@ export function UploadFirstServerlessModal({
         await new Promise(resolve => setTimeout(resolve, 100)); // Faster polling for better responsiveness
       }
       
-      console.log('🎯 Thumbnail accepted! Processing selection...', {
-        method: thumbnailMethod,
-        timestamp: selectedThumbnailTime,
-        hasCustom: !!customThumbnail,
-        hasPreview: !!thumbnailPreview
-      });
+      console.log('🎯 Thumbnail accepted! Processing selection. Method:', thumbnailMethod);
       
-      console.log('🔍 Checking thumbnail method branch...', {
-        method: thumbnailMethod,
-        hasCustom: !!customThumbnail,
-        isTimestamp: thumbnailMethod === 'timestamp',
-        isAuto: thumbnailMethod === 'auto'
-      });
+      console.log('🔍 Method check - Method:', thumbnailMethod, 'HasCustom:', !!customThumbnail);
       
       if (thumbnailMethod === 'custom' && customThumbnail) {
         console.log('📁 Processing custom thumbnail upload...');
