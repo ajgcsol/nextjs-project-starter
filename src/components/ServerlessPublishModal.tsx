@@ -247,12 +247,30 @@ export function ServerlessPublishModal({
     try {
       // Step 1: Validate Content
       await processStep('validate', async () => {
+        console.log('🎬 Validating content data:', {
+          title: contentData.title,
+          hasPendingFile: !!contentData.metadata.pendingFile,
+          pendingFileType: contentData.metadata.pendingFile?.constructor.name,
+          pendingFileName: contentData.metadata.pendingFile?.name,
+          metadataKeys: Object.keys(contentData.metadata)
+        });
+        
         if (!contentData.title.trim()) {
           throw new Error('Title is required');
         }
         if (!contentData.metadata.pendingFile) {
-          throw new Error('No video file selected');
+          console.error('🎬 ❌ No video file found in contentData.metadata.pendingFile');
+          console.error('🎬 Available metadata:', contentData.metadata);
+          throw new Error('No video file selected. Please upload a video first.');
         }
+        
+        // Verify the file is actually a File object
+        if (!(contentData.metadata.pendingFile instanceof File)) {
+          console.error('🎬 ❌ pendingFile is not a File object:', typeof contentData.metadata.pendingFile);
+          throw new Error('Invalid video file format');
+        }
+        
+        console.log('🎬 ✅ Validation passed - video file found:', contentData.metadata.pendingFile.name);
         await new Promise(resolve => setTimeout(resolve, 1000));
       });
 
