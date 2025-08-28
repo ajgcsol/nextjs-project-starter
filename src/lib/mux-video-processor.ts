@@ -633,25 +633,21 @@ export class MuxVideoProcessor {
       
       const mux = this.getMuxClient();
 
-      // Create generated subtitles for the asset
-      const subtitleOptions: any = {
-        language_code: options.language || 'en',
-        name: `Auto-generated ${options.language || 'English'} captions`
-      };
-
-      // Enable speaker identification if requested
-      if (options.enableSpeakerDiarization) {
-        subtitleOptions.closed_captions = true;
-        console.log('🗣️ Speaker diarization enabled for transcription');
-      }
-
-      const subtitle = await mux.video.assets.createTrack(assetId, {
+      // Create generated subtitles for the asset - simplified approach
+      const trackParams: any = {
         type: 'text',
         text_type: 'subtitles',
         language_code: options.language || 'en',
         closed_captions: options.enableSpeakerDiarization || false,
-        generated_subtitles: [subtitleOptions]
-      });
+        generated_subtitles: [{
+          name: `Auto-generated ${options.language || 'English'} captions`,
+          language_code: options.language || 'en'
+        }]
+      };
+
+      console.log('🎤 Creating Mux track with params:', JSON.stringify(trackParams, null, 2));
+      
+      const subtitle = await mux.video.assets.createTrack(assetId, trackParams);
 
       console.log('✅ Mux transcription requested:', subtitle.id);
 
