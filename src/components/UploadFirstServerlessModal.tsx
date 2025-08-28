@@ -110,15 +110,15 @@ export function UploadFirstServerlessModal({
     },
     {
       id: 'upload',
-      title: 'Uploading Video',
-      description: 'Uploading to cloud storage',
+      title: 'Verify Video',
+      description: 'Verifying uploaded video and preparing metadata',
       icon: <Upload className="h-4 w-4 sm:h-5 sm:w-5" />,
       status: 'pending'
     },
     {
       id: 'database',
-      title: 'Creating Video Record',
-      description: 'Saving video metadata to database',
+      title: 'Update Metadata',
+      description: 'Updating video information and settings',
       icon: <Database className="h-4 w-4 sm:h-5 sm:w-5" />,
       status: 'pending'
     },
@@ -313,16 +313,29 @@ export function UploadFirstServerlessModal({
         await new Promise(resolve => setTimeout(resolve, 1000));
       });
 
-      // Step 2: Upload Video FIRST
+      // Step 2: Use Existing Video (skip upload if already done)
       await processStep('upload', async () => {
-        const results = await uploadVideo();
-        setUploadResults(results);
-        return results;
+        if (contentData.metadata.s3Key && contentData.metadata.publicUrl) {
+          console.log('🎬 Video already uploaded, using existing S3 data');
+          updateStepStatus('upload', 'processing', 100, 'Video already uploaded, using existing data...');
+          setUploadResults({
+            s3Key: contentData.metadata.s3Key,
+            publicUrl: contentData.metadata.publicUrl
+          });
+          return {
+            s3Key: contentData.metadata.s3Key,
+            publicUrl: contentData.metadata.publicUrl
+          };
+        } else {
+          const results = await uploadVideo();
+          setUploadResults(results);
+          return results;
+        }
       });
 
-      // Step 3: Create Database Record
+      // Step 3: Update Video Record (or create if doesn't exist)
       await processStep('database', async () => {
-        const videoRecord = await createVideoRecord();
+        const videoRecord = await updateVideoRecord();
         setUploadResults(prev => ({ ...prev, videoId: videoRecord.id }));
         return videoRecord;
       });
@@ -456,14 +469,37 @@ export function UploadFirstServerlessModal({
     });
   };
 
-  const createVideoRecord = async () => {
-    updateStepStatus('database', 'processing', 30, 'Creating video record...');
+  const updateVideoRecord = async () => {
+    updateStepStatus('database', 'processing', 30, 'Updating video metadata...');
     
-    // If we already have a video ID from multipart upload, just return that
+    // If we already have a video ID from multipart upload, update that record
     if (contentData.metadata.id) {
-      updateStepStatus('database', 'processing', 100, 'Using existing video record...');
-      console.log('🎬 Video already exists from multipart upload:', contentData.metadata.id);
-      return {
+      updateStepStatus('database', 'processing', 50, 'Updating existing video record...');
+      console.log('🎬 Updating existing video from multipart upload:', contentData.metadata.id);
+      
+      // Update the existing video record with new metadata
+      const updateResponse = await fetch(`/api/videos/${contentData.metadata.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: contentData.title,
+          description: contentData.description,
+          category: contentData.category,
+          tags: contentData.tags.join(','),
+          visibility: contentData.metadata.visibility || 'private',
+          thumbnail_override: thumbnailPreview || contentData.metadata.autoThumbnail
+        }),
+      });
+      
+      if (!updateResponse.ok) {
+        const errorText = await updateResponse.text();
+        console.error('Update API error:', errorText);
+        throw new Error(`Failed to update video record: ${updateResponse.status} - ${errorText}`);
+      }
+      
+      updateStepStatus('database', 'processing', 100, 'Video metadata updated...');
+      const result = await updateResponse.json();
+      return result.video || {
         id: contentData.metadata.id,
         title: contentData.title,
         description: contentData.description
