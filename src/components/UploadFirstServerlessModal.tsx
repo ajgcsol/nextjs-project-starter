@@ -752,7 +752,7 @@ export function UploadFirstServerlessModal({
   };
 
   const generateTranscription = async (videoId?: string) => {
-    updateStepStatus('transcription', 'processing', 20, 'Analyzing audio track for speech...');
+    updateStepStatus('transcription', 'processing', 10, 'Checking Mux asset readiness...');
     
     const currentVideoId = videoId || uploadResults.videoId;
     if (!currentVideoId) {
@@ -762,7 +762,43 @@ export function UploadFirstServerlessModal({
     console.log('🎤 Starting transcription for video ID:', currentVideoId);
     
     try {
-      // Call the Mux transcription API endpoint
+      // First wait for Mux asset to be ready
+      updateStepStatus('transcription', 'processing', 20, 'Waiting for Mux video processing to complete...');
+      
+      let assetReady = false;
+      let attempts = 0;
+      const maxWaitAttempts = 15; // Wait up to 2.5 minutes for asset to be ready
+      
+      while (!assetReady && attempts < maxWaitAttempts) {
+        // Check video status
+        const statusResponse = await fetch(`/api/videos/${currentVideoId}`);
+        if (statusResponse.ok) {
+          const videoData = await statusResponse.json();
+          const video = videoData.video;
+          
+          if (video.mux_status === 'ready' && video.mux_playback_id) {
+            console.log('✅ Mux asset is ready for transcription');
+            assetReady = true;
+          } else {
+            console.log(`⏳ Mux asset still processing (${video.mux_status}), waiting...`);
+            updateStepStatus('transcription', 'processing', 20 + (attempts * 2), `Waiting for video processing... (${video.mux_status})`);
+            await new Promise(resolve => setTimeout(resolve, 10000)); // Wait 10 seconds
+            attempts++;
+          }
+        } else {
+          attempts++;
+          await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds on API error
+        }
+      }
+      
+      if (!assetReady) {
+        console.log('⚠️ Mux asset not ready yet, will retry transcription later');
+        updateStepStatus('transcription', 'processing', 50, 'Video still processing, transcription will be available later');
+        setTranscriptData(null);
+        return null; // Don't fail the upload, just skip transcription for now
+      }
+      
+      // Now call the Mux transcription API endpoint
       updateStepStatus('transcription', 'processing', 40, 'Requesting Mux transcription with speaker identification...');
       
       console.log('🎤 Calling transcription API for video:', currentVideoId);
