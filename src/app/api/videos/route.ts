@@ -28,9 +28,18 @@ export async function GET(request: NextRequest) {
         duration: video.duration || 0,
         views: video.view_count || 0,
         uploadDate: video.uploaded_at || video.created_at,
-        thumbnailUrl: (video.mux_playback_id && video.thumbnail_timestamp && video.thumbnail_method === 'timestamp') 
-          ? `https://image.mux.com/${video.mux_playback_id}/thumbnail.jpg?time=${video.thumbnail_timestamp}`
-          : video.thumbnail_path || `/api/videos/thumbnail/${video.id}`,
+        thumbnailUrl: (() => {
+          // If we have user timestamp preference and a valid Mux playback ID, use that
+          if (video.mux_playback_id && video.thumbnail_timestamp && video.thumbnail_method === 'timestamp') {
+            return `https://image.mux.com/${video.mux_playback_id}/thumbnail.jpg?time=${video.thumbnail_timestamp}`;
+          }
+          // If thumbnail_path looks like a valid Mux URL, use it
+          if (video.thumbnail_path && video.thumbnail_path.startsWith('https://image.mux.com/') && !video.thumbnail_path.includes('/videos/')) {
+            return video.thumbnail_path;
+          }
+          // Fallback to API endpoint
+          return `/api/videos/thumbnail/${video.id}`;
+        })(),
         category: video.category || 'General',
         status: video.is_processed ? 'ready' : 'processing',
         size: video.file_size?.toString() || '0'

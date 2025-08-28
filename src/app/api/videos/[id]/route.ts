@@ -127,13 +127,19 @@ export async function GET(
       views: video.views || 0,
       createdBy: video.created_by || 'Unknown',
       streamUrl: video.stream_url,
-      thumbnailUrl: video.thumbnail_path,
+      thumbnailUrl: (() => {
+        // If we have user timestamp preference and a valid Mux playback ID, use that
+        if (video.mux_playback_id && video.thumbnail_timestamp && video.thumbnail_method === 'timestamp') {
+          return `https://image.mux.com/${video.mux_playback_id}/thumbnail.jpg?time=${video.thumbnail_timestamp}`;
+        }
+        // If thumbnail_path looks like a valid Mux URL, use it
+        if (video.thumbnail_path && video.thumbnail_path.startsWith('https://image.mux.com/') && !video.thumbnail_path.includes('/videos/')) {
+          return video.thumbnail_path;
+        }
+        // Fallback to API endpoint
+        return `/api/videos/thumbnail/${video.id}`;
+      })(),
       thumbnail_path: video.thumbnail_path,
-      // Override thumbnail URL with user-selected timestamp if available
-      ...(video.mux_playback_id && video.thumbnail_timestamp && video.thumbnail_method === 'timestamp' ? {
-        thumbnailUrl: `https://image.mux.com/${video.mux_playback_id}/thumbnail.jpg?time=${video.thumbnail_timestamp}`,
-        thumbnail_path: `https://image.mux.com/${video.mux_playback_id}/thumbnail.jpg?time=${video.thumbnail_timestamp}`
-      } : {}),
       s3Key: video.s3_key,
       // Mux integration fields
       mux_asset_id: video.mux_asset_id,
