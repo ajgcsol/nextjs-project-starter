@@ -91,6 +91,8 @@ export function UploadFirstServerlessModal({
   const [selectedThumbnailTime, setSelectedThumbnailTime] = useState(10);
   const [thumbnailPreview, setThumbnailPreview] = useState<string | null>(null);
   const [customThumbnail, setCustomThumbnail] = useState<File | null>(null);
+  const [thumbnailAccepted, setThumbnailAccepted] = useState(false);
+  const [thumbnailStepWaiting, setThumbnailStepWaiting] = useState(false);
   
   // Upload results
   const [uploadResults, setUploadResults] = useState<{
@@ -271,6 +273,17 @@ export function UploadFirstServerlessModal({
       };
       reader.readAsDataURL(file);
     }
+  };
+
+  const handleAcceptThumbnail = () => {
+    setThumbnailAccepted(true);
+    setThumbnailStepWaiting(false);
+    console.log('🎯 Thumbnail accepted:', {
+      method: thumbnailMethod,
+      timestamp: selectedThumbnailTime,
+      hasCustom: !!customThumbnail,
+      hasPreview: !!thumbnailPreview
+    });
   };
 
   const startPublishProcess = async () => {
@@ -598,7 +611,7 @@ export function UploadFirstServerlessModal({
   };
 
   const processThumbnail = async (videoId?: string) => {
-    updateStepStatus('thumbnail', 'processing', 20, 'Video ready for thumbnail generation...');
+    updateStepStatus('thumbnail', 'processing', 20, 'Ready for thumbnail selection...');
     
     const currentVideoId = videoId || uploadResults.videoId;
     if (!currentVideoId) {
@@ -606,14 +619,20 @@ export function UploadFirstServerlessModal({
     }
     
     try {
-      // Pause here to let user choose thumbnail method if they want
-      updateStepStatus('thumbnail', 'processing', 30, 'Choose thumbnail method or wait 10 seconds for auto-generation');
+      // Reset thumbnail acceptance state
+      setThumbnailAccepted(false);
+      setThumbnailStepWaiting(true);
       
-      // Give user 10 seconds to make a choice, then proceed with their selection
-      await new Promise(resolve => setTimeout(resolve, 10000));
+      // Show thumbnail selection UI and wait for user to accept
+      updateStepStatus('thumbnail', 'processing', 30, 'Choose your thumbnail method below, then click "Accept Thumbnail" to continue');
+      
+      // Wait for user to accept thumbnail choice
+      while (!thumbnailAccepted) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
       
       if (thumbnailMethod === 'custom' && customThumbnail) {
-        updateStepStatus('thumbnail', 'processing', 50, 'Uploading custom thumbnail...');
+        updateStepStatus('thumbnail', 'processing', 60, 'Uploading custom thumbnail...');
         
         const formData = new FormData();
         formData.append('thumbnail', customThumbnail);
@@ -629,31 +648,136 @@ export function UploadFirstServerlessModal({
         
         updateStepStatus('thumbnail', 'processing', 90, 'Custom thumbnail uploaded successfully');
         
-      } else {
-        updateStepStatus('thumbnail', 'processing', 50, 'Generating thumbnail automatically via Mux...');
+      } else if (thumbnailMethod === 'timestamp' && thumbnailPreview) {
+        updateStepStatus('thumbnail', 'processing', 60, 'Using selected video frame as thumbnail...');
         
-        // Mux will automatically generate thumbnails via webhook when video is ready
-        updateStepStatus('thumbnail', 'processing', 90, 'Mux will generate thumbnail when video processing completes');
+        // Convert canvas data to blob and upload
+        const canvas = canvasRef.current;
+        if (canvas) {
+          canvas.toBlob(async (blob) => {
+            if (blob) {
+              const formData = new FormData();
+              formData.append('thumbnail', blob, 'thumbnail.jpg');
+              
+              const response = await fetch(`/api/videos/thumbnail/${currentVideoId}`, {
+                method: 'POST',
+                body: formData,
+              });
+              
+              if (!response.ok) {
+                console.warn('Failed to upload timestamp thumbnail, using Mux auto-generation');
+              }
+            }
+          }, 'image/jpeg', 0.8);
+        }
+        
+        updateStepStatus('thumbnail', 'processing', 90, 'Video frame thumbnail saved');
+        
+      } else {
+        updateStepStatus('thumbnail', 'processing', 60, 'Using Mux automatic thumbnail generation...');
+        updateStepStatus('thumbnail', 'processing', 90, 'Mux will generate optimal thumbnail automatically');
       }
       
-      await new Promise(resolve => setTimeout(resolve, 800));
+      await new Promise(resolve => setTimeout(resolve, 1000));
       
     } catch (error) {
       console.warn('Thumbnail setup failed, continuing with auto-generation:', error);
-      updateStepStatus('thumbnail', 'processing', 100, 'Will use Mux auto-generated thumbnail');
+      updateStepStatus('thumbnail', 'processing', 100, 'Using Mux auto-generated thumbnail as fallback');
       await new Promise(resolve => setTimeout(resolve, 300));
     }
   };
 
   const generateTranscription = async () => {
-    updateStepStatus('transcription', 'processing', 20, 'Analyzing audio track...');
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    updateStepStatus('transcription', 'processing', 20, 'Analyzing audio track for speech...');
     
-    updateStepStatus('transcription', 'processing', 50, 'Generating transcript with Mux AI...');
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    const currentVideoId = uploadResults.videoId;
+    if (!currentVideoId) {
+      throw new Error('Video ID not available for transcription');
+    }
     
-    updateStepStatus('transcription', 'processing', 80, 'Creating caption files...');
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    try {
+      // Call the Mux transcription API endpoint
+      updateStepStatus('transcription', 'processing', 40, 'Requesting Mux transcription with speaker identification...');
+      
+      const transcriptionResponse = await fetch('/api/videos/generate-transcription', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          videoId: currentVideoId,
+          enableSpeakerDiarization: true,
+          generateCaptions: true,
+          language: 'en'
+        }),
+      });
+      
+      if (!transcriptionResponse.ok) {
+        throw new Error('Failed to initiate transcription process');
+      }
+      
+      const transcriptionResult = await transcriptionResponse.json();
+      
+      updateStepStatus('transcription', 'processing', 60, 'Mux is processing audio and identifying speakers...');
+      
+      // Poll for transcription completion (in real implementation, use webhooks)
+      let attempts = 0;
+      const maxAttempts = 30; // 5 minutes timeout
+      
+      while (attempts < maxAttempts) {
+        await new Promise(resolve => setTimeout(resolve, 10000)); // Wait 10 seconds
+        
+        const statusResponse = await fetch(`/api/videos/transcription-status/${currentVideoId}`);
+        
+        if (statusResponse.ok) {
+          const statusResult = await statusResponse.json();
+          
+          if (statusResult.status === 'ready') {
+            updateStepStatus('transcription', 'processing', 90, `Transcript ready with ${statusResult.speakerCount || 'multiple'} speakers identified`);
+            
+            // Store transcript in database
+            if (statusResult.transcript) {
+              await fetch(`/api/videos/${currentVideoId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  transcriptText: statusResult.transcript,
+                  transcriptStatus: 'completed',
+                  captionUrl: statusResult.captionUrl,
+                  speakerCount: statusResult.speakerCount
+                }),
+              });
+            }
+            
+            break;
+          } else if (statusResult.status === 'processing') {
+            updateStepStatus('transcription', 'processing', 70, 'Still processing audio... Please wait');
+          } else if (statusResult.status === 'failed') {
+            throw new Error('Mux transcription failed');
+          }
+        }
+        
+        attempts++;
+      }
+      
+      if (attempts >= maxAttempts) {
+        console.warn('Transcription timed out, but may complete in background');
+        updateStepStatus('transcription', 'processing', 95, 'Transcription taking longer than expected but will complete in background');
+      }
+      
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+    } catch (error) {
+      console.warn('Transcription failed, video will still be available:', error);
+      updateStepStatus('transcription', 'processing', 100, 'Transcription failed, but video is still ready to view');
+      
+      // Update video record to indicate transcription failed
+      await fetch(`/api/videos/${currentVideoId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          transcriptStatus: 'failed'
+        }),
+      });
+    }
   };
 
   const getStepIcon = (step: ProcessingStep) => {
@@ -747,6 +871,7 @@ export function UploadFirstServerlessModal({
                   )}
                 </div>
               </div>
+
 
               {/* Responsive Device Preview */}
               <div className="bg-white rounded-xl p-4 sm:p-6 shadow-sm border border-gray-200">
@@ -850,70 +975,126 @@ export function UploadFirstServerlessModal({
                       </div>
                     )}
 
-                    {/* Show thumbnail selection UI only when thumbnail step is processing */}
-                    {step.id === 'thumbnail' && step.status === 'processing' && step.progress && step.progress >= 20 && step.progress < 50 && (
-                      <div className="mt-6 p-4 bg-white rounded-lg border border-blue-200">
-                        <h4 className="text-sm font-semibold mb-4 flex items-center gap-2">
-                          <Image className="h-4 w-4" />
-                          Thumbnail Options (Optional - Will auto-generate if skipped)
-                        </h4>
+                    {/* Enhanced thumbnail selection UI during processing */}
+                    {step.id === 'thumbnail' && step.status === 'processing' && thumbnailStepWaiting && (
+                      <div className="mt-6 p-6 bg-white rounded-xl border-2 border-blue-300 shadow-lg">
+                        <div className="flex items-center justify-between mb-6">
+                          <h4 className="text-lg font-semibold flex items-center gap-3">
+                            <Image className="h-5 w-5 text-blue-600" />
+                            Choose Your Thumbnail
+                          </h4>
+                          <Badge variant="secondary" className="bg-blue-100 text-blue-700">
+                            <Clock className="h-3 w-3 mr-1" />
+                            Waiting for Selection
+                          </Badge>
+                        </div>
                         
                         <Tabs value={thumbnailMethod} onValueChange={(value) => setThumbnailMethod(value as any)}>
-                          <TabsList className="grid w-full grid-cols-3 text-xs">
-                            <TabsTrigger value="auto" className="py-1 px-2">Auto Generate</TabsTrigger>
-                            <TabsTrigger value="timestamp" className="py-1 px-2">From Video</TabsTrigger>
-                            <TabsTrigger value="custom" className="py-1 px-2">Upload Custom</TabsTrigger>
+                          <TabsList className="grid w-full grid-cols-3 mb-6">
+                            <TabsTrigger value="auto">Auto Generate</TabsTrigger>
+                            <TabsTrigger value="timestamp">From Video</TabsTrigger>
+                            <TabsTrigger value="custom">Upload Custom</TabsTrigger>
                           </TabsList>
                           
-                          <TabsContent value="timestamp" className="mt-4 space-y-3">
-                            <div className="space-y-2">
-                              <Label className="text-xs font-medium">Select Timestamp</Label>
-                              <Slider
-                                value={[selectedThumbnailTime]}
-                                onValueChange={([value]) => setSelectedThumbnailTime(value)}
-                                max={videoDuration}
-                                step={1}
-                                className="w-full"
-                              />
-                              <div className="flex justify-between text-xs text-gray-500">
-                                <span>0:00</span>
-                                <span>{formatTime(selectedThumbnailTime)}</span>
-                                <span>{formatTime(videoDuration)}</span>
+                          <TabsContent value="timestamp" className="space-y-4">
+                            {/* Video scrubbing section */}
+                            <div className="space-y-3">
+                              <Label className="font-medium">Select Frame for Thumbnail</Label>
+                              
+                              {/* Mini video preview for scrubbing */}
+                              <div className="relative bg-black rounded-lg overflow-hidden aspect-video max-h-48">
+                                {videoPreviewUrl && (
+                                  <video
+                                    ref={videoRef}
+                                    src={videoPreviewUrl}
+                                    className="w-full h-full object-contain"
+                                    muted
+                                  />
+                                )}
+                              </div>
+                              
+                              {/* Scrubber */}
+                              <div className="space-y-2">
+                                <Slider
+                                  value={[selectedThumbnailTime]}
+                                  onValueChange={([value]) => {
+                                    setSelectedThumbnailTime(value);
+                                    // Update video time for preview
+                                    if (videoRef.current) {
+                                      videoRef.current.currentTime = value;
+                                    }
+                                  }}
+                                  max={videoDuration || 100}
+                                  step={0.5}
+                                  className="w-full"
+                                />
+                                <div className="flex justify-between text-sm text-gray-600">
+                                  <span>0:00</span>
+                                  <span className="font-medium text-blue-600 bg-blue-50 px-2 py-1 rounded">
+                                    {formatTime(selectedThumbnailTime)}
+                                  </span>
+                                  <span>{formatTime(videoDuration || 100)}</span>
+                                </div>
                               </div>
                             </div>
                           </TabsContent>
                           
-                          <TabsContent value="custom" className="mt-4 space-y-3">
-                            <div className="space-y-2">
-                              <Label className="text-xs font-medium">Upload Custom Thumbnail</Label>
+                          <TabsContent value="custom" className="space-y-4">
+                            <div className="space-y-3">
+                              <Label className="font-medium">Upload Custom Thumbnail</Label>
                               <Input
+                                ref={fileInputRef}
                                 type="file"
                                 accept="image/*"
                                 onChange={handleCustomThumbnailUpload}
-                                className="text-xs h-8"
+                                className="cursor-pointer"
                               />
+                              <p className="text-sm text-gray-500">
+                                Upload a custom image. Recommended: 1280x720 pixels (16:9 aspect ratio)
+                              </p>
                             </div>
                           </TabsContent>
                           
-                          <TabsContent value="auto" className="mt-4">
-                            <p className="text-xs text-gray-600 p-2 bg-blue-50 rounded">
-                              Mux will automatically generate a thumbnail from your video.
-                            </p>
+                          <TabsContent value="auto" className="space-y-4">
+                            <div className="p-4 bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg border border-blue-200">
+                              <p className="text-sm text-gray-700 flex items-center gap-2">
+                                <Zap className="h-4 w-4 text-blue-600" />
+                                Mux will automatically analyze your video and select the most engaging frame as your thumbnail using AI.
+                              </p>
+                            </div>
                           </TabsContent>
                         </Tabs>
                         
+                        {/* Thumbnail preview */}
                         {thumbnailPreview && (
-                          <div className="mt-3 space-y-2">
-                            <Label className="text-xs font-medium">Preview</Label>
-                            <div className="relative bg-gray-100 rounded overflow-hidden aspect-video max-h-20">
+                          <div className="mt-6 space-y-3">
+                            <Label className="font-medium">Thumbnail Preview</Label>
+                            <div className="relative bg-gray-100 rounded-lg overflow-hidden aspect-video max-h-32 border-2 border-gray-200">
                               <img
                                 src={thumbnailPreview}
                                 alt="Thumbnail preview"
                                 className="w-full h-full object-cover"
                               />
+                              <div className="absolute top-2 right-2">
+                                <Badge variant="default" className="bg-green-500 text-white text-xs">
+                                  <Eye className="h-3 w-3 mr-1" />
+                                  Preview
+                                </Badge>
+                              </div>
                             </div>
                           </div>
                         )}
+                        
+                        {/* Accept thumbnail button */}
+                        <div className="flex justify-end mt-6 pt-4 border-t border-gray-200">
+                          <Button 
+                            onClick={handleAcceptThumbnail} 
+                            className="bg-green-600 hover:bg-green-700 text-white px-6 py-2"
+                          >
+                            <CheckCircle className="h-4 w-4 mr-2" />
+                            Accept Thumbnail & Continue
+                          </Button>
+                        </div>
                       </div>
                     )}
                   </div>

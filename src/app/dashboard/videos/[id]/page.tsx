@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { ArrowLeft, Download, Share2, Edit, Trash2, Play, Clock, FileVideo, Globe, Lock, Users, AlertTriangle } from 'lucide-react';
 import { SmartVideoPlayer } from '@/components/SmartVideoPlayer';
 import { VideoEditModal } from '@/components/VideoEditModal';
+import { TranscriptDisplay } from '@/components/TranscriptDisplay';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { 
@@ -316,7 +317,7 @@ export default function VideoDetailPage() {
         {/* Main Content */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Video Player */}
-          <div className="lg:col-span-2">
+          <div className="lg:col-span-2 space-y-6">
             <div className="bg-white rounded-lg shadow overflow-hidden">
               <div className="p-6">
                 <SmartVideoPlayer
@@ -330,6 +331,22 @@ export default function VideoDetailPage() {
                 />
               </div>
             </div>
+
+            {/* Enhanced Transcript Section */}
+            <TranscriptDisplay
+              videoId={video.id}
+              transcriptText={video.transcript}
+              onTimestampClick={(timestamp) => {
+                // Find video element and seek to timestamp
+                const videoElement = document.querySelector('video');
+                if (videoElement) {
+                  videoElement.currentTime = timestamp;
+                }
+              }}
+              showSpeakerStats={true}
+              showSearch={true}
+              showDownload={true}
+            />
           </div>
 
           {/* Video Details */}

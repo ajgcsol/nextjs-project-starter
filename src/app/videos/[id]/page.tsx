@@ -26,6 +26,7 @@ import {
   SkipForward
 } from 'lucide-react';
 import Link from 'next/link';
+import { TranscriptDisplay } from '@/components/TranscriptDisplay';
 
 interface Video {
   id: string;
@@ -494,19 +495,21 @@ export default function VideoWatchPage() {
               </CardContent>
             </Card>
 
-            {/* Transcript Section */}
-            {video.transcriptUrl && (
-              <Card>
-                <CardContent className="p-6">
-                  <h3 className="font-semibold text-gray-900 mb-4">Transcript</h3>
-                  <div className="bg-gray-50 rounded-lg p-4 max-h-64 overflow-y-auto">
-                    <p className="text-sm text-gray-700">
-                      Transcript will be loaded here...
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
+            {/* Enhanced Transcript Section */}
+            <TranscriptDisplay
+              videoId={video.id}
+              transcriptText={video.transcriptUrl ? undefined : undefined} // Will fetch from API
+              onTimestampClick={(timestamp) => {
+                // Find video element and seek to timestamp
+                const videoElement = document.querySelector('video');
+                if (videoElement) {
+                  videoElement.currentTime = timestamp;
+                }
+              }}
+              showSpeakerStats={true}
+              showSearch={true}
+              showDownload={true}
+            />
           </div>
 
           {/* Sidebar */}
