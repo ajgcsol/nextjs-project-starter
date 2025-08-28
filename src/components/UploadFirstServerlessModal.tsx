@@ -631,7 +631,22 @@ export function UploadFirstServerlessModal({
         await new Promise(resolve => setTimeout(resolve, 100)); // Faster polling for better responsiveness
       }
       
+      console.log('🎯 Thumbnail accepted! Processing selection...', {
+        method: thumbnailMethod,
+        timestamp: selectedThumbnailTime,
+        hasCustom: !!customThumbnail,
+        hasPreview: !!thumbnailPreview
+      });
+      
+      console.log('🔍 Checking thumbnail method branch...', {
+        method: thumbnailMethod,
+        hasCustom: !!customThumbnail,
+        isTimestamp: thumbnailMethod === 'timestamp',
+        isAuto: thumbnailMethod === 'auto'
+      });
+      
       if (thumbnailMethod === 'custom' && customThumbnail) {
+        console.log('📁 Processing custom thumbnail upload...');
         updateStepStatus('thumbnail', 'processing', 60, 'Uploading custom thumbnail...');
         
         const formData = new FormData();
@@ -649,6 +664,7 @@ export function UploadFirstServerlessModal({
         updateStepStatus('thumbnail', 'processing', 100, 'Custom thumbnail uploaded successfully');
         
       } else if (thumbnailMethod === 'timestamp') {
+        console.log('⏰ Processing timestamp thumbnail selection...');
         updateStepStatus('thumbnail', 'processing', 60, 'Setting thumbnail timestamp for Mux...');
         
         // Use Mux thumbnail generation with specified timestamp
@@ -675,13 +691,16 @@ export function UploadFirstServerlessModal({
         }
         
       } else {
+        console.log('🤖 Processing auto thumbnail generation...');
         updateStepStatus('thumbnail', 'processing', 60, 'Using Mux automatic thumbnail generation...');
         updateStepStatus('thumbnail', 'processing', 90, 'Mux will generate optimal thumbnail automatically');
       }
       
       // Complete the thumbnail step
+      console.log('✅ Thumbnail step completing...');
       updateStepStatus('thumbnail', 'processing', 100, 'Thumbnail processing complete');
       await new Promise(resolve => setTimeout(resolve, 200));
+      console.log('✅ Thumbnail step finished!');
       
     } catch (error) {
       console.warn('Thumbnail setup failed, continuing with auto-generation:', error);
