@@ -648,38 +648,31 @@ export function UploadFirstServerlessModal({
         
         updateStepStatus('thumbnail', 'processing', 100, 'Custom thumbnail uploaded successfully');
         
-      } else if (thumbnailMethod === 'timestamp' && thumbnailPreview) {
-        updateStepStatus('thumbnail', 'processing', 60, 'Using selected video frame as thumbnail...');
+      } else if (thumbnailMethod === 'timestamp') {
+        updateStepStatus('thumbnail', 'processing', 60, 'Setting thumbnail timestamp for Mux...');
         
-        // Convert canvas data to blob and upload - fixed async handling
-        const canvas = canvasRef.current;
-        if (canvas) {
-          try {
-            const blob = await new Promise<Blob | null>((resolve) => {
-              canvas.toBlob(resolve, 'image/jpeg', 0.8);
-            });
-            
-            if (blob) {
-              const formData = new FormData();
-              formData.append('thumbnail', blob, 'thumbnail.jpg');
-              
-              const response = await fetch(`/api/videos/thumbnail/${currentVideoId}`, {
-                method: 'POST',
-                body: formData,
-              });
-              
-              if (!response.ok) {
-                console.warn('Failed to upload timestamp thumbnail, using Mux auto-generation');
-              } else {
-                console.log('✅ Timestamp thumbnail uploaded successfully');
-              }
-            }
-          } catch (error) {
-            console.warn('Failed to process timestamp thumbnail:', error);
+        // Use Mux thumbnail generation with specified timestamp
+        try {
+          const response = await fetch(`/api/videos/${currentVideoId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              thumbnailTimestamp: selectedThumbnailTime,
+              thumbnailMethod: 'timestamp'
+            }),
+          });
+          
+          if (response.ok) {
+            console.log('✅ Thumbnail timestamp set for Mux generation');
+            updateStepStatus('thumbnail', 'processing', 100, `Mux will generate thumbnail at ${Math.floor(selectedThumbnailTime)}s`);
+          } else {
+            console.warn('Failed to set timestamp, using Mux auto-generation');
+            updateStepStatus('thumbnail', 'processing', 100, 'Using Mux auto-generated thumbnail as fallback');
           }
+        } catch (error) {
+          console.warn('Failed to set timestamp:', error);
+          updateStepStatus('thumbnail', 'processing', 100, 'Using Mux auto-generated thumbnail as fallback');
         }
-        
-        updateStepStatus('thumbnail', 'processing', 100, 'Video frame thumbnail saved');
         
       } else {
         updateStepStatus('thumbnail', 'processing', 60, 'Using Mux automatic thumbnail generation...');
