@@ -1,4 +1,5 @@
 import Mux from '@mux/mux-node';
+import { createMuxSignedPlaybackFromEnv, MuxSignedPlayback } from './mux-signed-playback';
 
 export interface MuxAssetCreationResult {
   success: boolean;
@@ -9,6 +10,26 @@ export interface MuxAssetCreationResult {
   thumbnailUrl?: string;
   streamingUrl?: string;
   mp4Url?: string;
+  signedUrls?: {
+    streaming: string;
+    thumbnail: string;
+    thumbnails: {
+      small: string;
+      medium: string;
+      large: string;
+      variants: Array<{ time: number; url: string }>;
+    };
+    mp4: {
+      high: string;
+      medium: string;
+      low: string;
+    };
+    subtitles?: Array<{
+      track: any;
+      vttUrl: string;
+      srtUrl: string;
+    }>;
+  };
   duration?: number;
   aspectRatio?: string;
   audioTrackId?: string;
@@ -183,6 +204,19 @@ export class MuxVideoProcessor {
 
       console.log('📸 Generated Mux URLs:', { thumbnailUrl, streamingUrl, mp4Url });
 
+      // Generate signed URLs if using signed playback policy
+      let signedUrls;
+      if (options.playbackPolicy === 'signed') {
+        const signedPlayback = createMuxSignedPlaybackFromEnv();
+        if (signedPlayback) {
+          signedUrls = signedPlayback.getAllSignedUrls(playbackId, {
+            expirationTime: 7200, // 2 hours
+            includeSubtitles: true
+          });
+          console.log('🔐 Generated signed URLs for playback ID:', playbackId);
+        }
+      }
+
       return {
         success: true,
         assetId: asset.id,
@@ -190,6 +224,7 @@ export class MuxVideoProcessor {
         thumbnailUrl,
         streamingUrl,
         mp4Url,
+        signedUrls,
         duration: asset.duration,
         aspectRatio: asset.aspect_ratio,
         processingStatus: asset.status as 'preparing' | 'ready' | 'errored'
@@ -910,6 +945,100 @@ export class MuxVideoProcessor {
     } catch (error) {
       console.warn('Failed to count speakers:', error);
       return 1;
+    }
+  }
+
+  /**
+   * Generate signed URLs for an existing Mux asset
+   */
+  static async generateSignedUrls(
+    assetId: string, 
+    options?: {
+      expirationTime?: number;
+      includeSubtitles?: boolean;
+    }
+  ): Promise<{
+    success: boolean;
+    urls?: {
+      streaming: string;
+      thumbnail: string;
+      thumbnails: {
+        small: string;
+        medium: string;
+        large: string;
+        variants: Array<{ time: number; url: string }>;
+      };
+      mp4: {
+        high: string;
+        medium: string;
+        low: string;
+      };
+      subtitles?: Array<{
+        track: any;
+        vttUrl: string;
+        srtUrl: string;
+      }>;
+    };
+    error?: string;
+  }> {
+    try {
+      console.log('🔐 Generating signed URLs for asset:', assetId);
+      
+      const signedPlayback = createMuxSignedPlaybackFromEnv();
+      if (!signedPlayback) {
+        return {
+          success: false,
+          error: 'Signed playback not configured. Missing MUX_SIGNING_KEY_ID or MUX_SIGNING_KEY_PRIVATE environment variables.'
+        };
+      }
+
+      // Get asset details to find playback ID
+      const mux = this.getMuxClient();
+      const asset = await mux.video.assets.retrieve(assetId);
+      const playbackId = asset.playback_ids?.[0]?.id;
+
+      if (!playbackId) {
+        return {
+          success: false,
+          error: 'No playback ID found for asset'
+        };
+      }
+
+      // Get subtitle tracks if requested
+      let subtitleTracks;
+      if (options?.includeSubtitles) {
+        const textTracks = asset.tracks?.filter((track: any) => track.type === 'text') || [];
+        subtitleTracks = textTracks.map((track: any) => ({
+          id: track.id,
+          type: track.type,
+          text_type: track.text_type,
+          text_source: track.text_source,
+          language_code: track.language_code || 'en',
+          name: track.name || 'Subtitles',
+          status: track.status
+        }));
+      }
+
+      const signedUrls = signedPlayback.getAllSignedUrls(playbackId, {
+        expirationTime: options?.expirationTime || 7200,
+        includeSubtitles: options?.includeSubtitles,
+        subtitleTracks
+      });
+
+      console.log('✅ Generated signed URLs for asset:', assetId);
+
+      return {
+        success: true,
+        urls: signedUrls
+      };
+
+    } catch (error) {
+      console.error('❌ Failed to generate signed URLs:', error);
+      
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error generating signed URLs'
+      };
     }
   }
 

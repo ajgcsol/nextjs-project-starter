@@ -13,6 +13,8 @@ import { Separator } from "@/components/ui/separator";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 import { UploadFirstServerlessModal } from "./UploadFirstServerlessModal";
+import { UploadFirstMuxModal } from "./UploadFirstMuxModal";
+import { ProcessingQueue } from "./ProcessingQueue";
 
 interface ContentData {
   title: string;
@@ -92,6 +94,8 @@ export function ContentEditor({
   });
   const [hasUploadedVideo, setHasUploadedVideo] = useState(false);
   const [showServerlessPublishModal, setShowServerlessPublishModal] = useState(false);
+  const [showMuxUploadModal, setShowMuxUploadModal] = useState(false);
+  const [uploadMethod, setUploadMethod] = useState<'s3' | 'mux'>('mux');
 
   // Auto-save functionality
   useEffect(() => {
