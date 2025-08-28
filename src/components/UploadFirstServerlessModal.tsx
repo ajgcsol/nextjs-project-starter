@@ -590,7 +590,7 @@ export function UploadFirstServerlessModal({
     }
 
     updateStepStatus('database', 'processing', 80, 'Updating search index...');
-    await new Promise(resolve => setTimeout(resolve, 500));
+    await new Promise(resolve => setTimeout(resolve, 100));
 
     const result = await uploadResponse.json();
     return result.video;
@@ -598,16 +598,16 @@ export function UploadFirstServerlessModal({
 
   const processMuxVideo = async () => {
     updateStepStatus('mux', 'processing', 10, 'Creating Mux asset...');
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    await new Promise(resolve => setTimeout(resolve, 300));
     
     updateStepStatus('mux', 'processing', 30, 'Processing video for streaming...');
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    await new Promise(resolve => setTimeout(resolve, 500));
     
     updateStepStatus('mux', 'processing', 60, 'Generating multiple quality versions...');
-    await new Promise(resolve => setTimeout(resolve, 1500));
+    await new Promise(resolve => setTimeout(resolve, 400));
     
     updateStepStatus('mux', 'processing', 90, 'Finalizing video processing...');
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    await new Promise(resolve => setTimeout(resolve, 300));
   };
 
   const processThumbnail = async (videoId?: string) => {
@@ -626,9 +626,9 @@ export function UploadFirstServerlessModal({
       // Show thumbnail selection UI and wait for user to accept
       updateStepStatus('thumbnail', 'processing', 30, 'Choose your thumbnail method below, then click "Accept Thumbnail" to continue');
       
-      // Wait for user to accept thumbnail choice
+      // Wait for user to accept thumbnail choice - optimized polling
       while (!thumbnailAccepted) {
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise(resolve => setTimeout(resolve, 100)); // Faster polling for better responsiveness
       }
       
       if (thumbnailMethod === 'custom' && customThumbnail) {
@@ -678,7 +678,7 @@ export function UploadFirstServerlessModal({
         updateStepStatus('thumbnail', 'processing', 90, 'Mux will generate optimal thumbnail automatically');
       }
       
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await new Promise(resolve => setTimeout(resolve, 200));
       
     } catch (error) {
       console.warn('Thumbnail setup failed, continuing with auto-generation:', error);
@@ -723,7 +723,7 @@ export function UploadFirstServerlessModal({
       const maxAttempts = 30; // 5 minutes timeout
       
       while (attempts < maxAttempts) {
-        await new Promise(resolve => setTimeout(resolve, 10000)); // Wait 10 seconds
+        await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds for faster testing
         
         const statusResponse = await fetch(`/api/videos/transcription-status/${currentVideoId}`);
         
