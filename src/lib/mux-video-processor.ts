@@ -111,13 +111,22 @@ export class MuxVideoProcessor {
       
       // Enable automatic caption generation if requested
       // This MUST be in the input object, not at the root level
+      console.log('🔍 Checking subtitle generation conditions:', {
+        generateCaptions: options.generateCaptions,
+        generateSubtitles: options.generateSubtitles,
+        conditionMet: !!(options.generateCaptions || options.generateSubtitles)
+      });
+      
       if (options.generateCaptions || options.generateSubtitles) {
         inputSettings.generated_subtitles = [{
           language_code: options.captionLanguage || 'en',
           name: 'English (Auto-generated)',
           passthrough: `${videoId}_subtitles`
         }];
-        console.log('📝 Enabled automatic caption generation for language:', options.captionLanguage || 'en');
+        console.log('📝 ✅ Enabled automatic caption generation for language:', options.captionLanguage || 'en');
+        console.log('📝 Input settings with subtitles:', JSON.stringify(inputSettings, null, 2));
+      } else {
+        console.warn('📝 ❌ Subtitle generation NOT enabled - conditions not met');
       }
 
       const assetParams: any = {
@@ -898,6 +907,7 @@ export class MuxVideoProcessor {
       generateThumbnails: true,
       enhanceAudio: true,
       generateCaptions: true,
+      generateSubtitles: true, // Enable subtitle generation for AWS Transcribe fallback
       captionLanguage: 'en',
       normalizeAudio: true,
       playbackPolicy: 'public',
@@ -915,6 +925,7 @@ export class MuxVideoProcessor {
       generateThumbnails: true,
       enhanceAudio: true,
       generateCaptions: true,
+      generateSubtitles: true, // Enable subtitle generation for AWS Transcribe fallback
       captionLanguage: 'en',
       normalizeAudio: true,
       playbackPolicy: 'public',
