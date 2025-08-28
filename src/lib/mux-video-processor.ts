@@ -149,6 +149,7 @@ export class MuxVideoProcessor {
       }
 
       console.log('📤 Sending Mux asset creation request with parameters:', JSON.stringify(assetParams, null, 2));
+      console.log('🔬 Debug: Input settings being sent:', JSON.stringify(inputSettings, null, 2));
       
       const asset = await mux.video.assets.create(assetParams);
 
@@ -160,10 +161,12 @@ export class MuxVideoProcessor {
         tracks: asset.tracks?.length || 0
       });
       
+      console.log('🔬 Debug: Full asset response inputs:', JSON.stringify(asset.inputs, null, 2));
+      
       if (asset.inputs && asset.inputs[0] && asset.inputs[0].generated_subtitles) {
-        console.log('📝 Subtitle generation confirmed in response:', asset.inputs[0].generated_subtitles);
+        console.log('📝 ✅ Subtitle generation confirmed in response:', asset.inputs[0].generated_subtitles);
       } else {
-        console.warn('⚠️ No subtitle generation found in Mux response');
+        console.warn('📝 ❌ No subtitle generation found in Mux response - this explains the transcription issue!');
       }
 
       // Get playback ID for streaming and thumbnails
