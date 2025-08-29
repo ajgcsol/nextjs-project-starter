@@ -408,6 +408,13 @@ export async function POST(request: NextRequest) {
         let muxFieldsUsed = false;
         let fallbackUsed = false;
         
+        // Generate subtitle URLs if we have a playback ID
+        let subtitleUrls = null;
+        if (muxPlaybackId) {
+          subtitleUrls = SimpleMuxProcessor.getSubtitleUrls(muxPlaybackId, 'en');
+          console.log('🎬 Generated subtitle URLs:', subtitleUrls);
+        }
+        
         if (muxAssetId) {
           console.log('🔍 Checking for existing video with Mux Asset ID:', muxAssetId);
           const existingVideo = await VideoDB.findByMuxAssetId(muxAssetId);
@@ -438,20 +445,20 @@ export async function POST(request: NextRequest) {
               mux_playback_id: muxPlaybackId || undefined,
               mux_upload_id: undefined, // Not used in S3 upload flow
               mux_status: muxStatus || 'pending',
-              mux_thumbnail_url: muxThumbnailUrl || undefined,
+              mux_thumbnail_url: muxThumbnailUrl || finalThumbnailPath || undefined,
               mux_streaming_url: muxStreamingUrl || undefined,
               mux_mp4_url: muxMp4Url || undefined,
-              mux_duration_seconds: undefined, // Will be updated by Mux webhook
-              mux_aspect_ratio: undefined, // Will be updated by Mux webhook
+              mux_duration_seconds: muxDuration || undefined,
+              mux_aspect_ratio: muxAspectRatio || undefined,
               mux_created_at: muxAssetId ? new Date() : undefined,
-              mux_ready_at: undefined, // Will be updated when Mux processing completes
-              audio_enhanced: !!muxAssetId,
-              audio_enhancement_job_id: undefined, // Will be set when audio enhancement starts
-              transcription_job_id: undefined, // Will be set when transcription starts
-              captions_webvtt_url: undefined, // Will be set when captions are generated
-              captions_srt_url: undefined, // Will be set when captions are generated
-              transcript_text: undefined, // Will be set when transcription completes
-              transcript_confidence: undefined // Will be set when transcription completes
+              mux_ready_at: muxStatus === 'ready' ? new Date() : undefined,
+              audio_enhanced: false, // No more audio enhancement with clean Mux
+              audio_enhancement_job_id: undefined, // Deprecated
+              transcription_job_id: undefined, // Deprecated
+              captions_webvtt_url: subtitleUrls?.vtt || undefined,
+              captions_srt_url: subtitleUrls?.srt || undefined,
+              transcript_text: undefined, // Will be updated when Mux subtitles are ready
+              transcript_confidence: undefined // Not applicable for Mux subtitles
             });
             muxFieldsUsed = !!savedVideo.mux_asset_id;
             fallbackUsed = !savedVideo.mux_asset_id;

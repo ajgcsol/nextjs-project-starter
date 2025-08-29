@@ -602,71 +602,40 @@ export function UploadFirstServerlessModal({
   };
 
   const generateTranscription = async () => {
-    updateStepStatus('transcription', 'processing', 20, 'Starting enhanced transcription process...');
+    updateStepStatus('transcription', 'processing', 20, 'Mux subtitle generation in progress...');
     
     try {
-      // Use enhanced subtitle generation with all AI features
-      const response = await fetch('/api/videos/enhanced-subtitles', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          videoId: uploadResults.videoId,
-          enableSpeakerDiarization: true,
-          maxSpeakers: 4,
-          language: 'en-US',
-          enableEntityExtraction: true,
-          enableAIEnhancement: true
-        })
-      });
+      // Mux handles subtitle generation automatically
+      // We just need to wait for it to complete (can take up to 1 week according to Mux docs)
+      updateStepStatus('transcription', 'processing', 50, 'Mux is generating subtitles...');
       
-      if (response.ok) {
-        const result = await response.json();
-        console.log('🚀 Enhanced transcription completed:', result);
-        
-        if (result.status === 'ready') {
-          updateStepStatus('transcription', 'completed', 100, 
-            `✨ Enhanced transcription complete! Method: ${result.transcriptionMethod || 'AI'}`);
-          
-          // Show enhanced features if available
-          if (result.entities) {
-            console.log('🧠 AI Enhancement:', {
-              entities: result.entities.entityCount,
-              topics: result.entities.keyTopics?.length || 0,
-              sentiment: result.entities.sentiment
-            });
-          }
-        } else if (result.status === 'processing') {
-          const method = result.transcriptionMethod || result.method || 'Enhanced AI';
-          updateStepStatus('transcription', 'processing', 80, 
-            `🎤 ${method} transcription with AI enhancement in progress...`);
-        } else {
-          updateStepStatus('transcription', 'processing', 90, 
-            '🚀 Enhanced transcription queued with speaker diarization & AI analysis');
-        }
-      } else {
-        // Fallback to standard subtitle generation if enhanced fails
-        console.log('⚠️ Enhanced transcription failed, trying fallback...');
-        const fallbackResponse = await fetch('/api/videos/generate-subtitles', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ videoId: uploadResults.videoId })
+      // Check if subtitles are already available
+      const checkResponse = await fetch(`/api/videos/${uploadResults.videoId}`);
+      
+      if (checkResponse.ok) {
+        const videoData = await checkResponse.json();
+        console.log('🎬 Checking subtitle status:', {
+          hasWebVTT: !!videoData.video?.captions_webvtt_url,
+          hasSRT: !!videoData.video?.captions_srt_url,
+          muxStatus: videoData.video?.mux_status
         });
         
-        if (fallbackResponse.ok) {
-          const fallbackResult = await fallbackResponse.json();
-          console.log('✅ Fallback subtitle generation initiated:', fallbackResult);
-          updateStepStatus('transcription', 'processing', 85, 
-            `📝 Fallback transcription: ${fallbackResult.method || 'Standard'}`);
+        if (videoData.video?.captions_webvtt_url || videoData.video?.captions_srt_url) {
+          updateStepStatus('transcription', 'completed', 100, 
+            '✅ Mux subtitles ready!');
         } else {
-          updateStepStatus('transcription', 'processing', 100, 
-            '📝 Transcription will process in background');
+          updateStepStatus('transcription', 'processing', 90, 
+            '🎬 Mux subtitle generation queued (may take up to 24 hours)');
         }
+      } else {
+        updateStepStatus('transcription', 'processing', 90, 
+          '🎬 Mux subtitle generation in progress');
       }
     } catch (error) {
-      console.error('Enhanced transcription error:', error);
-      console.log('⚠️ Enhanced transcription failed, using background processing');
+      console.error('Subtitle check error:', error);
+      console.log('⚠️ Could not check subtitle status');
       updateStepStatus('transcription', 'processing', 100, 
-        '📝 Transcription processing in background with available services');
+        '📝 Mux subtitles will be generated automatically');
     }
   };
 
