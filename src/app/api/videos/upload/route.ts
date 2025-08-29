@@ -661,6 +661,55 @@ export async function POST(request: NextRequest) {
         });
       } catch (dbError) {
         console.error('🎬 Database save failed:', dbError);
+        console.error('🔍 Database error details:', {
+          message: dbError instanceof Error ? dbError.message : 'Unknown error',
+          code: (dbError as any)?.code,
+          constraint: (dbError as any)?.constraint,
+          detail: (dbError as any)?.detail
+        });
+        
+        // Check if this is a duplicate key constraint violation
+        if (dbError && (dbError as any).code === '23505' && (dbError as any).constraint === 'videos_pkey') {
+          console.log('⚠️ Duplicate key detected in upload endpoint, attempting recovery...');
+          
+          // Try to extract the video ID from the error or generate a new one
+          const duplicateId = jsonFileId; // We know this is the duplicate ID
+          try {
+            const existingVideo = await VideoDB.findById(duplicateId);
+            if (existingVideo) {
+              console.log('✅ Found existing video, returning it instead of failing');
+              
+              // Format the video for frontend response
+              const formattedVideo = {
+                id: existingVideo.id,
+                title: existingVideo.title,
+                description: existingVideo.description || '',
+                category: 'General',
+                tags: [],
+                visibility: existingVideo.is_public ? 'public' : 'private',
+                originalFilename: existingVideo.filename,
+                storedFilename: existingVideo.filename,
+                thumbnailPath: existingVideo.thumbnail_path,
+                size: existingVideo.file_size,
+                duration: existingVideo.duration || 0,
+                uploadedAt: existingVideo.created_at,
+                status: existingVideo.is_processed ? 'ready' : 'processing',
+                createdBy: 'Current User',
+                metadata: {
+                  directUrl: existingVideo.file_path
+                }
+              };
+              
+              return NextResponse.json({
+                success: true,
+                video: formattedVideo,
+                message: 'Video already exists - returning existing record'
+              });
+            }
+          } catch (fetchError) {
+            console.error('❌ Failed to fetch existing video during duplicate recovery:', fetchError);
+          }
+        }
         
         await videoMonitor.logDatabaseEvent('video_insert', false, {
           error: dbError instanceof Error ? dbError.message : 'Unknown error'
