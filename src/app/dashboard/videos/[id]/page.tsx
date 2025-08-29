@@ -328,6 +328,15 @@ export default function VideoDetailPage() {
                   s3Key={video.s3_key}
                   filePath={video.streamUrl}
                   className="w-full aspect-video"
+                  captionsUrl={video.captions_url}
+                  captionsStatus={video.captions_status}
+                  transcriptText={video.transcript_text}
+                  captions={video.captions_webvtt_url ? [{
+                    label: "Enhanced AI Transcription",
+                    src: video.captions_webvtt_url,
+                    srcLang: "en",
+                    default: true
+                  }] : undefined}
                 />
               </div>
             </div>

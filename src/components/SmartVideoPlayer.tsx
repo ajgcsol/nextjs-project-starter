@@ -32,6 +32,15 @@ interface SmartVideoPlayerProps {
   autoplay?: boolean;
   muted?: boolean;
   showControls?: boolean;
+  captions?: {
+    label: string;
+    src: string;
+    srcLang: string;
+    default?: boolean;
+  }[];
+  captionsUrl?: string;
+  captionsStatus?: string;
+  transcriptText?: string;
   onTimeUpdate?: (currentTime: number, duration: number) => void;
   onPlay?: () => void;
   onPause?: () => void;
@@ -49,6 +58,10 @@ export function SmartVideoPlayer({
   autoplay = false,
   muted = false,
   showControls = true,
+  captions,
+  captionsUrl,
+  captionsStatus,
+  transcriptText,
   onTimeUpdate,
   onPlay,
   onPause,
@@ -458,6 +471,27 @@ export function SmartVideoPlayer({
         className="w-full h-full object-contain bg-black"
         onClick={togglePlayPause}
       >
+        {/* Enhanced subtitle tracks */}
+        {captions && captions.map((caption, index) => (
+          <track
+            key={index}
+            kind="subtitles"
+            src={caption.src}
+            srcLang={caption.srcLang}
+            label={caption.label}
+            default={caption.default}
+          />
+        ))}
+        {/* Fallback caption from enhanced transcription */}
+        {captionsUrl && (
+          <track
+            kind="subtitles"
+            src={captionsUrl}
+            srcLang="en"
+            label="Enhanced AI Transcription"
+            default={true}
+          />
+        )}
         Your browser does not support the video tag.
       </video>
 
@@ -627,26 +661,27 @@ export function SmartVideoPlayer({
                 </Button>
 
                 {showSettings && (
-                  <div className="absolute bottom-full right-0 mb-3 bg-black bg-opacity-95 backdrop-blur-md rounded-xl p-4 min-w-[200px] max-h-[70vh] overflow-y-auto border border-white border-opacity-20 z-50">
-                    <div className="space-y-4">
-                      <div>
-                        <p className="text-white text-sm font-medium mb-2">Playback Speed</p>
-                        <div className="space-y-1">
-                          {[0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2].map(rate => (
-                            <button
-                              key={rate}
-                              onClick={() => changePlaybackRate(rate)}
-                              className={cn(
-                                "block w-full text-left px-3 py-2 rounded-lg text-sm transition-colors",
-                                playbackRate === rate
-                                  ? "bg-white bg-opacity-20 text-white"
-                                  : "text-gray-300 hover:bg-white hover:bg-opacity-10"
-                              )}
-                            >
-                              {rate}x {rate === 1 && "(Normal)"}
-                            </button>
-                          ))}
-                        </div>
+                  <div className="absolute bottom-full right-0 mb-3 bg-black/90 backdrop-blur-sm rounded-lg p-2 min-w-[140px] border border-white/10 z-50 shadow-2xl">
+                    <div className="space-y-1">
+                      <div className="px-2 py-1">
+                        <p className="text-white/70 text-xs font-medium">Speed</p>
+                      </div>
+                      <div className="grid grid-cols-4 gap-1">
+                        {[0.5, 0.75, 1, 1.25, 1.5, 1.75, 2].map(rate => (
+                          <button
+                            key={rate}
+                            onClick={() => changePlaybackRate(rate)}
+                            className={cn(
+                              "px-2 py-1.5 rounded text-xs transition-all duration-150 font-medium",
+                              playbackRate === rate
+                                ? "bg-white text-black"
+                                : "text-white/80 hover:bg-white/10 hover:text-white"
+                            )}
+                          >
+                            {rate}x
+                            {rate === 1 && <span className="text-[10px] opacity-60 block">Normal</span>}
+                          </button>
+                        ))}
                       </div>
                     </div>
                   </div>
