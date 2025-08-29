@@ -855,6 +855,68 @@ export function UploadFirstServerlessModal({
                 </div>
               </div>
 
+              {/* AI Transcription Settings */}
+              <div className="bg-gradient-to-br from-blue-50 to-purple-50 rounded-lg p-4 space-y-4 border border-blue-100">
+                <h4 className="text-sm sm:text-base font-medium flex items-center gap-2 text-blue-900">
+                  <Mic className="h-4 w-4" />
+                  ✨ AI-Enhanced Transcription Settings
+                </h4>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs font-medium text-gray-700">Speaker Detection</Label>
+                      <Badge variant="default" className="bg-green-500 text-xs">AI-Powered</Badge>
+                    </div>
+                    <div className="text-xs text-gray-600 bg-white p-2 rounded">
+                      Automatically identifies and separates different speakers in your video
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs font-medium text-gray-700">Max Speakers</Label>
+                      <span className="text-xs font-semibold text-blue-600">4 speakers</span>
+                    </div>
+                    <div className="text-xs text-gray-600 bg-white p-2 rounded">
+                      System will detect up to 4 different speakers automatically
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs font-medium text-gray-700">Entity Extraction</Label>
+                      <Badge variant="default" className="bg-purple-500 text-xs">AI Analysis</Badge>
+                    </div>
+                    <div className="text-xs text-gray-600 bg-white p-2 rounded">
+                      Identifies people, organizations, topics, and key concepts
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs font-medium text-gray-700">Content Analysis</Label>
+                      <Badge variant="default" className="bg-orange-500 text-xs">Smart Summary</Badge>
+                    </div>
+                    <div className="text-xs text-gray-600 bg-white p-2 rounded">
+                      Generates summaries, topics, and sentiment analysis
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-blue-900 text-white p-3 rounded-lg text-xs">
+                  <div className="flex items-start gap-2">
+                    <Zap className="h-4 w-4 text-yellow-400 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <div className="font-medium mb-1">Enhanced Transcription Active</div>
+                      <div className="text-blue-100">
+                        Your video will be processed with AWS Transcribe, Whisper AI, and advanced content analysis for the most accurate results.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               {/* Action Buttons */}
               <div className="flex flex-col sm:flex-row justify-end gap-2 sm:gap-3 pt-4 border-t">
                 <Button variant="outline" onClick={onClose} className="text-sm">
