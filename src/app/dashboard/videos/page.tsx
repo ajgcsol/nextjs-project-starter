@@ -229,6 +229,40 @@ export default function VideoManagementPage() {
     router.push(`/dashboard/videos/${videoId}`);
   };
 
+  const handleProcessStatus = async () => {
+    try {
+      setIsLoadingVideos(true);
+      console.log('🔄 Processing video status updates...');
+      
+      const response = await fetch('/api/videos/process-status', {
+        method: 'POST',
+      });
+      
+      const data = await response.json();
+      
+      if (response.ok) {
+        console.log('✅ Status processing completed:', data);
+        
+        // Refresh the video list to show updated statuses
+        await fetchVideos();
+        
+        if (data.processed > 0) {
+          alert(`Successfully updated ${data.processed} video(s) from processing to ready status.`);
+        } else {
+          alert('No videos needed status updates.');
+        }
+      } else {
+        console.error('❌ Status processing failed:', data);
+        alert('Failed to process video statuses. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error processing video statuses:', error);
+      alert('Error processing video statuses. Please try again.');
+    } finally {
+      setIsLoadingVideos(false);
+    }
+  };
+
   const handleGenerateThumbnails = async () => {
     try {
       setIsLoadingVideos(true);
@@ -282,12 +316,16 @@ export default function VideoManagementPage() {
   // Filter videos by status - handle both API response formats
   const publishedVideos = sortedVideos.filter(video => 
     video.status === 'ready' || 
-    (video.status as any) === 'published' || 
-    (video.visibility === 'public' && video.status !== 'draft')
+    (video.status as any) === 'published'
   );
   const draftVideos = sortedVideos.filter(video => 
-    video.status === 'draft' || 
+    video.status === 'draft'
+  );
+  const processingVideos = sortedVideos.filter(video => 
     video.status === 'processing'
+  );
+  const failedVideos = sortedVideos.filter(video => 
+    video.status === 'failed'
   );
 
   const formatDuration = (seconds: number) => {
@@ -386,8 +424,9 @@ export default function VideoManagementPage() {
 
           <Tabs defaultValue="library" className="space-y-6">
             <TabsList>
-              <TabsTrigger value="library">Published</TabsTrigger>
-              <TabsTrigger value="drafts">Drafts</TabsTrigger>
+              <TabsTrigger value="library">Published ({publishedVideos.length})</TabsTrigger>
+              <TabsTrigger value="queue">Queue ({processingVideos.length})</TabsTrigger>
+              <TabsTrigger value="drafts">Drafts ({draftVideos.length})</TabsTrigger>
               <TabsTrigger value="upload">Upload Video</TabsTrigger>
               <TabsTrigger value="analytics">Analytics</TabsTrigger>
             </TabsList>
@@ -657,6 +696,118 @@ export default function VideoManagementPage() {
               </div>
             </TabsContent>
 
+            <TabsContent value="queue" className="space-y-6">
+              {/* Processing Queue Header */}
+              <Card className="border-0 shadow-sm bg-blue-50">
+                <CardContent className="pt-6">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-blue-100 rounded-lg">
+                        <RefreshCw className="h-5 w-5 text-blue-600 animate-spin" />
+                      </div>
+                      <div>
+                        <h3 className="font-semibold text-blue-900">Processing Queue</h3>
+                        <p className="text-sm text-blue-700">Videos currently being processed</p>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={handleProcessStatus}
+                        className="border-green-200 text-green-700 hover:bg-green-100"
+                      >
+                        <Upload className="h-4 w-4 mr-2" />
+                        Process Ready Videos
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={fetchVideos}
+                        className="border-blue-200 text-blue-700 hover:bg-blue-100"
+                      >
+                        <RefreshCw className="h-4 w-4 mr-2" />
+                        Refresh
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Processing Video Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {processingVideos.length === 0 ? (
+                  <div className="col-span-full text-center py-12">
+                    <Clock className="h-12 w-12 text-slate-400 mx-auto mb-4" />
+                    <h3 className="text-lg font-medium text-slate-900 mb-2">No Videos Processing</h3>
+                    <p className="text-slate-600">All videos have been processed.</p>
+                  </div>
+                ) : (
+                  processingVideos.map(video => (
+                    <Card key={video.id} className="border-0 shadow-sm hover:shadow-md transition-shadow">
+                      <CardHeader className="pb-4">
+                        <div className="aspect-video bg-slate-100 rounded-lg overflow-hidden mb-4 relative group">
+                          <img
+                            src={`/api/videos/thumbnail/${video.id}`}
+                            alt={`${video.title} thumbnail`}
+                            className="w-full h-full object-cover"
+                            onError={(e) => {
+                              const img = e.target as HTMLImageElement;
+                              img.style.display = 'none';
+                              const placeholder = img.nextElementSibling as HTMLElement;
+                              if (placeholder) placeholder.style.display = 'flex';
+                            }}
+                          />
+                          <div className="absolute inset-0 flex items-center justify-center bg-slate-200" style={{display: 'none'}}>
+                            <Video className="h-12 w-12 text-slate-400" />
+                          </div>
+                          {/* Processing indicator */}
+                          <div className="absolute top-2 left-2">
+                            <Badge variant="secondary" className="bg-blue-100 text-blue-800">
+                              <RefreshCw className="h-3 w-3 mr-1 animate-spin" />
+                              Processing
+                            </Badge>
+                          </div>
+                          {/* Processing progress overlay */}
+                          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-3">
+                            <div className="text-white text-xs mb-1">Processing video...</div>
+                            <Progress value={65} className="h-1" />
+                          </div>
+                        </div>
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <CardTitle className="text-lg line-clamp-2">{video.title}</CardTitle>
+                            <CardDescription className="mt-1 line-clamp-2">
+                              {video.description}
+                            </CardDescription>
+                          </div>
+                        </div>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-3">
+                          <div className="flex items-center gap-4 text-sm text-slate-600">
+                            <span className="flex items-center gap-1">
+                              <Clock className="h-4 w-4" />
+                              {formatDuration(video.duration)}
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <Calendar className="h-4 w-4" />
+                              {new Date(video.uploadDate).toLocaleDateString()}
+                            </span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm text-slate-600">
+                              Uploaded by {video.createdBy}
+                            </span>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))
+                )}
+              </div>
+            </TabsContent>
+
             <TabsContent value="drafts" className="space-y-6">
               {/* Search and Filters */}
               <Card className="border-0 shadow-sm">
@@ -753,20 +904,34 @@ export default function VideoManagementPage() {
                           </div>
                           <div className="flex justify-between items-center pt-2">
                             <span className="text-sm text-slate-500">
-                              Created: {new Date(video.uploadDate).toLocaleDateString()}
+                              Created by {video.createdBy}
                             </span>
                             <div className="flex gap-1">
-                              <Button variant="ghost" size="sm" className="h-8">
-                                <Edit className="h-4 w-4 mr-1" />
-                                Edit
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                className="h-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                                onClick={() => handlePlayVideo(video.id)}
+                              >
+                                <Eye className="h-4 w-4 mr-1" />
+                                Preview
                               </Button>
                               <Button 
                                 variant="ghost" 
                                 size="sm" 
-                                className="h-8"
+                                className="h-8 text-slate-600 hover:text-slate-700 hover:bg-slate-50"
+                                onClick={() => router.push(`/dashboard/editor?type=video&videoId=${video.id}`)}
+                              >
+                                <Edit className="h-4 w-4 mr-1" />
+                                Edit
+                              </Button>
+                              <Button 
+                                variant="default" 
+                                size="sm" 
+                                className="h-8 bg-green-600 hover:bg-green-700 text-white"
                                 onClick={() => handlePublishVideo(video.id)}
                               >
-                                <Eye className="h-4 w-4 mr-1" />
+                                <Upload className="h-4 w-4 mr-1" />
                                 Publish
                               </Button>
                             </div>

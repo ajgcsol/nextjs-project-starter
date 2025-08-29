@@ -30,11 +30,8 @@ import {
   Settings,
   Smartphone,
   Tablet,
-  Monitor,
-  Users,
-  UserCheck
+  Monitor
 } from 'lucide-react';
-import { SpeakerIdentification } from './SpeakerIdentification';
 
 interface UploadFirstServerlessModalProps {
   isOpen: boolean;
@@ -75,7 +72,6 @@ export function UploadFirstServerlessModal({
   contentData
 }: UploadFirstServerlessModalProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const scrubVideoRef = useRef<HTMLVideoElement>(null); // Separate ref for thumbnail scrubbing
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
@@ -95,11 +91,6 @@ export function UploadFirstServerlessModal({
   const [selectedThumbnailTime, setSelectedThumbnailTime] = useState(10);
   const [thumbnailPreview, setThumbnailPreview] = useState<string | null>(null);
   const [customThumbnail, setCustomThumbnail] = useState<File | null>(null);
-  const [thumbnailAccepted, setThumbnailAccepted] = useState(false);
-  const [thumbnailStepWaiting, setThumbnailStepWaiting] = useState(false);
-  
-  // Promise-based thumbnail acceptance
-  const [thumbnailAcceptanceResolver, setThumbnailAcceptanceResolver] = useState<(() => void) | null>(null);
   
   // Upload results
   const [uploadResults, setUploadResults] = useState<{
@@ -107,135 +98,81 @@ export function UploadFirstServerlessModal({
     publicUrl?: string;
     videoId?: string;
   }>({});
-  
-  // Transcript and speaker data
-  const [transcriptData, setTranscriptData] = useState<{
-    text: string;
-    speakerCount: number;
-    captionUrl: string | null;
-    speakers?: Array<{
-      speaker: string;
-      startTime: number;
-      endTime: number;
-      text: string;
-      confidence: number;
-    }>;
-  } | null>(null);
-  const [showSpeakerIdentification, setShowSpeakerIdentification] = useState(false);
 
   // Processing steps - Upload first workflow
-  const [steps, setSteps] = useState<ProcessingStep[]>(() => {
-    const baseSteps = [
-      {
-        id: 'validate',
-        title: 'Validating Content',
-        description: 'Checking video file and metadata',
-        icon: <CheckCircle className="h-4 w-4 sm:h-5 sm:w-5" />,
-        status: 'pending' as const
-      }
-    ];
-
-    // Add upload step only if no existing S3 data
-    const hasExistingVideo = contentData.metadata.s3Key && contentData.metadata.publicUrl;
-    if (!hasExistingVideo) {
-      baseSteps.push({
-        id: 'upload',
-        title: 'Upload Video',
-        description: 'Uploading video file to cloud storage',
-        icon: <UploadCloud className="h-4 w-4 sm:h-5 sm:w-5" />,
-        status: 'pending' as const
-      });
+  const [steps, setSteps] = useState<ProcessingStep[]>([
+    {
+      id: 'validate',
+      title: 'Validating Content',
+      description: 'Checking video file and metadata',
+      icon: <CheckCircle className="h-4 w-4 sm:h-5 sm:w-5" />,
+      status: 'pending'
+    },
+    {
+      id: 'upload',
+      title: 'Uploading Video',
+      description: 'Uploading to cloud storage',
+      icon: <Upload className="h-4 w-4 sm:h-5 sm:w-5" />,
+      status: 'pending'
+    },
+    {
+      id: 'database',
+      title: 'Creating Video Record',
+      description: 'Saving video metadata to database',
+      icon: <Database className="h-4 w-4 sm:h-5 sm:w-5" />,
+      status: 'pending'
+    },
+    {
+      id: 'mux',
+      title: 'Video Processing',
+      description: 'Optimizing for streaming with Mux',
+      icon: <Video className="h-4 w-4 sm:h-5 sm:w-5" />,
+      status: 'pending'
+    },
+    {
+      id: 'thumbnail',
+      title: 'Processing Thumbnail',
+      description: 'Generating or uploading thumbnail',
+      icon: <Image className="h-4 w-4 sm:h-5 sm:w-5" />,
+      status: 'pending'
+    },
+    {
+      id: 'transcription',
+      title: '✨ AI-Enhanced Transcription',
+      description: 'Speaker diarization, entity extraction & AI analysis',
+      icon: <Mic className="h-4 w-4 sm:h-5 sm:w-5" />,
+      status: 'pending'
+    },
+    {
+      id: 'complete',
+      title: 'Publishing Complete',
+      description: 'Video is now live',
+      icon: <Zap className="h-4 w-4 sm:h-5 sm:w-5" />,
+      status: 'pending'
     }
-
-    baseSteps.push(
-      {
-        id: 'database',
-        title: hasExistingVideo ? 'Update Metadata' : 'Create Record',
-        description: hasExistingVideo ? 'Updating video information and settings' : 'Creating video database record',
-        icon: <Database className="h-4 w-4 sm:h-5 sm:w-5" />,
-        status: 'pending' as const
-      },
-      {
-        id: 'mux',
-        title: 'Video Processing',
-        description: 'Optimizing for streaming with Mux',
-        icon: <Video className="h-4 w-4 sm:h-5 sm:w-5" />,
-        status: 'pending' as const
-      },
-      {
-        id: 'thumbnail',
-        title: 'Generate Thumbnail',
-        description: 'Creating thumbnail from processed video',
-        icon: <Image className="h-4 w-4 sm:h-5 sm:w-5" />,
-        status: 'pending' as const
-      },
-      {
-        id: 'transcription',
-        title: 'Generate Transcript',
-        description: 'Creating automatic captions with Mux AI',
-        icon: <Mic className="h-4 w-4 sm:h-5 sm:w-5" />,
-        status: 'pending' as const
-      },
-      {
-        id: 'speaker_identification',
-        title: 'Identify Speakers',
-        description: 'Name speakers and edit transcript',
-        icon: <Users className="h-4 w-4 sm:h-5 sm:w-5" />,
-        status: 'pending' as const
-      },
-      {
-        id: 'complete',
-        title: 'Publishing Complete',
-        description: 'Video is now live and ready',
-        icon: <Zap className="h-4 w-4 sm:h-5 sm:w-5" />,
-        status: 'pending' as const
-      }
-    );
-
-    return baseSteps;
-  });
+  ]);
 
   // Initialize video preview when modal opens
   useEffect(() => {
-    if (isOpen) {
-      // Check for pending file first
-      if (contentData.metadata.pendingFile) {
-        const file = contentData.metadata.pendingFile as File;
-        const url = URL.createObjectURL(file);
-        setVideoPreviewUrl(url);
-        
-        return () => {
-          URL.revokeObjectURL(url);
-        };
-      }
-      // Check for existing video URL
-      else if (contentData.metadata.videoUrl || contentData.metadata.streamUrl) {
-        const videoUrl = contentData.metadata.videoUrl || contentData.metadata.streamUrl;
-        setVideoPreviewUrl(videoUrl);
-        console.log('🎬 Using existing video URL for preview:', videoUrl);
-      }
-      // Check for existing public URL
-      else if (contentData.metadata.publicUrl) {
-        setVideoPreviewUrl(contentData.metadata.publicUrl);
-        console.log('🎬 Using existing public URL for preview:', contentData.metadata.publicUrl);
-      }
+    if (isOpen && contentData.metadata.pendingFile) {
+      const file = contentData.metadata.pendingFile as File;
+      const url = URL.createObjectURL(file);
+      setVideoPreviewUrl(url);
+      
+      return () => {
+        URL.revokeObjectURL(url);
+      };
     }
-  }, [isOpen, contentData.metadata.pendingFile, contentData.metadata.videoUrl, contentData.metadata.streamUrl, contentData.metadata.publicUrl]);
+  }, [isOpen, contentData.metadata.pendingFile]);
 
   // Handle video metadata loaded
   useEffect(() => {
     const video = videoRef.current;
-    const scrubVideo = scrubVideoRef.current;
     if (!video) return;
 
     const handleLoadedMetadata = () => {
       setVideoDuration(video.duration);
       setSelectedThumbnailTime(Math.min(10, video.duration / 2));
-      
-      // Also ensure scrubbing video has the same initial time
-      if (scrubVideo) {
-        scrubVideo.currentTime = Math.min(10, video.duration / 2);
-      }
     };
 
     const handleTimeUpdate = () => {
@@ -245,29 +182,21 @@ export function UploadFirstServerlessModal({
     video.addEventListener('loadedmetadata', handleLoadedMetadata);
     video.addEventListener('timeupdate', handleTimeUpdate);
 
-    // Also set up scrubbing video if available
-    if (scrubVideo) {
-      scrubVideo.addEventListener('loadedmetadata', handleLoadedMetadata);
-    }
-
     return () => {
       video.removeEventListener('loadedmetadata', handleLoadedMetadata);
       video.removeEventListener('timeupdate', handleTimeUpdate);
-      if (scrubVideo) {
-        scrubVideo.removeEventListener('loadedmetadata', handleLoadedMetadata);
-      }
     };
   }, [videoPreviewUrl]);
 
   // Generate thumbnail preview when timestamp changes
   useEffect(() => {
-    if (thumbnailMethod === 'timestamp' && scrubVideoRef.current && canvasRef.current && videoDuration > 0) {
+    if (thumbnailMethod === 'timestamp' && videoRef.current && canvasRef.current && videoDuration > 0) {
       generateThumbnailFromTimestamp(selectedThumbnailTime);
     }
   }, [selectedThumbnailTime, thumbnailMethod, videoDuration]);
 
   const generateThumbnailFromTimestamp = (time: number) => {
-    const video = scrubVideoRef.current;
+    const video = videoRef.current;
     const canvas = canvasRef.current;
     
     if (!video || !canvas) return;
@@ -318,21 +247,6 @@ export function UploadFirstServerlessModal({
     }
   };
 
-  const handleAcceptThumbnail = () => {
-    console.log('🎯 Thumbnail acceptance starting...');
-    setThumbnailAccepted(true);
-    setThumbnailStepWaiting(false);
-    
-    // Resolve the promise waiting for acceptance
-    if (thumbnailAcceptanceResolver) {
-      console.log('🎯 Resolving thumbnail acceptance promise...');
-      thumbnailAcceptanceResolver();
-      setThumbnailAcceptanceResolver(null);
-    }
-    
-    console.log('🎯 Thumbnail accepted! Method:', thumbnailMethod, 'Time:', selectedThumbnailTime);
-  };
-
   const startPublishProcess = async () => {
     setIsProcessing(true);
     setStartTime(Date.now());
@@ -360,22 +274,10 @@ export function UploadFirstServerlessModal({
         const videoFile = contentData.metadata.pendingFile;
         const hasS3Data = contentData.metadata.s3Key && contentData.metadata.publicUrl;
         
-        // For multipart uploads, we'll have S3 data but maybe not the file object
         if (!videoFile && !hasS3Data) {
           console.error('🎬 ❌ No video file or S3 data found');
           console.error('🎬 Available metadata:', contentData.metadata);
           throw new Error('No video file found. Please upload a video first using the video upload component above.');
-        }
-        
-        // If we have S3 data, we can skip the file upload since it's already done
-        if (hasS3Data && !videoFile) {
-          console.log('🎬 Using existing S3 upload data, skipping file validation');
-          return; // Skip file validation since we'll use S3 data
-        }
-        
-        // If we have neither file nor S3 data, we need to start the upload process
-        if (!videoFile && !hasS3Data) {
-          throw new Error('Please select a video file using the upload component above before publishing.');
         }
         
         if (videoFile) {
@@ -404,31 +306,20 @@ export function UploadFirstServerlessModal({
         await new Promise(resolve => setTimeout(resolve, 1000));
       });
 
-      // Step 2: Upload Video (only if not already uploaded)
-      const hasExistingVideo = contentData.metadata.s3Key && contentData.metadata.publicUrl;
-      let currentUploadResults;
-      
-      if (!hasExistingVideo) {
-        currentUploadResults = await processStep('upload', async () => {
-          const results = await uploadVideo();
-          setUploadResults(results);
-          return results;
-        });
-      } else {
-        console.log('🎬 Video already uploaded, skipping upload step');
-        currentUploadResults = {
-          s3Key: contentData.metadata.s3Key,
-          publicUrl: contentData.metadata.publicUrl,
-          videoId: contentData.metadata.id
-        };
-        setUploadResults(currentUploadResults);
-      }
+      // Step 2: Upload Video FIRST
+      let uploadData: {s3Key: string, publicUrl: string, videoId?: string} = {s3Key: '', publicUrl: ''};
+      await processStep('upload', async () => {
+        uploadData = await uploadVideo();
+        setUploadResults(uploadData);
+        return uploadData;
+      });
 
-      // Step 3: Update Video Record (or create if doesn't exist)
-      const videoRecord = await processStep('database', async () => {
-        const record = await updateVideoRecord(currentUploadResults);
-        setUploadResults(prev => ({ ...prev, videoId: record.id }));
-        return record;
+      // Step 3: Create Database Record
+      await processStep('database', async () => {
+        const videoRecord = await createVideoRecord(uploadData);
+        uploadData.videoId = videoRecord.id;
+        setUploadResults(uploadData);
+        return videoRecord;
       });
 
       // Step 4: Mux Processing (async)
@@ -438,22 +329,15 @@ export function UploadFirstServerlessModal({
 
       // Step 5: Process Thumbnail (async)
       await processStep('thumbnail', async () => {
-        await processThumbnail(videoRecord.id);
+        await processThumbnail();
       });
 
       // Step 6: Generate Transcription (async)
       await processStep('transcription', async () => {
-        await generateTranscription(videoRecord.id);
+        await generateTranscription();
       });
 
-      // Step 7: Speaker Identification (if transcript has multiple speakers)
-      if (transcriptData && transcriptData.speakerCount > 1) {
-        await processStep('speaker_identification', async () => {
-          await handleSpeakerIdentification(videoRecord.id);
-        });
-      }
-
-      // Step 8: Complete
+      // Step 7: Complete
       await processStep('complete', async () => {
         await new Promise(resolve => setTimeout(resolve, 500));
       });
@@ -462,8 +346,8 @@ export function UploadFirstServerlessModal({
       setTimeout(() => {
         onComplete(true, { 
           message: 'Video published successfully!',
-          videoId: videoRecord.id,
-          videoUrl: `/videos/${videoRecord.id}`
+          videoId: uploadResults.videoId,
+          videoUrl: `/videos/${uploadResults.videoId}`
         });
       }, 1000);
 
@@ -504,17 +388,18 @@ export function UploadFirstServerlessModal({
   };
 
   const uploadVideo = async () => {
-    // Check if video is already uploaded to S3
-    if (contentData.metadata.s3Key && contentData.metadata.publicUrl) {
-      updateStepStatus('upload', 'processing', 100, 'Using existing S3 upload...');
-      console.log('🎬 Video already uploaded to S3:', contentData.metadata.s3Key);
-      return {
-        s3Key: contentData.metadata.s3Key,
-        publicUrl: contentData.metadata.publicUrl
-      };
+    const file = contentData.metadata.pendingFile;
+    
+    if (!file) {
+      console.error('❌ No video file to upload');
+      throw new Error('No video file available for upload');
     }
     
-    const file = contentData.metadata.pendingFile!;
+    console.log('📤 Starting video upload:', { 
+      fileName: file.name, 
+      fileSize: `${(file.size / (1024*1024)).toFixed(2)}MB`,
+      fileType: file.type 
+    });
     
     updateStepStatus('upload', 'processing', 5, 'Getting upload URL...');
     
@@ -530,10 +415,15 @@ export function UploadFirstServerlessModal({
     });
 
     if (!presignedResponse.ok) {
-      throw new Error('Failed to get upload URL');
+      const errorText = await presignedResponse.text();
+      console.error('❌ Failed to get presigned URL:', errorText);
+      throw new Error(`Failed to get upload URL: ${errorText || presignedResponse.statusText}`);
     }
 
-    const { presignedUrl, s3Key, publicUrl } = await presignedResponse.json();
+    const presignedData = await presignedResponse.json();
+    const { presignedUrl, s3Key, publicUrl } = presignedData;
+    
+    console.log('✅ Got presigned URL:', { s3Key, publicUrl, hasPresignedUrl: !!presignedUrl });
     
     updateStepStatus('upload', 'processing', 10, 'Starting upload...');
 
@@ -553,8 +443,10 @@ export function UploadFirstServerlessModal({
       xhr.onload = () => {
         if (xhr.status === 200 || xhr.status === 204) {
           updateStepStatus('upload', 'processing', 95, 'Upload complete, verifying...');
+          console.log('✅ S3 upload successful:', { s3Key, publicUrl });
           resolve({ s3Key, publicUrl });
         } else {
+          console.error('❌ S3 upload failed with status:', xhr.status);
           reject(new Error(`Upload failed with status ${xhr.status}`));
         }
       };
@@ -567,84 +459,50 @@ export function UploadFirstServerlessModal({
     });
   };
 
-  const updateVideoRecord = async (uploadData?: {s3Key: string, publicUrl: string, videoId?: string}) => {
-    updateStepStatus('database', 'processing', 30, 'Updating video metadata...');
+  const createVideoRecord = async (uploadData?: {s3Key: string, publicUrl: string, videoId?: string}) => {
+    updateStepStatus('database', 'processing', 30, 'Creating video record...');
     
-    // If we already have a video ID from multipart upload, update that record
-    if (contentData.metadata.id) {
-      updateStepStatus('database', 'processing', 50, 'Updating existing video record...');
-      console.log('🎬 Updating existing video from multipart upload:', contentData.metadata.id);
-      
-      // Update the existing video record with new metadata
-      const updateResponse = await fetch(`/api/videos/${contentData.metadata.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: contentData.title,
-          description: contentData.description,
-          category: contentData.category,
-          tags: contentData.tags.join(','),
-          visibility: contentData.metadata.visibility || 'private',
-          thumbnail_override: thumbnailPreview || contentData.metadata.autoThumbnail
-        }),
-      });
-      
-      if (!updateResponse.ok) {
-        const errorText = await updateResponse.text();
-        console.error('Update API error:', errorText);
-        throw new Error(`Failed to update video record: ${updateResponse.status} - ${errorText}`);
-      }
-      
-      updateStepStatus('database', 'processing', 100, 'Video metadata updated...');
-      const result = await updateResponse.json();
-      return result.video || {
-        id: contentData.metadata.id,
-        title: contentData.title,
-        description: contentData.description
-      };
+    // Use passed data or fallback to state
+    const s3Data = uploadData || uploadResults;
+    
+    // Verify we have the required S3 data
+    if (!s3Data.s3Key || !s3Data.publicUrl) {
+      console.error('Missing S3 upload data:', s3Data);
+      throw new Error('S3 upload data missing - upload may have failed');
     }
     
-    // Use metadata for file info if we don't have the actual file object
-    const filename = contentData.metadata.pendingFile 
-      ? (contentData.metadata.pendingFile as File).name 
-      : contentData.metadata.originalFilename || 'video.mp4';
+    const requestBody = {
+      title: contentData.title,
+      description: contentData.description,
+      category: contentData.category,
+      tags: contentData.tags.join(','),
+      visibility: contentData.metadata.visibility || 'private',
+      status: 'processing', // Videos start as processing, then move to ready when complete
+      filename: (contentData.metadata.pendingFile as File).name,
+      size: (contentData.metadata.pendingFile as File).size,
+      mimeType: (contentData.metadata.pendingFile as File).type,
+      autoThumbnail: thumbnailPreview,
+      s3Key: s3Data.s3Key,
+      publicUrl: s3Data.publicUrl
+    };
     
-    const fileSize = contentData.metadata.pendingFile 
-      ? (contentData.metadata.pendingFile as File).size 
-      : contentData.metadata.fileSize || 0;
-    
-    const mimeType = contentData.metadata.pendingFile 
-      ? (contentData.metadata.pendingFile as File).type 
-      : contentData.metadata.mimeType || 'video/mp4';
+    console.log('📝 Sending database record request:', requestBody);
     
     // Call the actual upload API to create the database record
     const uploadResponse = await fetch('/api/videos/upload', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        title: contentData.title,
-        description: contentData.description,
-        category: contentData.category,
-        tags: contentData.tags.join(','),
-        visibility: contentData.metadata.visibility || 'private',
-        filename: filename,
-        size: fileSize,
-        mimeType: mimeType,
-        autoThumbnail: thumbnailPreview || contentData.metadata.autoThumbnail,
-        // Ensure S3 data is properly included - use uploadData parameter first
-        s3Key: uploadData?.s3Key || uploadResults.s3Key || contentData.metadata.s3Key,
-        publicUrl: uploadData?.publicUrl || uploadResults.publicUrl || contentData.metadata.publicUrl
-      }),
+      body: JSON.stringify(requestBody),
     });
 
     if (!uploadResponse.ok) {
-      const errorText = await uploadResponse.text();
-      console.error('Upload API error:', errorText);
-      throw new Error(`Failed to create video record: ${uploadResponse.status} - ${errorText}`);
+      const errorData = await uploadResponse.text();
+      console.error('Failed to create video record. Response:', errorData);
+      throw new Error(`Failed to create video record: ${errorData || uploadResponse.statusText}`);
     }
 
     updateStepStatus('database', 'processing', 80, 'Updating search index...');
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await new Promise(resolve => setTimeout(resolve, 500));
 
     const result = await uploadResponse.json();
     return result.video;
@@ -652,416 +510,163 @@ export function UploadFirstServerlessModal({
 
   const processMuxVideo = async () => {
     updateStepStatus('mux', 'processing', 10, 'Creating Mux asset...');
-    await new Promise(resolve => setTimeout(resolve, 300));
     
-    updateStepStatus('mux', 'processing', 30, 'Processing video for streaming...');
-    await new Promise(resolve => setTimeout(resolve, 500));
+    // The Mux processing happens automatically in the upload API
+    // We just need to wait a bit for it to initialize
+    await new Promise(resolve => setTimeout(resolve, 2000));
     
-    updateStepStatus('mux', 'processing', 60, 'Generating multiple quality versions...');
-    await new Promise(resolve => setTimeout(resolve, 400));
+    updateStepStatus('mux', 'processing', 50, 'Processing video for streaming...');
     
-    updateStepStatus('mux', 'processing', 90, 'Finalizing video processing...');
-    await new Promise(resolve => setTimeout(resolve, 300));
-  };
-
-  const processThumbnail = async (videoId?: string) => {
-    updateStepStatus('thumbnail', 'processing', 20, 'Ready for thumbnail selection...');
-    
-    const currentVideoId = videoId || uploadResults.videoId;
-    if (!currentVideoId) {
-      throw new Error('Video ID not available for thumbnail generation');
-    }
-    
+    // Check Mux asset status and get playback info
     try {
-      // Reset thumbnail acceptance state
-      setThumbnailAccepted(false);
-      setThumbnailStepWaiting(true);
-      
-      // Show thumbnail selection UI and wait for user to accept
-      updateStepStatus('thumbnail', 'processing', 30, 'Choose your thumbnail method below, then click "Accept Thumbnail" to continue');
-      
-      // Wait for user to accept thumbnail choice - using Promise instead of polling
-      console.log('⏳ Waiting for thumbnail acceptance...');
-      await new Promise<void>((resolve) => {
-        setThumbnailAcceptanceResolver(() => resolve);
+      const muxResponse = await fetch('/api/videos/mux-asset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          videoId: uploadResults.videoId,
+          action: 'get-playback-info'
+        })
       });
       
-      console.log('🎯 Thumbnail accepted! Processing selection. Method:', thumbnailMethod);
-      
-      console.log('🔍 Method check - Method:', thumbnailMethod, 'HasCustom:', !!customThumbnail);
-      
+      if (muxResponse.ok) {
+        const muxData = await muxResponse.json();
+        if (muxData.asset?.status === 'ready') {
+          updateStepStatus('mux', 'processing', 90, 'Mux asset ready for streaming');
+        } else if (muxData.asset?.status === 'preparing') {
+          updateStepStatus('mux', 'processing', 70, 'Mux processing video...');
+        } else {
+          updateStepStatus('mux', 'processing', 90, 'Mux processing initiated');
+        }
+        console.log('🎬 Mux asset info:', muxData);
+      }
+    } catch (error) {
+      console.error('Failed to check Mux status:', error);
+    }
+    
+    await new Promise(resolve => setTimeout(resolve, 1000));
+  };
+
+  const processThumbnail = async () => {
+    updateStepStatus('thumbnail', 'processing', 20, 'Processing thumbnail...');
+    
+    try {
       if (thumbnailMethod === 'custom' && customThumbnail) {
-        console.log('📁 Processing custom thumbnail upload...');
-        updateStepStatus('thumbnail', 'processing', 60, 'Uploading custom thumbnail...');
+        updateStepStatus('thumbnail', 'processing', 50, 'Uploading custom thumbnail...');
         
+        // Upload custom thumbnail
         const formData = new FormData();
         formData.append('thumbnail', customThumbnail);
         
-        const response = await fetch(`/api/videos/thumbnail/${currentVideoId}`, {
+        const response = await fetch(`/api/videos/thumbnail/${uploadResults.videoId}`, {
           method: 'POST',
-          body: formData,
+          body: formData
         });
         
-        if (!response.ok) {
+        if (response.ok) {
+          const result = await response.json();
+          console.log('✅ Custom thumbnail uploaded:', result);
+          updateStepStatus('thumbnail', 'processing', 90, 'Custom thumbnail uploaded successfully');
+        } else {
           throw new Error('Failed to upload custom thumbnail');
         }
-        
-        updateStepStatus('thumbnail', 'processing', 100, 'Custom thumbnail uploaded successfully');
-        
       } else if (thumbnailMethod === 'timestamp') {
-        console.log('⏰ Processing timestamp thumbnail selection...');
-        updateStepStatus('thumbnail', 'processing', 60, 'Setting thumbnail timestamp for Mux...');
+        updateStepStatus('thumbnail', 'processing', 50, 'Setting thumbnail timestamp...');
         
-        // Use Mux thumbnail generation with specified timestamp
-        try {
-          console.log('🔧 Setting thumbnail timestamp:', selectedThumbnailTime, 'for video:', currentVideoId);
-          
-          const response = await fetch(`/api/videos/${currentVideoId}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              thumbnail_timestamp: selectedThumbnailTime,
-              thumbnail_method: thumbnailMethod
-            }),
-          });
-          
-          if (response.ok) {
-            const result = await response.json();
-            console.log('✅ Thumbnail timestamp API response:', result);
-            updateStepStatus('thumbnail', 'processing', 100, `Mux will generate thumbnail at ${Math.floor(selectedThumbnailTime)}s`);
-          } else {
-            const errorText = await response.text();
-            console.warn('❌ Failed to set timestamp, API error:', response.status, errorText);
-            updateStepStatus('thumbnail', 'processing', 100, 'Using Mux auto-generated thumbnail as fallback');
-          }
-        } catch (error) {
-          console.warn('❌ Failed to set timestamp, network error:', error);
-          updateStepStatus('thumbnail', 'processing', 100, 'Using Mux auto-generated thumbnail as fallback');
+        // Set thumbnail timestamp using Mux asset API
+        const response = await fetch('/api/videos/mux-asset', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            videoId: uploadResults.videoId,
+            action: 'set-thumbnail-time',
+            timestamp: selectedThumbnailTime
+          })
+        });
+        
+        if (response.ok) {
+          const result = await response.json();
+          console.log('✅ Thumbnail timestamp API response:', result);
+          updateStepStatus('thumbnail', 'processing', 90, 'Thumbnail timestamp set successfully');
+        } else {
+          throw new Error('Failed to set thumbnail timestamp');
         }
-        
       } else {
-        console.log('🤖 Processing auto thumbnail generation...');
-        updateStepStatus('thumbnail', 'processing', 60, 'Using Mux automatic thumbnail generation...');
-        updateStepStatus('thumbnail', 'processing', 90, 'Mux will generate optimal thumbnail automatically');
+        updateStepStatus('thumbnail', 'processing', 50, 'Using auto-generated thumbnail...');
+        await new Promise(resolve => setTimeout(resolve, 800));
+        updateStepStatus('thumbnail', 'processing', 90, 'Auto-thumbnail configured');
       }
-      
-      // Complete the thumbnail step
-      console.log('✅ Thumbnail step completing...');
-      updateStepStatus('thumbnail', 'processing', 100, 'Thumbnail processing complete');
-      await new Promise(resolve => setTimeout(resolve, 200));
-      console.log('✅ Thumbnail step finished!');
-      
     } catch (error) {
-      console.warn('Thumbnail setup failed, continuing with auto-generation:', error);
-      updateStepStatus('thumbnail', 'processing', 100, 'Using Mux auto-generated thumbnail as fallback');
-      await new Promise(resolve => setTimeout(resolve, 300));
+      console.error('Thumbnail processing error:', error);
+      updateStepStatus('thumbnail', 'error', 0, 'Failed to process thumbnail');
     }
   };
 
-  const generateTranscription = async (videoId?: string) => {
-    updateStepStatus('transcription', 'processing', 10, 'Checking Mux asset readiness...');
-    
-    const currentVideoId = videoId || uploadResults.videoId;
-    if (!currentVideoId) {
-      throw new Error('Video ID not available for transcription');
-    }
-    
-    console.log('🎤 Starting transcription for video ID:', currentVideoId);
+  const generateTranscription = async () => {
+    updateStepStatus('transcription', 'processing', 20, 'Starting enhanced transcription process...');
     
     try {
-      // First wait for Mux asset to be ready
-      updateStepStatus('transcription', 'processing', 20, 'Waiting for Mux video processing to complete...');
-      
-      let assetReady = false;
-      let waitAttempts = 0;
-      const maxWaitAttempts = 30; // Wait up to 5 minutes for asset to be ready
-      
-      while (!assetReady && waitAttempts < maxWaitAttempts) {
-        // Check video status
-        const statusResponse = await fetch(`/api/videos/${currentVideoId}`);
-        if (statusResponse.ok) {
-          const videoData = await statusResponse.json();
-          const video = videoData.video;
-          
-          if (video.mux_status === 'ready' && video.mux_playback_id) {
-            console.log('✅ Mux asset is fully ready for transcription');
-            assetReady = true;
-          } else if (video.mux_asset_id && (video.mux_status === 'preparing' || video.mux_status === 'ready')) {
-            console.log('✅ Mux asset exists and is processing, should be ready for transcription');
-            assetReady = true;
-          } else {
-            console.log(`⏳ Mux asset still processing (${video.mux_status}), waiting...`);
-            updateStepStatus('transcription', 'processing', 20 + (waitAttempts * 2), `Waiting for video processing... (${video.mux_status})`);
-            await new Promise(resolve => setTimeout(resolve, 10000)); // Wait 10 seconds
-            waitAttempts++;
-          }
-        } else {
-          waitAttempts++;
-          await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds on API error
-        }
-      }
-      
-      if (!assetReady) {
-        console.log('⚠️ Mux asset not fully ready, attempting transcription anyway...');
-        updateStepStatus('transcription', 'processing', 50, 'Asset still processing, but attempting transcription...');
-        // Don't return here - try transcription anyway in case Mux accepts it
-      }
-      
-      // Since subtitles are generated at asset creation time, we just need to check their status
-      updateStepStatus('transcription', 'processing', 40, 'Checking subtitle generation status...');
-      
-      console.log('🎤 Checking subtitle status for video:', currentVideoId);
-      
-      // Get the video to check if it has a Mux asset ID
-      const videoResponse = await fetch(`/api/videos/${currentVideoId}`);
-      if (!videoResponse.ok) {
-        throw new Error('Failed to fetch video details');
-      }
-      
-      const videoData = await videoResponse.json();
-      const video = videoData.video;
-      
-      if (!video.mux_asset_id) {
-        console.warn('⚠️ No Mux asset ID found, subtitles not available');
-        throw new Error('Mux asset not found for subtitle generation');
-      }
-      
-      console.log('🎤 Mux asset found, subtitles should be generating automatically');
-      const transcriptionResult = {
-        success: true,
-        message: 'Subtitles are being generated by Mux'
-      };
-      
-      updateStepStatus('transcription', 'processing', 60, 'Checking Mux subtitle status...');
-      
-      // Poll for subtitle completion - check immediately first, then wait
-      let pollAttempts = 0;
-      const maxPollAttempts = 60; // 10 minutes timeout (subtitles can take longer)
-      
-      while (pollAttempts < maxPollAttempts) {
-        // Check immediately on first attempt, then wait 5 seconds between subsequent checks
-        if (pollAttempts > 0) {
-          await new Promise(resolve => setTimeout(resolve, 5000)); // Shorter interval for better UX
-        }
-        
-        // Check Mux asset status for subtitle tracks
-        const statusResponse = await fetch(`/api/videos/transcription-status/${currentVideoId}`);
-        
-        if (statusResponse.ok) {
-          const statusResult = await statusResponse.json();
-          
-          if (statusResult.status === 'ready') {
-            const captionStatus = statusResult.captionUrl ? ' - Captions available!' : '';
-            updateStepStatus('transcription', 'processing', 95, `Subtitles ready${captionStatus}`);
-            
-            console.log('✅ Subtitle generation completed:', {
-              captionUrl: statusResult.captionUrl,
-              hasTranscript: !!statusResult.transcript,
-              transcriptLength: statusResult.transcript?.length || 0
-            });
-            
-            // Store subtitle information in database
-            if (statusResult.captionUrl) {
-              await fetch(`/api/videos/${currentVideoId}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  captions_url: statusResult.captionUrl,
-                  captions_status: 'ready',
-                  transcript_status: 'completed'
-                }),
-              });
-            }
-            
-            // Set transcript data from Mux (without speaker identification)
-            setTranscriptData({
-              text: statusResult.transcript || 'Captions available in video player',
-              speakerCount: 0, // Mux doesn't provide speaker diarization
-              captionUrl: statusResult.captionUrl
-            });
-            
-            // Mark Mux transcription as completed and check AWS Transcribe
-            updateStepStatus('transcription', 'processing', 80, 'Mux captions ready! Checking AWS Transcribe for speaker identification...');
-            
-            // Now check for AWS Transcribe results with speaker diarization
-            await checkAWSTranscribeStatus(currentVideoId);
-            
-            break;
-          } else if (statusResult.status === 'processing' || statusResult.status === 'preparing') {
-            const progress = 70 + Math.min(pollAttempts * 2, 20); // Gradual progress increase
-            const timeElapsed = Math.floor(pollAttempts * 5 / 60); // Minutes elapsed
-            updateStepStatus('transcription', 'processing', progress, 
-              `Subtitles generating... ${timeElapsed > 0 ? `(${timeElapsed}m elapsed)` : ''}`);
-          } else if (statusResult.status === 'not_available' || statusResult.status === 'not_configured') {
-            updateStepStatus('transcription', 'processing', 70, 'Subtitle generation may not be enabled for this asset...');
-            // If not configured, break out after a few attempts
-            if (pollAttempts > 5) {
-              console.warn('⚠️ Subtitle generation not configured, completing step');
-              setTranscriptData({
-                text: 'Subtitle generation was not configured for this video',
-                speakerCount: 0,
-                captionUrl: null
-              });
-              break;
-            }
-          }
-        }
-        
-        pollAttempts++;
-      }
-      
-      if (pollAttempts >= maxPollAttempts) {
-        console.warn('Transcription polling timed out after 10 minutes');
-        updateStepStatus('transcription', 'completed', 100, 'Subtitle generation timed out - check video player for captions');
-        setTranscriptData({
-          text: 'Subtitle generation timed out - captions may still appear in the video player',
-          speakerCount: 0,
-          captionUrl: null
-        });
-      }
-      
-      // Step completion is now handled in the polling loop
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-    } catch (error) {
-      console.warn('Transcription failed, video will still be available:', error);
-      updateStepStatus('transcription', 'processing', 100, 'Transcription failed, but video is still ready to view');
-      
-      // Update video record to indicate transcription failed
-      await fetch(`/api/videos/${currentVideoId}`, {
-        method: 'PUT',
+      // Use enhanced subtitle generation with all AI features
+      const response = await fetch('/api/videos/enhanced-subtitles', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          transcript_status: 'failed'
-        }),
+          videoId: uploadResults.videoId,
+          enableSpeakerDiarization: true,
+          maxSpeakers: 4,
+          language: 'en-US',
+          enableEntityExtraction: true,
+          enableAIEnhancement: true
+        })
       });
-    }
-  };
-
-  const checkAWSTranscribeStatus = async (videoId: string) => {
-    try {
-      console.log('🎤 Checking AWS Transcribe status for video:', videoId);
       
-      // Poll AWS Transcribe status for up to 10 minutes
-      let transcribeAttempts = 0;
-      const maxTranscribeAttempts = 120; // 10 minutes at 5-second intervals
-      
-      while (transcribeAttempts < maxTranscribeAttempts) {
-        updateStepStatus('transcription', 'processing', 
-          85 + Math.min(transcribeAttempts * 0.1, 10), 
-          `AWS Transcribe processing for speaker identification... (${Math.floor(transcribeAttempts * 5 / 60)}m elapsed)`
-        );
+      if (response.ok) {
+        const result = await response.json();
+        console.log('🚀 Enhanced transcription completed:', result);
         
-        if (transcribeAttempts > 0) {
-          await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds between checks
-        }
-        
-        try {
-          const awsResponse = await fetch(`/api/videos/aws-transcribe?videoId=${videoId}`);
+        if (result.status === 'ready') {
+          updateStepStatus('transcription', 'completed', 100, 
+            `✨ Enhanced transcription complete! Method: ${result.transcriptionMethod || 'AI'}`);
           
-          if (awsResponse.ok) {
-            const awsResult = await awsResponse.json();
-            
-            if (awsResult.status === 'COMPLETED' && awsResult.transcriptText && awsResult.speakers) {
-              console.log('✅ AWS Transcribe completed with speakers:', awsResult.speakerCount);
-              
-              // Update transcript data with AWS Transcribe results (with speaker diarization)
-              setTranscriptData({
-                text: awsResult.transcriptText,
-                speakerCount: awsResult.speakerCount || 0,
-                captionUrl: transcriptData.captionUrl, // Keep Mux captions URL
-                speakers: awsResult.speakers
-              });
-              
-              updateStepStatus('transcription', 'completed', 100, 
-                `Transcript complete with ${awsResult.speakerCount} speakers identified!`
-              );
-              return;
-              
-            } else if (awsResult.status === 'FAILED') {
-              console.log('❌ AWS Transcribe failed, using Mux captions only');
-              updateStepStatus('transcription', 'completed', 100, 
-                'Mux captions ready! AWS Transcribe failed - no speaker identification available'
-              );
-              return;
-              
-            } else if (awsResult.status === 'IN_PROGRESS' || awsResult.status === 'QUEUED') {
-              console.log(`⏳ AWS Transcribe still processing (${awsResult.status})`);
-              transcribeAttempts++;
-              continue;
-              
-            } else {
-              console.log('📄 No AWS Transcribe job found, using Mux captions only');
-              updateStepStatus('transcription', 'completed', 100, 
-                'Mux captions ready! No AWS Transcribe job - using basic captions'
-              );
-              return;
-            }
-          } else {
-            console.log('⚠️ AWS Transcribe status check failed, using Mux captions only');
-            transcribeAttempts++;
-            if (transcribeAttempts >= 5) {
-              updateStepStatus('transcription', 'completed', 100, 
-                'Mux captions ready! AWS Transcribe unavailable - using basic captions'
-              );
-              return;
-            }
+          // Show enhanced features if available
+          if (result.entities) {
+            console.log('🧠 AI Enhancement:', {
+              entities: result.entities.entityCount,
+              topics: result.entities.keyTopics?.length || 0,
+              sentiment: result.entities.sentiment
+            });
           }
-        } catch (error) {
-          console.error('❌ Error checking AWS Transcribe status:', error);
-          transcribeAttempts++;
+        } else if (result.status === 'processing') {
+          const method = result.transcriptionMethod || result.method || 'Enhanced AI';
+          updateStepStatus('transcription', 'processing', 80, 
+            `🎤 ${method} transcription with AI enhancement in progress...`);
+        } else {
+          updateStepStatus('transcription', 'processing', 90, 
+            '🚀 Enhanced transcription queued with speaker diarization & AI analysis');
+        }
+      } else {
+        // Fallback to standard subtitle generation if enhanced fails
+        console.log('⚠️ Enhanced transcription failed, trying fallback...');
+        const fallbackResponse = await fetch('/api/videos/generate-subtitles', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ videoId: uploadResults.videoId })
+        });
+        
+        if (fallbackResponse.ok) {
+          const fallbackResult = await fallbackResponse.json();
+          console.log('✅ Fallback subtitle generation initiated:', fallbackResult);
+          updateStepStatus('transcription', 'processing', 85, 
+            `📝 Fallback transcription: ${fallbackResult.method || 'Standard'}`);
+        } else {
+          updateStepStatus('transcription', 'processing', 100, 
+            '📝 Transcription will process in background');
         }
       }
-      
-      // Timeout - use Mux captions only
-      console.log('⏰ AWS Transcribe timed out, using Mux captions only');
-      updateStepStatus('transcription', 'completed', 100, 
-        'Mux captions ready! AWS Transcribe timed out - using basic captions'
-      );
-      
     } catch (error) {
-      console.error('❌ Error in AWS Transcribe status check:', error);
-      updateStepStatus('transcription', 'completed', 100, 
-        'Mux captions ready! AWS Transcribe error - using basic captions'
-      );
-    }
-  };
-
-  const handleSpeakerIdentification = async (videoId: string) => {
-    updateStepStatus('speaker_identification', 'processing', 10, 'Setting up speaker identification interface...');
-    
-    if (!transcriptData || transcriptData.speakerCount <= 1) {
-      updateStepStatus('speaker_identification', 'completed', 100, 'No multiple speakers detected, skipping identification');
-      return;
-    }
-
-    updateStepStatus('speaker_identification', 'processing', 30, 'Loading transcript with speakers...');
-    
-    // Show the speaker identification interface
-    setShowSpeakerIdentification(true);
-    updateStepStatus('speaker_identification', 'processing', 50, `Please name the ${transcriptData.speakerCount} speakers identified in the transcript`);
-    
-    // Wait for user to complete speaker identification
-    // This will be resolved when the user clicks "Save" in the SpeakerIdentification component
-    await new Promise<void>((resolve) => {
-      // Set up a resolver that will be called when speakers are saved
-      (window as any).resolveSpeakerIdentification = resolve;
-    });
-
-    updateStepStatus('speaker_identification', 'processing', 90, 'Saving speaker identifications...');
-    setShowSpeakerIdentification(false);
-    
-    updateStepStatus('speaker_identification', 'completed', 100, `Speaker identification completed for ${transcriptData.speakerCount} speakers`);
-    await new Promise(resolve => setTimeout(resolve, 500));
-  };
-
-  // Handle speaker identification completion
-  const onSpeakersUpdated = (speakers: any[]) => {
-    console.log('Speakers updated:', speakers);
-    // This will be called when speakers are saved
-    if ((window as any).resolveSpeakerIdentification) {
-      (window as any).resolveSpeakerIdentification();
-      (window as any).resolveSpeakerIdentification = null;
+      console.error('Enhanced transcription error:', error);
+      console.log('⚠️ Enhanced transcription failed, using background processing');
+      updateStepStatus('transcription', 'processing', 100, 
+        '📝 Transcription processing in background with available services');
     }
   };
 
@@ -1101,65 +706,135 @@ export function UploadFirstServerlessModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={() => {}}>
-      <DialogContent className="fixed left-[50%] top-[50%] z-50 translate-x-[-50%] translate-y-[-50%] w-[90vw] max-w-5xl h-[90vh] max-h-[800px] overflow-hidden flex flex-col p-0 bg-white rounded-lg shadow-xl">
-        <DialogHeader className="flex-shrink-0 px-8 py-6 border-b bg-white">
-          <div className="flex items-center justify-between w-full">
-            <DialogTitle className="flex items-center gap-3 text-xl font-semibold">
-              <Zap className="h-6 w-6 text-blue-500 flex-shrink-0" />
-              <span>Publishing Video with Upload-First Workflow</span>
+      <DialogContent className="w-[95vw] max-w-6xl h-[90vh] max-h-[90vh] overflow-hidden flex flex-col p-0">
+        <DialogHeader className="flex-shrink-0 p-3 sm:p-4 md:p-6 border-b">
+          <div className="flex items-center justify-between">
+            <DialogTitle className="flex items-center gap-2 text-base sm:text-lg md:text-xl lg:text-2xl">
+              <Zap className="h-4 w-4 sm:h-5 sm:w-5 md:h-6 md:w-6 text-blue-500 flex-shrink-0" />
+              <span className="truncate">
+                Publishing Video with Upload-First Workflow
+              </span>
             </DialogTitle>
             {!isProcessing && (
-              <Button variant="ghost" size="icon" onClick={onClose} className="flex-shrink-0 ml-4">
-                <X className="h-5 w-5" />
+              <Button variant="ghost" size="icon" onClick={onClose} className="flex-shrink-0">
+                <X className="h-4 w-4" />
               </Button>
             )}
           </div>
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto px-8 py-6 bg-gray-50">
+        <div className="flex-1 overflow-y-auto p-4 md:p-6">
           {!isProcessing ? (
             // Preview Phase - Responsive Layout
-            <div className="space-y-8">
-              {/* Video Preview */}
-              <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
-                <h3 className="text-lg font-semibold flex items-center gap-3 mb-6">
-                  <Video className="h-5 w-5" />
-                  Video Preview
-                </h3>
-                
-                <div className="relative bg-black rounded-lg overflow-hidden aspect-video">
-                  {videoPreviewUrl && (
-                    <>
-                      <video
-                        ref={videoRef}
-                        src={videoPreviewUrl}
-                        className="w-full h-full object-contain"
-                        onPlay={() => setIsVideoPlaying(true)}
-                        onPause={() => setIsVideoPlaying(false)}
-                      />
-                      
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <Button
-                          onClick={toggleVideoPlayback}
-                          className="bg-black/50 hover:bg-black/70 rounded-full p-2 sm:p-3"
-                        >
-                          {isVideoPlaying ? <Pause className="h-4 w-4 sm:h-6 sm:w-6" /> : <Play className="h-4 w-4 sm:h-6 sm:w-6" />}
-                        </Button>
-                      </div>
-                      
-                      <div className="absolute bottom-2 sm:bottom-4 left-2 sm:left-4 right-2 sm:right-4">
-                        <div className="bg-black/50 rounded px-2 py-1 text-white text-xs sm:text-sm">
-                          {formatTime(currentVideoTime)} / {formatTime(videoDuration)}
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
+                {/* Video Preview */}
+                <div className="space-y-4 min-w-0">
+                  <h3 className="text-lg font-semibold flex items-center gap-2">
+                    <Video className="h-5 w-5" />
+                    Video Preview
+                  </h3>
+                  
+                  <div className="relative bg-black rounded-lg overflow-hidden aspect-video max-w-full">
+                    {videoPreviewUrl && (
+                      <>
+                        <video
+                          ref={videoRef}
+                          src={videoPreviewUrl}
+                          className="w-full h-full object-contain"
+                          onPlay={() => setIsVideoPlaying(true)}
+                          onPause={() => setIsVideoPlaying(false)}
+                        />
+                        
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <Button
+                            onClick={toggleVideoPlayback}
+                            className="bg-black/50 hover:bg-black/70 rounded-full p-2 sm:p-3"
+                          >
+                            {isVideoPlaying ? <Pause className="h-4 w-4 sm:h-6 sm:w-6" /> : <Play className="h-4 w-4 sm:h-6 sm:w-6" />}
+                          </Button>
+                        </div>
+                        
+                        <div className="absolute bottom-2 sm:bottom-4 left-2 sm:left-4 right-2 sm:right-4">
+                          <div className="bg-black/50 rounded px-2 py-1 text-white text-xs sm:text-sm">
+                            {formatTime(currentVideoTime)} / {formatTime(videoDuration)}
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {/* Thumbnail Selection */}
+                <div className="space-y-4 min-w-0">
+                  <h3 className="text-lg font-semibold flex items-center gap-2">
+                    <Image className="h-5 w-5" />
+                    Thumbnail Selection
+                  </h3>
+                  
+                  <Tabs value={thumbnailMethod} onValueChange={(value) => setThumbnailMethod(value as any)}>
+                    <TabsList className="grid w-full grid-cols-3 text-sm h-10">
+                      <TabsTrigger value="timestamp" className="text-xs">From Video</TabsTrigger>
+                      <TabsTrigger value="custom" className="text-xs">Upload Custom</TabsTrigger>
+                      <TabsTrigger value="auto" className="text-xs">Auto Generate</TabsTrigger>
+                    </TabsList>
+                    
+                    <TabsContent value="timestamp" className="space-y-4 mt-4">
+                      <div className="space-y-2">
+                        <Label className="text-sm">Select Timestamp</Label>
+                        <Slider
+                          value={[selectedThumbnailTime]}
+                          onValueChange={([value]) => setSelectedThumbnailTime(value)}
+                          max={videoDuration}
+                          step={1}
+                          className="w-full"
+                        />
+                        <div className="flex justify-between text-xs sm:text-sm text-gray-500">
+                          <span>0:00</span>
+                          <span>{formatTime(selectedThumbnailTime)}</span>
+                          <span>{formatTime(videoDuration)}</span>
                         </div>
                       </div>
-                    </>
+                    </TabsContent>
+                    
+                    <TabsContent value="custom" className="space-y-4 mt-4">
+                      <div className="space-y-2">
+                        <Label className="text-sm">Upload Custom Thumbnail</Label>
+                        <Input
+                          ref={fileInputRef}
+                          type="file"
+                          accept="image/*"
+                          onChange={handleCustomThumbnailUpload}
+                          className="text-sm"
+                        />
+                      </div>
+                    </TabsContent>
+                    
+                    <TabsContent value="auto" className="space-y-4 mt-4">
+                      <p className="text-xs sm:text-sm text-gray-600">
+                        A thumbnail will be automatically generated from the middle of your video.
+                      </p>
+                    </TabsContent>
+                  </Tabs>
+                  
+                  {/* Thumbnail Preview */}
+                  {thumbnailPreview && (
+                    <div className="space-y-2">
+                      <Label className="text-sm">Thumbnail Preview</Label>
+                      <div className="relative bg-gray-100 rounded-lg overflow-hidden aspect-video">
+                        <img
+                          src={thumbnailPreview}
+                          alt="Thumbnail preview"
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                    </div>
                   )}
                 </div>
               </div>
 
-
               {/* Responsive Device Preview */}
-              <div className="bg-white rounded-xl p-4 sm:p-6 shadow-sm border border-gray-200">
+              <div className="bg-gray-50 rounded-lg p-4">
                 <h4 className="text-sm sm:text-base font-medium mb-3 flex items-center gap-2">
                   <Eye className="h-4 w-4" />
                   Responsive Preview
@@ -1181,11 +856,11 @@ export function UploadFirstServerlessModal({
               </div>
 
               {/* Action Buttons */}
-              <div className="flex justify-end gap-4 pt-8 mt-8 border-t border-gray-200">
-                <Button variant="outline" onClick={onClose} className="px-6 py-2">
+              <div className="flex flex-col sm:flex-row justify-end gap-2 sm:gap-3 pt-4 border-t">
+                <Button variant="outline" onClick={onClose} className="text-sm">
                   Cancel
                 </Button>
-                <Button onClick={startPublishProcess} className="bg-blue-600 hover:bg-blue-700 px-6 py-2">
+                <Button onClick={startPublishProcess} className="bg-blue-600 hover:bg-blue-700 text-sm">
                   <Zap className="h-4 w-4 mr-2" />
                   Start Upload & Processing
                 </Button>
@@ -1193,60 +868,56 @@ export function UploadFirstServerlessModal({
             </div>
           ) : (
             // Processing Phase - Responsive Layout
-            <div className="space-y-6 sm:space-y-8">
+            <div className="space-y-4 sm:space-y-6">
               {/* Overall Progress */}
-              <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <span className="text-lg font-semibold">Overall Progress</span>
-                    <span className="text-xl font-bold text-blue-600">{overallProgress}%</span>
-                  </div>
-                  <Progress value={overallProgress} className="h-4" />
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium">Overall Progress</span>
+                  <span className="text-sm text-gray-500">{overallProgress}%</span>
                 </div>
+                <Progress value={overallProgress} className="h-2" />
               </div>
 
               {/* Error Display */}
               {error && (
-                <div className="p-5 bg-red-50 border border-red-200 rounded-xl">
-                  <div className="flex items-center gap-3 text-red-700">
-                    <AlertCircle className="h-5 w-5" />
-                    <span className="font-medium text-base">Publishing Failed</span>
+                <div className="p-3 sm:p-4 bg-red-50 border border-red-200 rounded-lg">
+                  <div className="flex items-center gap-2 text-red-700">
+                    <AlertCircle className="h-4 w-4 sm:h-5 sm:w-5" />
+                    <span className="font-medium text-sm sm:text-base">Publishing Failed</span>
                   </div>
-                  <p className="text-red-600 mt-2 text-sm">{error}</p>
+                  <p className="text-red-600 mt-1 text-sm">{error}</p>
                 </div>
               )}
 
               {/* Steps List - Responsive */}
-              <div className="space-y-5">
+              <div className="space-y-3 sm:space-y-4">
                 {steps.map((step) => (
                   <div
                     key={step.id}
-                    className={`p-6 rounded-xl shadow-sm transition-all duration-300 ${
+                    className={`p-3 sm:p-4 rounded-lg border transition-all duration-300 ${
                       step.status === 'processing'
-                        ? 'border-blue-200 bg-blue-50 border-2'
+                        ? 'border-blue-200 bg-blue-50'
                         : step.status === 'completed'
-                        ? 'border-green-200 bg-green-50 border-2'
+                        ? 'border-green-200 bg-green-50'
                         : step.status === 'error'
-                        ? 'border-red-200 bg-red-50 border-2'
-                        : 'border-gray-200 bg-white border'
+                        ? 'border-red-200 bg-red-50'
+                        : 'border-gray-200 bg-gray-50'
                     }`}
                   >
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-4">
-                        <div className="flex-shrink-0">
-                          {getStepIcon(step)}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <h4 className="font-semibold text-base">{step.title}</h4>
-                          <p className="text-sm text-gray-600 mt-1">{step.description}</p>
+                      <div className="flex items-center gap-2 sm:gap-3">
+                        {getStepIcon(step)}
+                        <div>
+                          <h4 className="font-medium text-sm sm:text-base">{step.title}</h4>
+                          <p className="text-xs sm:text-sm text-gray-600">{step.description}</p>
                           {step.details && (
-                            <p className="text-sm text-gray-500 mt-2">{step.details}</p>
+                            <p className="text-xs text-gray-500 mt-1">{step.details}</p>
                           )}
                         </div>
                       </div>
-                      <div className="flex items-center gap-3 flex-shrink-0">
+                      <div className="flex items-center gap-2">
                         {step.duration && (
-                          <span className="text-sm text-gray-500 font-medium">
+                          <span className="text-xs text-gray-500">
                             {(step.duration / 1000).toFixed(1)}s
                           </span>
                         )}
@@ -1255,131 +926,8 @@ export function UploadFirstServerlessModal({
                     </div>
                     
                     {step.status === 'processing' && step.progress !== undefined && (
-                      <div className="mt-4">
-                        <Progress value={step.progress} className="h-2" />
-                      </div>
-                    )}
-
-                    {/* Enhanced thumbnail selection UI during processing */}
-                    {step.id === 'thumbnail' && step.status === 'processing' && thumbnailStepWaiting && (
-                      <div className="mt-6 p-6 bg-white rounded-xl border-2 border-blue-300 shadow-lg">
-                        <div className="flex items-center justify-between mb-6">
-                          <h4 className="text-lg font-semibold flex items-center gap-3">
-                            <Image className="h-5 w-5 text-blue-600" />
-                            Choose Your Thumbnail
-                          </h4>
-                          <Badge variant="secondary" className="bg-blue-100 text-blue-700">
-                            <Clock className="h-3 w-3 mr-1" />
-                            Waiting for Selection
-                          </Badge>
-                        </div>
-                        
-                        <Tabs value={thumbnailMethod} onValueChange={(value) => setThumbnailMethod(value as any)}>
-                          <TabsList className="grid w-full grid-cols-3 mb-6">
-                            <TabsTrigger value="auto">Auto Generate</TabsTrigger>
-                            <TabsTrigger value="timestamp">From Video</TabsTrigger>
-                            <TabsTrigger value="custom">Upload Custom</TabsTrigger>
-                          </TabsList>
-                          
-                          <TabsContent value="timestamp" className="space-y-4">
-                            {/* Video scrubbing section */}
-                            <div className="space-y-3">
-                              <Label className="font-medium">Select Frame for Thumbnail</Label>
-                              
-                              {/* Mini video preview for scrubbing */}
-                              <div className="relative bg-black rounded-lg overflow-hidden aspect-video max-h-48">
-                                {videoPreviewUrl && (
-                                  <video
-                                    ref={scrubVideoRef}
-                                    src={videoPreviewUrl}
-                                    className="w-full h-full object-contain"
-                                    muted
-                                  />
-                                )}
-                              </div>
-                              
-                              {/* Scrubber */}
-                              <div className="space-y-2">
-                                <Slider
-                                  value={[selectedThumbnailTime]}
-                                  onValueChange={([value]) => {
-                                    setSelectedThumbnailTime(value);
-                                    // Update scrubbing video time for preview
-                                    if (scrubVideoRef.current) {
-                                      scrubVideoRef.current.currentTime = value;
-                                    }
-                                  }}
-                                  max={videoDuration || 100}
-                                  step={0.5}
-                                  className="w-full"
-                                />
-                                <div className="flex justify-between text-sm text-gray-600">
-                                  <span>0:00</span>
-                                  <span className="font-medium text-blue-600 bg-blue-50 px-2 py-1 rounded">
-                                    {formatTime(selectedThumbnailTime)}
-                                  </span>
-                                  <span>{formatTime(videoDuration || 100)}</span>
-                                </div>
-                              </div>
-                            </div>
-                          </TabsContent>
-                          
-                          <TabsContent value="custom" className="space-y-4">
-                            <div className="space-y-3">
-                              <Label className="font-medium">Upload Custom Thumbnail</Label>
-                              <Input
-                                ref={fileInputRef}
-                                type="file"
-                                accept="image/*"
-                                onChange={handleCustomThumbnailUpload}
-                                className="cursor-pointer"
-                              />
-                              <p className="text-sm text-gray-500">
-                                Upload a custom image. Recommended: 1280x720 pixels (16:9 aspect ratio)
-                              </p>
-                            </div>
-                          </TabsContent>
-                          
-                          <TabsContent value="auto" className="space-y-4">
-                            <div className="p-4 bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg border border-blue-200">
-                              <p className="text-sm text-gray-700 flex items-center gap-2">
-                                <Zap className="h-4 w-4 text-blue-600" />
-                                Mux will automatically analyze your video and select the most engaging frame as your thumbnail using AI.
-                              </p>
-                            </div>
-                          </TabsContent>
-                        </Tabs>
-                        
-                        {/* Thumbnail preview */}
-                        {thumbnailPreview && (
-                          <div className="mt-6 space-y-3">
-                            <Label className="font-medium">Thumbnail Preview</Label>
-                            <div className="relative bg-gray-100 rounded-lg overflow-hidden aspect-video max-h-32 border-2 border-gray-200">
-                              <img
-                                src={thumbnailPreview}
-                                alt="Thumbnail preview"
-                                className="w-full h-full object-cover"
-                              />
-                              <div className="absolute top-2 right-2">
-                                <Badge variant="default" className="bg-green-500 text-white text-xs">
-                                  <Eye className="h-3 w-3 mr-1" />
-                                  Preview
-                                </Badge>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-                        
-                        {/* Accept thumbnail button */}
-                        <div className="flex justify-end mt-6 pt-4 border-t border-gray-200">
-                          <Button 
-                            onClick={handleAcceptThumbnail} 
-                            className="bg-green-600 hover:bg-green-700 text-white px-6 py-2"
-                          >
-                            <CheckCircle className="h-4 w-4 mr-2" />
-                            Accept Thumbnail & Continue
-                          </Button>
-                        </div>
+                      <div className="mt-3">
+                        <Progress value={step.progress} className="h-1" />
                       </div>
                     )}
                   </div>
@@ -1387,56 +935,18 @@ export function UploadFirstServerlessModal({
               </div>
 
               {/* Action Buttons */}
-              <div className="flex justify-end gap-4 pt-8 mt-8 border-t border-gray-200">
+              <div className="flex flex-col sm:flex-row justify-end gap-2 pt-4 border-t">
                 {error && (
-                  <Button variant="outline" onClick={() => startPublishProcess()} className="px-6 py-2">
+                  <Button variant="outline" onClick={() => startPublishProcess()}>
                     Retry
                   </Button>
                 )}
                 {!isProcessing && (
-                  <Button variant="outline" onClick={onClose} className="px-6 py-2">
+                  <Button variant="outline" onClick={onClose}>
                     {error ? 'Close' : 'Cancel'}
                   </Button>
                 )}
               </div>
-            </div>
-          )}
-
-          {/* Speaker Identification Interface */}
-          {showSpeakerIdentification && transcriptData && (
-            <div className="mt-8 p-6 bg-white border border-gray-200 rounded-lg">
-              <div className="mb-4">
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                  Speaker Identification Required
-                </h3>
-                <p className="text-sm text-gray-600 mb-4">
-                  We found {transcriptData.speakerCount} speakers in your transcript. Please name each speaker to improve the transcript quality.
-                </p>
-                
-                <div className="flex justify-end mb-4">
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      // Skip speaker identification
-                      if ((window as any).resolveSpeakerIdentification) {
-                        (window as any).resolveSpeakerIdentification();
-                        (window as any).resolveSpeakerIdentification = null;
-                      }
-                      setShowSpeakerIdentification(false);
-                    }}
-                    className="text-sm"
-                  >
-                    Skip Speaker Identification
-                  </Button>
-                </div>
-              </div>
-              
-              <SpeakerIdentification
-                videoId={uploadResults.videoId || ''}
-                transcript={transcriptData.text}
-                videoRef={videoRef}
-                onSpeakersUpdated={onSpeakersUpdated}
-              />
             </div>
           )}
         </div>

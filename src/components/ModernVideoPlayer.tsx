@@ -524,9 +524,9 @@ export function ModernVideoPlayer({
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <Button
             onClick={togglePlayPause}
-            className="pointer-events-auto bg-white/20 hover:bg-white/30 backdrop-blur-md border border-white/20 rounded-full p-6 transition-all duration-300 hover:scale-110"
+            className="pointer-events-auto bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/20 rounded-full p-6 transition-all duration-300 hover:scale-110"
           >
-            <Play className="h-12 w-12 text-white fill-white ml-1" />
+            <Play className="h-12 w-12 text-white fill-current ml-1" />
           </Button>
         </div>
       )}
@@ -580,16 +580,16 @@ export function ModernVideoPlayer({
                   variant="ghost"
                   size="icon"
                   onClick={togglePlayPause}
-                  className="text-white hover:bg-white/20 hover:scale-110 transition-all duration-200 rounded-full"
+                  className="text-white hover:text-white hover:bg-white/20 hover:scale-110 transition-all duration-200 rounded-full"
                 >
-                  {isPlaying ? <Pause className="h-6 w-6" /> : <Play className="h-6 w-6 ml-0.5" />}
+                  {isPlaying ? <Pause className="h-6 w-6 text-white" /> : <Play className="h-6 w-6 ml-0.5 text-white" />}
                 </Button>
 
                 <Button
                   variant="ghost"
                   size="icon"
                   onClick={skipBackward}
-                  className="text-white hover:bg-white/20 hover:scale-110 transition-all duration-200 rounded-full"
+                  className="text-white hover:text-white hover:bg-white/20 hover:scale-110 transition-all duration-200 rounded-full"
                 >
                   <SkipBack className="h-5 w-5" />
                 </Button>
@@ -598,7 +598,7 @@ export function ModernVideoPlayer({
                   variant="ghost"
                   size="icon"
                   onClick={skipForward}
-                  className="text-white hover:bg-white/20 hover:scale-110 transition-all duration-200 rounded-full"
+                  className="text-white hover:text-white hover:bg-white/20 hover:scale-110 transition-all duration-200 rounded-full"
                 >
                   <SkipForward className="h-5 w-5" />
                 </Button>
@@ -608,9 +608,9 @@ export function ModernVideoPlayer({
                     variant="ghost"
                     size="icon"
                     onClick={toggleMute}
-                    className="text-white hover:bg-white/20 hover:scale-110 transition-all duration-200 rounded-full"
+                    className="text-white hover:text-white hover:bg-white/20 hover:scale-110 transition-all duration-200 rounded-full"
                   >
-                    {isMuted || volume === 0 ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
+                    {isMuted || volume === 0 ? <VolumeX className="h-5 w-5 text-white" /> : <Volume2 className="h-5 w-5 text-white" />}
                   </Button>
 
                   <div className="w-24 opacity-0 group-hover/volume:opacity-100 transition-all duration-300 transform scale-95 group-hover/volume:scale-100">
@@ -646,7 +646,7 @@ export function ModernVideoPlayer({
                       showCaptions && "bg-white/20"
                     )}
                   >
-                    <Subtitles className="h-5 w-5" />
+                    <Subtitles className="h-5 w-5 text-white" />
                   </Button>
                 )}
 
@@ -655,9 +655,9 @@ export function ModernVideoPlayer({
                     variant="ghost"
                     size="icon"
                     onClick={togglePictureInPicture}
-                    className="text-white hover:bg-white/20 hover:scale-110 transition-all duration-200 rounded-full"
+                    className="text-white hover:text-white hover:bg-white/20 hover:scale-110 transition-all duration-200 rounded-full"
                   >
-                    <PictureInPicture className="h-5 w-5" />
+                    <PictureInPicture className="h-5 w-5 text-white" />
                   </Button>
                 )}
 
@@ -665,9 +665,9 @@ export function ModernVideoPlayer({
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="text-white hover:bg-white/20 hover:scale-110 transition-all duration-200 rounded-full"
+                    className="text-white hover:text-white hover:bg-white/20 hover:scale-110 transition-all duration-200 rounded-full"
                   >
-                    <Airplay className="h-5 w-5" />
+                    <Airplay className="h-5 w-5 text-white" />
                   </Button>
                 )}
 
@@ -675,9 +675,9 @@ export function ModernVideoPlayer({
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="text-white hover:bg-white/20 hover:scale-110 transition-all duration-200 rounded-full"
+                    className="text-white hover:text-white hover:bg-white/20 hover:scale-110 transition-all duration-200 rounded-full"
                   >
-                    <Download className="h-5 w-5" />
+                    <Download className="h-5 w-5 text-white" />
                   </Button>
                 )}
 
@@ -685,9 +685,9 @@ export function ModernVideoPlayer({
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="text-white hover:bg-white/20 hover:scale-110 transition-all duration-200 rounded-full"
+                    className="text-white hover:text-white hover:bg-white/20 hover:scale-110 transition-all duration-200 rounded-full"
                   >
-                    <Share className="h-5 w-5" />
+                    <Share className="h-5 w-5 text-white" />
                   </Button>
                 )}
 
@@ -701,11 +701,11 @@ export function ModernVideoPlayer({
                       showSettings && "bg-white/20"
                     )}
                   >
-                    <Settings className="h-5 w-5" />
+                    <Settings className="h-5 w-5 text-white" />
                   </Button>
 
                   {showSettings && (
-                    <div className="absolute bottom-full right-0 mb-3 bg-black/90 backdrop-blur-md rounded-xl border border-white/10 p-4 min-w-[220px] shadow-2xl">
+                    <div className="absolute bottom-full right-0 mb-3 bg-black/95 backdrop-blur-md rounded-xl border border-white/10 p-4 min-w-[220px] max-h-[70vh] overflow-y-auto shadow-2xl z-50">
                       <div className="space-y-4">
                         {availableQualities.length > 0 && (
                           <div>
@@ -795,9 +795,9 @@ export function ModernVideoPlayer({
                   variant="ghost"
                   size="icon"
                   onClick={toggleFullscreen}
-                  className="text-white hover:bg-white/20 hover:scale-110 transition-all duration-200 rounded-full"
+                  className="text-white hover:text-white hover:bg-white/20 hover:scale-110 transition-all duration-200 rounded-full"
                 >
-                  {isFullscreen ? <Minimize className="h-5 w-5" /> : <Maximize className="h-5 w-5" />}
+                  {isFullscreen ? <Minimize className="h-5 w-5 text-white" /> : <Maximize className="h-5 w-5 text-white" />}
                 </Button>
               </div>
             </div>

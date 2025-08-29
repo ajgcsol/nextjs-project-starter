@@ -517,9 +517,9 @@ export function SmartVideoPlayer({
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <Button
             onClick={togglePlayPause}
-            className="pointer-events-auto bg-white bg-opacity-20 hover:bg-opacity-30 backdrop-blur-md border border-white border-opacity-20 rounded-full p-6 transition-all duration-300 hover:scale-110"
+            className="pointer-events-auto bg-white bg-opacity-10 hover:bg-opacity-20 backdrop-blur-md border border-white border-opacity-20 rounded-full p-6 transition-all duration-300 hover:scale-110"
           >
-            <Play className="h-12 w-12 text-white fill-white ml-1" />
+            <Play className="h-12 w-12 text-white fill-current ml-1" />
           </Button>
         </div>
       )}
@@ -557,27 +557,27 @@ export function SmartVideoPlayer({
                 variant="ghost"
                 size="icon"
                 onClick={togglePlayPause}
-                className="text-white hover:bg-white hover:bg-opacity-20 h-12 w-12 rounded-full backdrop-blur-sm"
+                className="text-white hover:text-white hover:bg-white hover:bg-opacity-20 h-12 w-12 rounded-full backdrop-blur-sm"
               >
-                {isPlaying ? <Pause className="h-6 w-6" /> : <Play className="h-6 w-6" />}
+                {isPlaying ? <Pause className="h-6 w-6 text-white" /> : <Play className="h-6 w-6 text-white" />}
               </Button>
 
               <Button
                 variant="ghost"
                 size="icon"
                 onClick={skipBackward}
-                className="text-white hover:bg-white hover:bg-opacity-20 rounded-full"
+                className="text-white hover:text-white hover:bg-white hover:bg-opacity-20 rounded-full"
               >
-                <SkipBack className="h-5 w-5" />
+                <SkipBack className="h-5 w-5 text-white" />
               </Button>
 
               <Button
                 variant="ghost"
                 size="icon"
                 onClick={skipForward}
-                className="text-white hover:bg-white hover:bg-opacity-20 rounded-full"
+                className="text-white hover:text-white hover:bg-white hover:bg-opacity-20 rounded-full"
               >
-                <SkipForward className="h-5 w-5" />
+                <SkipForward className="h-5 w-5 text-white" />
               </Button>
 
               <div className="flex items-center space-x-3 group">
@@ -585,9 +585,9 @@ export function SmartVideoPlayer({
                   variant="ghost"
                   size="icon"
                   onClick={toggleMute}
-                  className="text-white hover:bg-white hover:bg-opacity-20 rounded-full"
+                  className="text-white hover:text-white hover:bg-white hover:bg-opacity-20 rounded-full"
                 >
-                  {isMuted || volume === 0 ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
+                  {isMuted || volume === 0 ? <VolumeX className="h-5 w-5 text-white" /> : <Volume2 className="h-5 w-5 text-white" />}
                 </Button>
 
                 <div className="w-24 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -623,11 +623,11 @@ export function SmartVideoPlayer({
                     showSettings && "bg-white bg-opacity-20"
                   )}
                 >
-                  <Settings className="h-5 w-5" />
+                  <Settings className="h-5 w-5 text-white" />
                 </Button>
 
                 {showSettings && (
-                  <div className="absolute bottom-full right-0 mb-3 bg-black bg-opacity-90 backdrop-blur-md rounded-xl p-4 min-w-[200px] border border-white border-opacity-20">
+                  <div className="absolute bottom-full right-0 mb-3 bg-black bg-opacity-95 backdrop-blur-md rounded-xl p-4 min-w-[200px] max-h-[70vh] overflow-y-auto border border-white border-opacity-20 z-50">
                     <div className="space-y-4">
                       <div>
                         <p className="text-white text-sm font-medium mb-2">Playback Speed</p>
@@ -657,9 +657,9 @@ export function SmartVideoPlayer({
                 variant="ghost"
                 size="icon"
                 onClick={toggleFullscreen}
-                className="text-white hover:bg-white hover:bg-opacity-20 rounded-full"
+                className="text-white hover:text-white hover:bg-white hover:bg-opacity-20 rounded-full"
               >
-                {isFullscreen ? <Minimize className="h-5 w-5" /> : <Maximize className="h-5 w-5" />}
+                {isFullscreen ? <Minimize className="h-5 w-5 text-white" /> : <Maximize className="h-5 w-5 text-white" />}
               </Button>
             </div>
           </div>

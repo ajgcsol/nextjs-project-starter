@@ -70,7 +70,7 @@ export async function POST(request: NextRequest) {
         );
       }
       
-      const { title: jsonTitle, description: jsonDescription, category: jsonCategory, tags: jsonTags, visibility: jsonVisibility, s3Key, publicUrl, filename, size, mimeType, autoThumbnail } = data;
+      const { title: jsonTitle, description: jsonDescription, category: jsonCategory, tags: jsonTags, visibility: jsonVisibility, status: requestedStatus, s3Key, publicUrl, filename, size, mimeType, autoThumbnail } = data;
       console.log('🎬 Extracted fields:', { title: jsonTitle, description: jsonDescription, category: jsonCategory, tags: jsonTags, visibility: jsonVisibility, s3Key, publicUrl, filename, size, mimeType, hasThumbnail: !!autoThumbnail });
 
       if (!s3Key || !publicUrl || !filename) {
@@ -127,7 +127,7 @@ export async function POST(request: NextRequest) {
           course_id: undefined,
           s3_key: s3Key,
           s3_bucket: process.env.S3_BUCKET_NAME || undefined,
-          is_processed: false, // Will be updated after processing
+          is_processed: requestedStatus === 'ready', // Set based on requested status or processing state
           is_public: jsonVisibility === 'public',
           // Initialize Mux fields as null - will be populated by webhooks
           mux_status: 'pending',
