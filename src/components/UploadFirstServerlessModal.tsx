@@ -552,6 +552,7 @@ export function UploadFirstServerlessModal({
     try {
       // Mux automatically generates thumbnails - we just need to mark it as complete
       updateStepStatus('thumbnail', 'processing', 50, 'Mux generating thumbnail...');
+      console.log('🖼️ Using Mux automatic thumbnail generation');
       
       // Thumbnails are instantly available with Mux
       await new Promise(resolve => setTimeout(resolve, 800));
@@ -572,6 +573,7 @@ export function UploadFirstServerlessModal({
     try {
       // Mux handles subtitle generation automatically
       updateStepStatus('transcription', 'processing', 50, 'Mux is generating subtitles...');
+      console.log('📝 Mux will generate subtitles automatically for video:', uploadResults?.videoId || 'pending');
       
       // Wait a moment then mark as complete since Mux handles this async
       await new Promise(resolve => setTimeout(resolve, 1000));
