@@ -668,21 +668,6 @@ export const VideoDB = {
         console.error('❌ VideoDB.createWithId: Failed to create video with Mux fields:', muxError);
         throw muxError;
       }
-    } catch (outerError) {
-      // Final catch for unexpected errors
-      if (outerError && outerError.code === '23505' && outerError.constraint === 'videos_pkey') {
-        console.log('⚠️ VideoDB.createWithId: Duplicate key detected at outer level, attempting to fetch existing video');
-        try {
-          const existingVideo = await this.findById(id);
-          if (existingVideo) {
-            console.log('✅ VideoDB.createWithId: Returning existing video after outer duplicate key error');
-            return existingVideo;
-          }
-        } catch (fetchError) {
-          console.error('❌ VideoDB.createWithId: Failed to fetch existing video after outer duplicate key error:', fetchError);
-        }
-      }
-      throw outerError;
     }
   },
 
