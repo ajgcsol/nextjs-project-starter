@@ -24,7 +24,10 @@ export async function POST(request: NextRequest) {
         ADD COLUMN IF NOT EXISTS entities_extracted JSONB,
         ADD COLUMN IF NOT EXISTS content_summary TEXT,
         ADD COLUMN IF NOT EXISTS content_sentiment VARCHAR(20),
-        ADD COLUMN IF NOT EXISTS captions_srt_url TEXT;
+        ADD COLUMN IF NOT EXISTS captions_srt_url TEXT,
+        ADD COLUMN IF NOT EXISTS thumbnail_url TEXT,
+        ADD COLUMN IF NOT EXISTS thumbnail_timestamp INTEGER,
+        ADD COLUMN IF NOT EXISTS thumbnail_method VARCHAR(50) DEFAULT 'auto';
 
       -- Create speaker_segments table for detailed speaker information
       CREATE TABLE IF NOT EXISTS speaker_segments (
