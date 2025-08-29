@@ -29,13 +29,38 @@ export async function GET(
     let contentType: string;
     let filename: string;
 
+    // Try to get real speaker segments with timestamps first
+    const { Pool } = await import('pg');
+    const pool = new Pool({
+      connectionString: process.env.DATABASE_URL,
+      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+    });
+
+    let realSegments: any[] = [];
+    try {
+      const segmentsResult = await pool.query(`
+        SELECT speaker_label, start_time, end_time, text, confidence, is_relevant
+        FROM speaker_segments 
+        WHERE video_id = $1 AND (is_relevant IS NULL OR is_relevant = true)
+        ORDER BY start_time
+      `, [videoId]);
+      realSegments = segmentsResult.rows;
+      console.log('📊 Found real speaker segments:', realSegments.length);
+    } catch (segmentError) {
+      console.warn('⚠️ Could not fetch speaker segments, using fallback:', segmentError);
+    }
+
     if (format === 'srt') {
-      subtitleContent = convertToSRT(video.transcript_text, video.speaker_count);
+      subtitleContent = realSegments.length > 0 
+        ? convertRealSegmentsToSRT(realSegments)
+        : convertToSRT(video.transcript_text, video.speaker_count);
       contentType = 'application/x-subrip';
       filename = `${video.title || 'video'}-subtitles.srt`;
     } else {
       // Default to VTT
-      subtitleContent = convertToVTT(video.transcript_text, video.speaker_count);
+      subtitleContent = realSegments.length > 0 
+        ? convertRealSegmentsToVTT(realSegments)
+        : convertToVTT(video.transcript_text, video.speaker_count);
       contentType = 'text/vtt';
       filename = `${video.title || 'video'}-subtitles.vtt`;
     }
@@ -127,6 +152,52 @@ function convertToSRT(transcriptText: string, speakerCount?: number): string {
     }
     
     currentTime += segmentDuration;
+  });
+  
+  return srt;
+}
+
+/**
+ * Convert real speaker segments to WebVTT format with actual timestamps
+ */
+function convertRealSegmentsToVTT(segments: any[]): string {
+  let vtt = 'WEBVTT\n\n';
+  
+  segments.forEach((segment, index) => {
+    const startTime = formatVTTTime(segment.start_time);
+    const endTime = formatVTTTime(segment.end_time);
+    
+    vtt += `${index + 1}\n`;
+    vtt += `${startTime} --> ${endTime}\n`;
+    
+    if (segment.speaker_label) {
+      vtt += `<v ${segment.speaker_label}>${segment.text.trim()}</v>\n\n`;
+    } else {
+      vtt += `${segment.text.trim()}\n\n`;
+    }
+  });
+  
+  return vtt;
+}
+
+/**
+ * Convert real speaker segments to SRT format with actual timestamps
+ */
+function convertRealSegmentsToSRT(segments: any[]): string {
+  let srt = '';
+  
+  segments.forEach((segment, index) => {
+    const startTime = formatSRTTime(segment.start_time);
+    const endTime = formatSRTTime(segment.end_time);
+    
+    srt += `${index + 1}\n`;
+    srt += `${startTime} --> ${endTime}\n`;
+    
+    const text = segment.speaker_label 
+      ? `${segment.speaker_label}: ${segment.text.trim()}`
+      : segment.text.trim();
+    
+    srt += `${text}\n\n`;
   });
   
   return srt;

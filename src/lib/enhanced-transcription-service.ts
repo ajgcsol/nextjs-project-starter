@@ -39,18 +39,34 @@ export class EnhancedTranscriptionService {
   private openai: OpenAI;
 
   constructor() {
-    this.awsTranscribe = new AWSTranscribeService();
+    try {
+      this.awsTranscribe = new AWSTranscribeService();
+      console.log('✅ AWS Transcribe service initialized');
+    } catch (error) {
+      console.warn('⚠️ AWS Transcribe not available:', error);
+      throw new Error(`AWS Transcribe initialization failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
     
     try {
       this.whisperAI = new WhisperAIService();
+      console.log('✅ Whisper AI service initialized');
     } catch (error) {
       console.warn('⚠️ Whisper AI not available:', error);
+      // Don't throw here, whisper is optional fallback
+      this.whisperAI = null as any;
     }
 
     if (process.env.OPENAI_API_KEY) {
-      this.openai = new OpenAI({
-        apiKey: process.env.OPENAI_API_KEY,
-      });
+      try {
+        this.openai = new OpenAI({
+          apiKey: process.env.OPENAI_API_KEY,
+        });
+        console.log('✅ OpenAI service initialized');
+      } catch (error) {
+        console.warn('⚠️ OpenAI not available:', error);
+      }
+    } else {
+      console.warn('⚠️ OPENAI_API_KEY not set, AI enhancement disabled');
     }
   }
 
@@ -106,7 +122,7 @@ export class EnhancedTranscriptionService {
     // Fallback to Whisper AI
     console.log('2️⃣ Falling back to Whisper AI...');
     
-    if (this.whisperAI) {
+    if (this.whisperAI && process.env.OPENAI_API_KEY) {
       try {
         const whisperResult = await this.whisperAI.transcribeAudio({
           videoId: options.videoId,
