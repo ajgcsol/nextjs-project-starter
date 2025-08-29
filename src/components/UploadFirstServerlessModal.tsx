@@ -138,8 +138,8 @@ export function UploadFirstServerlessModal({
     },
     {
       id: 'transcription',
-      title: '✨ AI-Enhanced Transcription',
-      description: 'Speaker diarization, entity extraction & AI analysis',
+      title: '🎬 Mux Subtitle Generation',
+      description: 'Automatic subtitle generation powered by Mux',
       icon: <Mic className="h-4 w-4 sm:h-5 sm:w-5" />,
       status: 'pending'
     },
@@ -824,51 +824,51 @@ export function UploadFirstServerlessModal({
                 </div>
               </div>
 
-              {/* AI Transcription Settings */}
-              <div className="bg-gradient-to-br from-blue-50 to-purple-50 rounded-lg p-4 space-y-4 border border-blue-100">
+              {/* Mux Processing Info */}
+              <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg p-4 space-y-4 border border-blue-100">
                 <h4 className="text-sm sm:text-base font-medium flex items-center gap-2 text-blue-900">
                   <Mic className="h-4 w-4" />
-                  ✨ AI-Enhanced Transcription Settings
+                  🎬 Mux Video Processing
                 </h4>
                 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <Label className="text-xs font-medium text-gray-700">Speaker Detection</Label>
-                      <Badge variant="default" className="bg-green-500 text-xs">AI-Powered</Badge>
+                      <Label className="text-xs font-medium text-gray-700">Video Streaming</Label>
+                      <Badge variant="default" className="bg-green-500 text-xs">Automatic</Badge>
                     </div>
                     <div className="text-xs text-gray-600 bg-white p-2 rounded">
-                      Automatically identifies and separates different speakers in your video
+                      Optimized adaptive bitrate streaming for all devices
                     </div>
                   </div>
                   
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <Label className="text-xs font-medium text-gray-700">Max Speakers</Label>
-                      <span className="text-xs font-semibold text-blue-600">4 speakers</span>
+                      <Label className="text-xs font-medium text-gray-700">Thumbnail Generation</Label>
+                      <Badge variant="default" className="bg-blue-500 text-xs">Instant</Badge>
                     </div>
                     <div className="text-xs text-gray-600 bg-white p-2 rounded">
-                      System will detect up to 4 different speakers automatically
+                      Thumbnails available immediately after upload
                     </div>
                   </div>
                   
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <Label className="text-xs font-medium text-gray-700">Entity Extraction</Label>
-                      <Badge variant="default" className="bg-purple-500 text-xs">AI Analysis</Badge>
+                      <Label className="text-xs font-medium text-gray-700">Subtitle Generation</Label>
+                      <Badge variant="default" className="bg-purple-500 text-xs">Mux Native</Badge>
                     </div>
                     <div className="text-xs text-gray-600 bg-white p-2 rounded">
-                      Identifies people, organizations, topics, and key concepts
+                      Automatic subtitle generation (may take up to 24 hours)
                     </div>
                   </div>
                   
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <Label className="text-xs font-medium text-gray-700">Content Analysis</Label>
-                      <Badge variant="default" className="bg-orange-500 text-xs">Smart Summary</Badge>
+                      <Label className="text-xs font-medium text-gray-700">Format Support</Label>
+                      <Badge variant="default" className="bg-orange-500 text-xs">Universal</Badge>
                     </div>
                     <div className="text-xs text-gray-600 bg-white p-2 rounded">
-                      Generates summaries, topics, and sentiment analysis
+                      MP4, MOV, AVI, and more - all formats supported
                     </div>
                   </div>
                 </div>
@@ -877,9 +877,9 @@ export function UploadFirstServerlessModal({
                   <div className="flex items-start gap-2">
                     <Zap className="h-4 w-4 text-yellow-400 flex-shrink-0 mt-0.5" />
                     <div>
-                      <div className="font-medium mb-1">Enhanced Transcription Active</div>
+                      <div className="font-medium mb-1">Mux Processing Active</div>
                       <div className="text-blue-100">
-                        Your video will be processed with AWS Transcribe, Whisper AI, and advanced content analysis for the most accurate results.
+                        Your video will be processed by Mux for streaming optimization, thumbnail generation, and automatic subtitle creation.
                       </div>
                     </div>
                   </div>
