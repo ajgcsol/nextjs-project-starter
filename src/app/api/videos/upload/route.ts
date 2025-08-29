@@ -5,8 +5,7 @@ import * as crypto from 'crypto';
 import { VideoDB } from '@/lib/database';
 import { videoMonitor, PerformanceMonitor } from '@/lib/monitoring';
 import { VideoConverter } from '@/lib/videoConverter';
-import MuxVideoProcessor from '@/lib/mux-video-processor';
-import { SynchronousMuxProcessor } from '@/lib/synchronous-mux-processor';
+import { SimpleMuxProcessor } from '@/lib/simple-mux-processor';
 import { ThumbnailGenerator } from '@/lib/thumbnailGenerator';
 
 // For serverless environment, we'll skip local file storage
@@ -94,13 +93,9 @@ export async function POST(request: NextRequest) {
         fileExtension: filename.toLowerCase().split('.').pop()
       });
 
-      // Decide whether to use synchronous or asynchronous Mux processing
-      const shouldProcessSync = SynchronousMuxProcessor.shouldProcessSynchronously(size, mimeType || 'video/mp4');
-      console.log('🎬 Processing decision:', {
+      console.log('🎬 Processing decision: Using simple Mux processing for all files', {
         fileSize: `${(size / (1024*1024)).toFixed(2)}MB`,
-        mimeType,
-        shouldProcessSync,
-        estimatedTime: `${SynchronousMuxProcessor.estimateProcessingTime(size, mimeType || 'video/mp4') / 1000}s`
+        mimeType
       });
 
       // CRITICAL: Create database record IMMEDIATELY after S3 upload
@@ -158,142 +153,55 @@ export async function POST(request: NextRequest) {
       let muxBitrate = null;
       
       try {
-        console.log('🎬 🎭 Starting Mux processing for:', filename, 'with existing DB record:', savedVideo.id);
+        console.log('🎬 🎭 Starting simple Mux processing for:', filename, 'with existing DB record:', savedVideo.id);
         
-        if (shouldProcessSync) {
-          console.log('⚡ Using SYNCHRONOUS Mux processing - thumbnails and transcripts will be ready immediately');
+        // Create S3 URL for Mux
+        const s3Url = `https://law-school-repository-content.s3.us-east-1.amazonaws.com/${s3Key}`;
+        console.log('📤 Creating Mux asset with subtitles from S3 URL:', s3Url);
+        
+        // Create Mux asset with automatic subtitle generation
+        const muxResult = await SimpleMuxProcessor.createAssetWithSubtitles(s3Url, jsonFileId, {
+          playbackPolicy: 'public',
+          mp4Support: true,
+          generateSubtitles: true,
+          subtitleLanguage: 'en'
+        });
           
-          // Use synchronous processing for immediate results
-          const syncResult = await SynchronousMuxProcessor.processVideoSynchronously(
-            s3Key, 
-            jsonFileId, 
-            filename, 
-            size,
-            90000 // 90 seconds max wait for synchronous processing
-          );
+        if (muxResult.success) {
+          muxAssetId = muxResult.assetId;
+          muxPlaybackId = muxResult.playbackId;
+          muxThumbnailUrl = muxResult.thumbnailUrl;
+          muxStreamingUrl = muxResult.streamingUrl;
+          muxMp4Url = muxResult.mp4Url;
+          muxStatus = muxResult.status;
+          muxDuration = muxResult.duration;
+          muxAspectRatio = muxResult.aspectRatio;
           
-          if (syncResult.success) {
-            muxAssetId = syncResult.muxAssetId;
-            muxPlaybackId = syncResult.muxPlaybackId;
-            muxThumbnailUrl = syncResult.thumbnailUrl;
-            muxStreamingUrl = syncResult.muxStreamingUrl;
-            muxMp4Url = syncResult.muxMp4Url;
-            transcriptText = syncResult.transcriptText || '';
-            captionsUrl = syncResult.captionsUrl || '';
-            muxDuration = syncResult.duration;
-            muxWidth = syncResult.width;
-            muxHeight = syncResult.height;
-            muxAspectRatio = syncResult.aspectRatio;
-            muxBitrate = syncResult.bitrate;
-            muxStatus = syncResult.error ? 'processing' : 'ready';
-            
-            console.log('🎬 ✅ Synchronous Mux processing completed:', {
-              assetId: muxAssetId,
-              playbackId: muxPlaybackId,
-              status: muxStatus,
-              thumbnailUrl: muxThumbnailUrl,
-              hasTranscript: !!transcriptText,
-              hasCaptions: !!captionsUrl,
-              processingTime: `${syncResult.processingTime}ms`,
-              metadata: {
-                duration: muxDuration,
-                dimensions: muxWidth && muxHeight ? `${muxWidth}x${muxHeight}` : 'unknown',
-                aspectRatio: muxAspectRatio
-              }
-            });
-            
-            await videoMonitor.logUploadEvent('Synchronous Mux processing completed', {
-              assetId: muxAssetId,
-              playbackId: muxPlaybackId,
-              status: muxStatus,
-              processingTime: syncResult.processingTime,
-              features: ['video_conversion', 'thumbnail_generation', 'transcript_generation', 'metadata_extraction'],
-              thumbnailReady: !!muxThumbnailUrl,
-              transcriptReady: !!transcriptText
-            });
-            
-          } else {
-            console.error('🎬 ❌ Synchronous Mux processing failed:', syncResult.error);
-            await videoMonitor.logUploadEvent('Synchronous Mux processing failed', {
-              error: syncResult.error,
-              processingTime: syncResult.processingTime,
-              fallback: 'continuing_without_mux'
-            });
-          }
+          console.log('🎬 ✅ Simple Mux asset created with subtitles:', {
+            assetId: muxAssetId,
+            playbackId: muxPlaybackId,
+            status: muxStatus,
+            thumbnailUrl: muxThumbnailUrl,
+            streamingUrl: muxStreamingUrl,
+            mp4Url: muxMp4Url,
+            duration: muxDuration,
+            aspectRatio: muxAspectRatio
+          });
           
+          await videoMonitor.logUploadEvent('Simple Mux processing completed', {
+            assetId: muxAssetId,
+            playbackId: muxPlaybackId,
+            status: muxStatus,
+            features: ['video_conversion', 'thumbnail_generation', 'subtitle_generation'],
+            thumbnailReady: !!muxThumbnailUrl
+          });
+            
         } else {
-          console.log('🔄 Using ASYNCHRONOUS Mux processing - thumbnails and transcripts will be available via webhooks');
-          
-          // Use asynchronous processing for large files
-          const processingOptions = MuxVideoProcessor.getDefaultProcessingOptions();
-          const muxResult = await MuxVideoProcessor.createAssetFromS3(s3Key, jsonFileId, processingOptions);
-          
-          if (muxResult.success) {
-            muxAssetId = muxResult.assetId;
-            muxPlaybackId = muxResult.playbackId;
-            muxThumbnailUrl = muxResult.thumbnailUrl;
-            muxStreamingUrl = muxResult.streamingUrl;
-            muxMp4Url = muxResult.mp4Url;
-            muxStatus = muxResult.processingStatus;
-            
-            console.log('🎬 ✅ Asynchronous Mux asset created:', {
-              assetId: muxAssetId,
-              playbackId: muxPlaybackId,
-              status: muxStatus,
-              thumbnailUrl: muxThumbnailUrl,
-              note: 'Processing will continue in background'
-            });
-            
-            await videoMonitor.logUploadEvent('Asynchronous Mux asset created', {
-              assetId: muxAssetId,
-              playbackId: muxPlaybackId,
-              status: muxStatus,
-              features: ['video_conversion', 'thumbnail_generation', 'audio_enhancement', 'transcription'],
-              note: 'Background processing initiated'
-            });
-            
-            // Trigger background processing (don't await)
-            if (processingOptions.enhanceAudio && muxAssetId) {
-              console.log('🎵 Starting background audio enhancement...');
-              MuxVideoProcessor.enhanceAudio(muxAssetId).then(result => {
-                if (result.success) {
-                  console.log('🎵 ✅ Background audio enhancement completed:', result.enhancedAudioUrl);
-                } else {
-                  console.error('🎵 ❌ Background audio enhancement failed:', result.error);
-                }
-              }).catch(error => {
-                console.error('🎵 ⚠️ Background audio enhancement error:', error);
-              });
-            }
-            
-            if (processingOptions.generateCaptions && muxAssetId) {
-              console.log('📝 Starting background caption generation...');
-              MuxVideoProcessor.generateCaptions(muxAssetId, {
-                language: processingOptions.captionLanguage,
-                generateVtt: true,
-                generateSrt: true
-              }).then(result => {
-                if (result.success) {
-                  console.log('📝 ✅ Background caption generation completed:', {
-                    vttUrl: result.vttUrl,
-                    srtUrl: result.srtUrl,
-                    confidence: result.confidence
-                  });
-                } else {
-                  console.error('📝 ❌ Background caption generation failed:', result.error);
-                }
-              }).catch(error => {
-                console.error('📝 ⚠️ Background caption generation error:', error);
-              });
-            }
-            
-          } else {
-            console.error('🎬 ❌ Asynchronous Mux asset creation failed:', muxResult.error);
-            await videoMonitor.logUploadEvent('Asynchronous Mux asset creation failed', {
-              error: muxResult.error,
-              fallback: 'continuing_without_mux'
-            });
-          }
+          console.error('🔄 Simple Mux processing failed:', muxResult.error);
+          await videoMonitor.logUploadEvent('Simple Mux processing failed', {
+            error: muxResult.error,
+            fallback: 'continuing_without_mux'
+          });
         }
         
       } catch (muxError) {

@@ -196,13 +196,33 @@ export class MuxWebhookHandler {
           processingTime: Date.now() - startTime
         };
       } else {
-        console.log('⚠️ Video not found for asset creation update');
+        console.log('⚠️ Video not found for asset creation update, attempting recovery...');
+        
+        // Try to create the missing video from webhook data
+        const recoveredVideo = await VideoDB.createMissingVideoFromMuxWebhook(videoId, {
+          assetId,
+          status: 'preparing'
+        });
+        
+        if (recoveredVideo) {
+          console.log('✅ Successfully recovered missing video from webhook data');
+          return {
+            success: true,
+            action: 'asset_created_recovered',
+            videoId,
+            assetId,
+            status: 'preparing',
+            message: 'Video record recovered from webhook',
+            processingTime: Date.now() - startTime
+          };
+        }
+        
         return {
           success: false,
           action: 'asset_created_video_not_found',
           videoId,
           assetId,
-          error: 'Video not found in database',
+          error: 'Video not found in database and recovery failed',
           processingTime: Date.now() - startTime
         };
       }
@@ -253,8 +273,20 @@ export class MuxWebhookHandler {
         aspectRatio
       });
 
-      // Generate URLs
-      const thumbnailUrl = playbackId ? `https://image.mux.com/${playbackId}/thumbnail.jpg?time=10` : undefined;
+      // Generate URLs - check for saved thumbnail timestamp
+      let thumbnailUrl = undefined;
+      if (playbackId) {
+        // First check if there's a saved thumbnail timestamp from user selection
+        const existingVideo = await VideoDB.findById(videoId);
+        const customTimestamp = existingVideo?.thumbnail_timestamp;
+        
+        if (customTimestamp && existingVideo?.thumbnail_method === 'timestamp') {
+          thumbnailUrl = `https://image.mux.com/${playbackId}/thumbnail.jpg?time=${customTimestamp}`;
+          console.log('🎯 Applied saved thumbnail timestamp:', customTimestamp);
+        } else {
+          thumbnailUrl = `https://image.mux.com/${playbackId}/thumbnail.jpg?time=10`;
+        }
+      }
       const streamingUrl = playbackId ? `https://stream.mux.com/${playbackId}.m3u8` : undefined;
       const mp4Url = data.mp4_support !== 'none' && playbackId ? 
         `https://stream.mux.com/${playbackId}/high.mp4` : undefined;
@@ -298,13 +330,44 @@ export class MuxWebhookHandler {
           processingTime: Date.now() - startTime
         };
       } else {
-        console.log('⚠️ Video not found for asset ready update');
+        console.log('⚠️ Video not found for asset ready update, attempting recovery...');
+        
+        // Try to create the missing video from webhook data
+        const recoveredVideo = await VideoDB.createMissingVideoFromMuxWebhook(videoId, {
+          assetId,
+          playbackId,
+          duration,
+          aspectRatio,
+          thumbnailUrl,
+          streamingUrl: playbackId ? `https://stream.mux.com/${playbackId}.m3u8` : undefined
+        });
+        
+        if (recoveredVideo) {
+          console.log('✅ Successfully recovered missing video from webhook data');
+          
+          // Trigger transcription for the recovered video
+          this.triggerAWSTranscribe(videoId).catch(error => {
+            console.error('❌ Failed to trigger AWS Transcribe for recovered video:', error);
+          });
+          
+          return {
+            success: true,
+            action: 'asset_ready_recovered',
+            videoId,
+            assetId,
+            playbackId,
+            status: 'ready',
+            message: 'Video record recovered from webhook',
+            processingTime: Date.now() - startTime
+          };
+        }
+        
         return {
           success: false,
           action: 'asset_ready_video_not_found',
           videoId,
           assetId,
-          error: 'Video not found in database',
+          error: 'Video not found in database and recovery failed',
           processingTime: Date.now() - startTime
         };
       }
@@ -363,13 +426,33 @@ export class MuxWebhookHandler {
           processingTime: Date.now() - startTime
         };
       } else {
-        console.log('⚠️ Video not found for asset error update');
+        console.log('⚠️ Video not found for asset error update, attempting recovery...');
+        
+        // Try to create the missing video from webhook data
+        const recoveredVideo = await VideoDB.createMissingVideoFromMuxWebhook(videoId, {
+          assetId,
+          status: 'errored'
+        });
+        
+        if (recoveredVideo) {
+          console.log('✅ Successfully recovered missing video from webhook data');
+          return {
+            success: true,
+            action: 'asset_errored_recovered',
+            videoId,
+            assetId,
+            status: 'errored',
+            message: 'Video record recovered from webhook (but asset errored)',
+            processingTime: Date.now() - startTime
+          };
+        }
+        
         return {
           success: false,
           action: 'asset_errored_video_not_found',
           videoId,
           assetId,
-          error: 'Video not found in database',
+          error: 'Video not found in database and recovery failed',
           processingTime: Date.now() - startTime
         };
       }
@@ -430,13 +513,34 @@ export class MuxWebhookHandler {
           processingTime: Date.now() - startTime
         };
       } else {
-        console.log('⚠️ Video not found for upload completion update');
+        console.log('⚠️ Video not found for upload completion update, attempting recovery...');
+        
+        // Try to create the missing video from webhook data
+        const recoveredVideo = await VideoDB.createMissingVideoFromMuxWebhook(videoId, {
+          assetId,
+          uploadId,
+          status: 'preparing'
+        });
+        
+        if (recoveredVideo) {
+          console.log('✅ Successfully recovered missing video from webhook data');
+          return {
+            success: true,
+            action: 'upload_completed_recovered',
+            videoId,
+            assetId,
+            status: 'preparing',
+            message: 'Video record recovered from webhook',
+            processingTime: Date.now() - startTime
+          };
+        }
+        
         return {
           success: false,
           action: 'upload_completed_video_not_found',
           videoId,
           assetId,
-          error: 'Video not found in database',
+          error: 'Video not found in database and recovery failed',
           processingTime: Date.now() - startTime
         };
       }
@@ -511,13 +615,44 @@ export class MuxWebhookHandler {
           processingTime: Date.now() - startTime
         };
       } else {
-        console.log('⚠️ Video not found for asset update');
+        console.log('⚠️ Video not found for asset update, attempting recovery...');
+        
+        const playbackId = data.playback_ids?.[0]?.id;
+        const duration = data.duration;
+        const aspectRatio = data.aspect_ratio;
+        const thumbnailUrl = playbackId ? `https://image.mux.com/${playbackId}/thumbnail.jpg?time=10` : undefined;
+        
+        // Try to create the missing video from webhook data
+        const recoveredVideo = await VideoDB.createMissingVideoFromMuxWebhook(videoId, {
+          assetId,
+          playbackId,
+          duration,
+          aspectRatio,
+          thumbnailUrl,
+          streamingUrl: playbackId ? `https://stream.mux.com/${playbackId}.m3u8` : undefined,
+          status: status
+        });
+        
+        if (recoveredVideo) {
+          console.log('✅ Successfully recovered missing video from webhook data');
+          return {
+            success: true,
+            action: 'asset_updated_recovered',
+            videoId,
+            assetId,
+            playbackId,
+            status,
+            message: 'Video record recovered from webhook',
+            processingTime: Date.now() - startTime
+          };
+        }
+        
         return {
           success: false,
           action: 'asset_updated_video_not_found',
           videoId,
           assetId,
-          error: 'Video not found in database',
+          error: 'Video not found in database and recovery failed',
           processingTime: Date.now() - startTime
         };
       }

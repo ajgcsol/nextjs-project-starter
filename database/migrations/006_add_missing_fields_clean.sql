@@ -23,6 +23,7 @@ ALTER TABLE videos ADD COLUMN IF NOT EXISTS captions_status VARCHAR(50);
 ALTER TABLE videos ADD COLUMN IF NOT EXISTS webhook_received_at TIMESTAMP;
 
 -- Add Mux columns if not already added
+ALTER TABLE videos ADD COLUMN IF NOT EXISTS mux_asset_id VARCHAR(255);
 ALTER TABLE videos ADD COLUMN IF NOT EXISTS mux_playback_id VARCHAR(255);
 ALTER TABLE videos ADD COLUMN IF NOT EXISTS mux_upload_id VARCHAR(255);
 ALTER TABLE videos ADD COLUMN IF NOT EXISTS mux_status VARCHAR(50) DEFAULT 'pending';

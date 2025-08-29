@@ -39,8 +39,8 @@ export async function POST(request: NextRequest) {
 
     // If we have a Mux playback ID, construct the thumbnail URL with the timestamp
     if (video.mux_playback_id) {
-      updateData.thumbnail_path = `https://image.mux.com/${video.mux_playback_id}/thumbnail.jpg?time=${timestamp}`;
-      console.log('✅ Mux thumbnail URL generated:', updateData.thumbnail_path);
+      updateData.thumbnail_url = `https://image.mux.com/${video.mux_playback_id}/thumbnail.jpg?time=${timestamp}`;
+      console.log('✅ Mux thumbnail URL generated:', updateData.thumbnail_url);
     }
 
     // Update the database
@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       message: 'Thumbnail timestamp set successfully',
-      thumbnailUrl: updateData.thumbnail_path || `/api/videos/thumbnail/${videoId}`,
+      thumbnailUrl: updateData.thumbnail_url || `/api/videos/thumbnail/${videoId}`,
       timestamp
     });
 

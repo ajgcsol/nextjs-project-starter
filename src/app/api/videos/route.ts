@@ -29,15 +29,42 @@ export async function GET(request: NextRequest) {
         views: video.view_count || 0,
         uploadDate: video.uploaded_at || video.created_at,
         thumbnailUrl: (() => {
-          // If we have user timestamp preference and a valid Mux playback ID, use that
+          console.log('🖼️ Thumbnail URL decision for video:', video.id, {
+            mux_playback_id: video.mux_playback_id,
+            mux_thumbnail_url: video.mux_thumbnail_url,
+            thumbnail_path: video.thumbnail_path,
+            thumbnail_timestamp: video.thumbnail_timestamp,
+            thumbnail_method: video.thumbnail_method
+          });
+
+          // Priority 1: If we have user timestamp preference and a valid Mux playback ID, use that
           if (video.mux_playback_id && video.thumbnail_timestamp && video.thumbnail_method === 'timestamp') {
-            return `https://image.mux.com/${video.mux_playback_id}/thumbnail.jpg?time=${video.thumbnail_timestamp}`;
+            const customUrl = `https://image.mux.com/${video.mux_playback_id}/thumbnail.jpg?time=${video.thumbnail_timestamp}`;
+            console.log('🎯 Using custom timestamp thumbnail:', customUrl);
+            return customUrl;
           }
-          // If thumbnail_path looks like a valid Mux URL, use it
-          if (video.thumbnail_path && video.thumbnail_path.startsWith('https://image.mux.com/') && !video.thumbnail_path.includes('/videos/')) {
+          
+          // Priority 2: Use mux_thumbnail_url if available
+          if (video.mux_thumbnail_url) {
+            console.log('🎬 Using mux_thumbnail_url:', video.mux_thumbnail_url);
+            return video.mux_thumbnail_url;
+          }
+          
+          // Priority 3: If we have mux_playback_id, generate default Mux thumbnail
+          if (video.mux_playback_id) {
+            const muxUrl = `https://image.mux.com/${video.mux_playback_id}/thumbnail.jpg?time=10`;
+            console.log('🎬 Generated Mux thumbnail from playback_id:', muxUrl);
+            return muxUrl;
+          }
+          
+          // Priority 4: If thumbnail_path looks like a valid Mux URL, use it
+          if (video.thumbnail_path && video.thumbnail_path.startsWith('https://image.mux.com/')) {
+            console.log('🔗 Using stored thumbnail_path:', video.thumbnail_path);
             return video.thumbnail_path;
           }
-          // Fallback to API endpoint
+          
+          // Priority 5: Fallback to API endpoint (will generate placeholder)
+          console.log('🆘 Falling back to thumbnail API endpoint');
           return `/api/videos/thumbnail/${video.id}`;
         })(),
         category: video.category || 'General',

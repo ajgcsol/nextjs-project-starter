@@ -671,6 +671,21 @@ export const VideoDB = {
     }
   },
 
+  async findRecentVideos(hoursAgo: number = 24) {
+    try {
+      const { rows } = await query(
+        `SELECT * FROM videos 
+         WHERE created_at >= NOW() - INTERVAL '${hoursAgo} hours'
+         ORDER BY created_at DESC`,
+        []
+      );
+      return rows;
+    } catch (error) {
+      console.error('❌ Failed to find recent videos:', error);
+      return [];
+    }
+  },
+
   /**
    * Find video by Mux Asset ID with proper error handling
    */
@@ -847,6 +862,41 @@ export const VideoDB = {
       [courseId]
     );
     return rows;
+  },
+
+  async createMissingVideoFromMuxWebhook(videoId: string, muxData: any) {
+    try {
+      console.log('🔧 Creating missing video record from Mux webhook data:', videoId);
+      
+      const videoData = {
+        title: `Recovered Video ${videoId.substring(0, 8)}`,
+        description: 'Video record recovered from Mux webhook',
+        filename: `recovered_${videoId}.mp4`,
+        file_path: muxData.streamingUrl || `https://stream.mux.com/${muxData.playbackId}.m3u8`,
+        file_size: 0,
+        duration: Math.round(muxData.duration || 0),
+        thumbnail_path: muxData.thumbnailUrl || `https://image.mux.com/${muxData.playbackId}/thumbnail.jpg?time=10`,
+        video_quality: 'HD',
+        uploaded_by: 'system-recovery',
+        is_processed: true,
+        is_public: false,
+        mux_asset_id: muxData.assetId,
+        mux_playback_id: muxData.playbackId,
+        mux_status: 'ready',
+        mux_duration_seconds: muxData.duration,
+        mux_aspect_ratio: muxData.aspectRatio,
+        mux_thumbnail_url: muxData.thumbnailUrl,
+        mux_streaming_url: muxData.streamingUrl
+      };
+
+      const result = await this.createWithId(videoId, videoData);
+      console.log('✅ Successfully created missing video from webhook:', videoId);
+      return result;
+      
+    } catch (error) {
+      console.error('❌ Failed to create missing video from webhook:', error);
+      return null;
+    }
   },
 
   async update(id: string, updates: {

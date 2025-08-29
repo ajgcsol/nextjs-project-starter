@@ -141,8 +141,7 @@ export class MuxVideoProcessor {
       if (options.generateCaptions || options.generateSubtitles) {
         inputSettings.generated_subtitles = [{
           language_code: options.captionLanguage || 'en',
-          name: 'English (Auto-generated)',
-          passthrough: `${videoId}_subtitles`
+          name: 'English (Auto-generated)'
         }];
         console.log('📝 ✅ Enabled automatic caption generation for language:', options.captionLanguage || 'en');
         console.log('📝 Input settings with subtitles:', JSON.stringify(inputSettings, null, 2));
@@ -155,7 +154,7 @@ export class MuxVideoProcessor {
         playback_policy: [options.playbackPolicy],
         master_access: 'temporary',
         normalize_audio: options.normalizeAudio,
-        test: process.env.NODE_ENV !== 'production',
+        test: false, // Always false in production for subtitle generation to work
         passthrough: videoId
       };
 

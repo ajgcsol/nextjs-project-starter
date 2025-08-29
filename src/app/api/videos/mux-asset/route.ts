@@ -30,7 +30,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!video.mux_asset_id) {
+    // For thumbnail timestamp setting, we can proceed even without Mux asset ID
+    // We'll store the timestamp preference and apply it when the asset is ready
+    if (!video.mux_asset_id && action !== 'set-thumbnail-time') {
       return NextResponse.json(
         { error: 'No Mux asset found for this video' },
         { status: 400 }
@@ -52,25 +54,32 @@ export async function POST(request: NextRequest) {
 
         // Update the asset's thumbnail time
         try {
-          // Note: Mux doesn't directly update thumbnail time on existing assets
-          // Instead, we store the preference and use it when generating URLs
-          const thumbnailUrl = video.mux_playback_id 
-            ? `https://image.mux.com/${video.mux_playback_id}/thumbnail.jpg?time=${timestamp}`
-            : null;
+          // Store the timestamp preference even if Mux asset isn't ready yet
+          let thumbnailUrl = null;
+          
+          if (video.mux_playback_id) {
+            thumbnailUrl = `https://image.mux.com/${video.mux_playback_id}/thumbnail.jpg?time=${timestamp}`;
+            console.log('🎬 Mux playback ID available, generated thumbnail URL:', thumbnailUrl);
+          } else {
+            console.log('⏳ Mux playback ID not yet available, storing timestamp for later use');
+          }
 
           await VideoDB.update(videoId, {
             thumbnail_timestamp: timestamp,
             thumbnail_method: 'timestamp',
-            thumbnail_path: thumbnailUrl
+            ...(thumbnailUrl && { thumbnail_url: thumbnailUrl })
           });
 
           console.log('✅ Thumbnail timestamp set successfully');
 
           return NextResponse.json({
             success: true,
-            message: 'Thumbnail timestamp configured',
+            message: thumbnailUrl 
+              ? 'Thumbnail timestamp configured with URL' 
+              : 'Thumbnail timestamp saved - URL will be generated when Mux processing completes',
             thumbnailUrl,
-            timestamp
+            timestamp,
+            muxReady: !!video.mux_playback_id
           });
         } catch (error) {
           console.error('Failed to set thumbnail time:', error);

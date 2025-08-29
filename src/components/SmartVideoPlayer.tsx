@@ -455,8 +455,9 @@ export function SmartVideoPlayer({
     <div
       ref={containerRef}
       className={cn(
-        "relative bg-gradient-to-br from-gray-900 via-black to-gray-800 rounded-2xl overflow-hidden group shadow-2xl",
+        "relative bg-gradient-to-br from-gray-900 via-black to-gray-800 rounded-lg sm:rounded-xl lg:rounded-2xl overflow-hidden group shadow-xl sm:shadow-2xl",
         isFullscreen && "fixed inset-0 z-50 rounded-none",
+        "min-h-0 flex-shrink", // Ensure proper sizing
         className
       )}
     >
@@ -661,25 +662,30 @@ export function SmartVideoPlayer({
                 </Button>
 
                 {showSettings && (
-                  <div className="absolute bottom-full right-0 mb-3 bg-black/90 backdrop-blur-sm rounded-lg p-2 min-w-[140px] border border-white/10 z-50 shadow-2xl">
-                    <div className="space-y-1">
-                      <div className="px-2 py-1">
-                        <p className="text-white/70 text-xs font-medium">Speed</p>
+                  <div className="absolute bottom-full right-0 mb-3 bg-black/90 backdrop-blur-sm rounded-lg p-3 min-w-[200px] border border-white/10 z-50 shadow-2xl">
+                    <div className="space-y-2">
+                      <div className="px-1 py-1">
+                        <p className="text-white/90 text-sm font-semibold">Playback Speed</p>
                       </div>
-                      <div className="grid grid-cols-4 gap-1">
+                      <div className="space-y-1">
                         {[0.5, 0.75, 1, 1.25, 1.5, 1.75, 2].map(rate => (
                           <button
                             key={rate}
                             onClick={() => changePlaybackRate(rate)}
                             className={cn(
-                              "px-2 py-1.5 rounded text-xs transition-all duration-150 font-medium",
+                              "w-full px-3 py-2.5 rounded-md text-sm font-medium transition-all duration-200 hover:scale-[1.02] active:scale-95",
                               playbackRate === rate
-                                ? "bg-white text-black"
-                                : "text-white/80 hover:bg-white/10 hover:text-white"
+                                ? "bg-blue-600 text-white shadow-lg ring-2 ring-blue-400/50"
+                                : "text-white/90 hover:bg-white/15 hover:text-white"
                             )}
                           >
-                            {rate}x
-                            {rate === 1 && <span className="text-[10px] opacity-60 block">Normal</span>}
+                            <div className="flex items-center justify-between">
+                              <span>{rate}x</span>
+                              {rate === 1 && <span className="text-xs text-white/60">Normal</span>}
+                              {playbackRate === rate && (
+                                <span className="text-xs text-white/80">●</span>
+                              )}
+                            </div>
                           </button>
                         ))}
                       </div>

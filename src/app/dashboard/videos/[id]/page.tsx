@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, Download, Share2, Edit, Trash2, Play, Clock, FileVideo, Globe, Lock, Users, AlertTriangle } from 'lucide-react';
-import { SmartVideoPlayer } from '@/components/SmartVideoPlayer';
+import { MuxPlayerComponent } from '@/components/MuxPlayerComponent';
 import { VideoEditModal } from '@/components/VideoEditModal';
 import { TranscriptDisplay } from '@/components/TranscriptDisplay';
 import { Button } from '@/components/ui/button';
@@ -315,29 +315,46 @@ export default function VideoDetailPage() {
         </div>
 
         {/* Main Content */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
           {/* Video Player */}
-          <div className="lg:col-span-2 space-y-6">
+          <div className="xl:col-span-2 space-y-6">
             <div className="bg-white rounded-lg shadow overflow-hidden">
-              <div className="p-6">
-                <SmartVideoPlayer
-                  videoId={video.id}
-                  playbackId={video.mux_playback_id}
-                  title={video.title}
-                  poster={video.thumbnailUrl || video.thumbnail_path}
-                  s3Key={video.s3_key}
-                  filePath={video.streamUrl}
-                  className="w-full aspect-video"
-                  captionsUrl={video.captions_url}
-                  captionsStatus={video.captions_status}
-                  transcriptText={video.transcript_text}
-                  captions={video.captions_webvtt_url ? [{
-                    label: "Enhanced AI Transcription",
-                    src: video.captions_webvtt_url,
-                    srcLang: "en",
-                    default: true
-                  }] : undefined}
-                />
+              <div className="p-2 sm:p-4 md:p-6">
+                {(() => {
+                  // Extract playback ID from mux_playback_id or from stream URLs
+                  let playbackId = video.mux_playback_id;
+                  
+                  if (!playbackId && video.metadata) {
+                    const streamUrl = video.metadata.cloudFrontUrl || video.metadata.directUrl;
+                    if (streamUrl && streamUrl.includes('stream.mux.com/')) {
+                      const match = streamUrl.match(/stream\.mux\.com\/([^/]+)\.m3u8/);
+                      if (match) {
+                        playbackId = match[1];
+                        console.log('🎬 Extracted playback ID from stream URL:', playbackId);
+                      }
+                    }
+                  }
+                  
+                  return playbackId ? (
+                    <MuxPlayerComponent
+                      playbackId={playbackId}
+                      title={video.title}
+                      videoId={video.id}
+                      poster={video.thumbnailUrl || video.thumbnail_path}
+                      className="w-full aspect-video max-h-[50vh] sm:max-h-[60vh] md:max-h-[70vh] lg:max-h-none"
+                      accentColor="#0066CC"
+                      style={{ borderRadius: '8px' }}
+                    />
+                  ) : (
+                    <div className="w-full aspect-video bg-gray-900 rounded-lg flex items-center justify-center">
+                      <div className="text-center text-white">
+                        <FileVideo className="w-16 h-16 mx-auto mb-4 opacity-50" />
+                        <p className="text-lg font-medium">Video Processing</p>
+                        <p className="text-sm text-gray-400">Your video is being processed. Refresh in a few minutes.</p>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             </div>
 
