@@ -568,6 +568,17 @@ export const VideoDB = {
   }) {
     console.log('🎬 VideoDB.createWithId: Creating video with specific ID:', id);
     
+    // Check if video already exists with this ID
+    try {
+      const existingVideo = await this.findById(id);
+      if (existingVideo) {
+        console.log('⚠️ VideoDB.createWithId: Video with ID already exists, returning existing video');
+        return existingVideo;
+      }
+    } catch (error) {
+      // Video doesn't exist, continue with creation
+    }
+    
     // CRITICAL FIX: Convert decimal duration to integer for database compatibility
     const safeDuration = videoData.duration ? Math.round(Number(videoData.duration)) : undefined;
     const safeMuxDuration = videoData.mux_duration_seconds ? Math.round(Number(videoData.mux_duration_seconds)) : undefined;
@@ -641,9 +652,37 @@ export const VideoDB = {
           throw basicError;
         }
       } else {
+        // Check if this is a duplicate key constraint violation
+        if (muxError && muxError.code === '23505' && muxError.constraint === 'videos_pkey') {
+          console.log('⚠️ VideoDB.createWithId: Duplicate key detected, attempting to fetch existing video');
+          try {
+            const existingVideo = await this.findById(id);
+            if (existingVideo) {
+              console.log('✅ VideoDB.createWithId: Returning existing video after duplicate key error');
+              return existingVideo;
+            }
+          } catch (fetchError) {
+            console.error('❌ VideoDB.createWithId: Failed to fetch existing video after duplicate key error:', fetchError);
+          }
+        }
         console.error('❌ VideoDB.createWithId: Failed to create video with Mux fields:', muxError);
         throw muxError;
       }
+    } catch (outerError) {
+      // Final catch for unexpected errors
+      if (outerError && outerError.code === '23505' && outerError.constraint === 'videos_pkey') {
+        console.log('⚠️ VideoDB.createWithId: Duplicate key detected at outer level, attempting to fetch existing video');
+        try {
+          const existingVideo = await this.findById(id);
+          if (existingVideo) {
+            console.log('✅ VideoDB.createWithId: Returning existing video after outer duplicate key error');
+            return existingVideo;
+          }
+        } catch (fetchError) {
+          console.error('❌ VideoDB.createWithId: Failed to fetch existing video after outer duplicate key error:', fetchError);
+        }
+      }
+      throw outerError;
     }
   },
 
