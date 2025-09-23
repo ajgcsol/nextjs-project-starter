@@ -265,6 +265,7 @@ export class MuxWebhookHandler {
       // Extract playback ID and other data
       const playbackId = data.playback_ids?.[0]?.id;
       const duration = data.duration;
+      const durationSeconds = typeof duration === 'number' ? Math.round(duration) : null;
       const aspectRatio = data.aspect_ratio;
 
       console.log('📊 Asset ready data:', {
@@ -299,7 +300,7 @@ export class MuxWebhookHandler {
         mux_thumbnail_url: thumbnailUrl,
         streaming_url: streamingUrl,
         mp4_url: mp4Url,
-        mux_duration_seconds: duration,
+        mux_duration_seconds: durationSeconds,
         mux_aspect_ratio: aspectRatio,
         mux_ready_at: new Date(),
         thumbnail_url: thumbnailUrl // Also update the main thumbnail field
@@ -583,6 +584,7 @@ export class MuxWebhookHandler {
       // Update video record with latest data
       const playbackId = data.playback_ids?.[0]?.id;
       const duration = data.duration;
+      const durationSeconds = typeof duration === 'number' ? Math.round(duration) : null;
       const aspectRatio = data.aspect_ratio;
       const status = data.status || 'preparing';
 
@@ -590,7 +592,7 @@ export class MuxWebhookHandler {
         mux_asset_id: assetId,
         mux_playback_id: playbackId,
         mux_status: status,
-        mux_duration_seconds: duration,
+        mux_duration_seconds: durationSeconds,
         mux_aspect_ratio: aspectRatio
       };
 
@@ -619,6 +621,7 @@ export class MuxWebhookHandler {
         
         const playbackId = data.playback_ids?.[0]?.id;
         const duration = data.duration;
+      const durationSeconds = typeof duration === 'number' ? Math.round(duration) : null;
         const aspectRatio = data.aspect_ratio;
         const thumbnailUrl = playbackId ? `https://image.mux.com/${playbackId}/thumbnail.jpg?time=10` : undefined;
         
@@ -736,3 +739,5 @@ export class MuxWebhookHandler {
 }
 
 export default MuxWebhookHandler;
+
+
