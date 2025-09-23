@@ -2,20 +2,27 @@ import Mux from '@mux/mux-node';
 
 // Simple, clean Mux processor without AWS/OpenAI bullshit
 export class SimpleMuxProcessor {
+  private static muxClient: Mux | null = null;
+
   private static getMuxClient() {
-    const tokenId = process.env.MUX_TOKEN_ID;
-    const tokenSecret = process.env.MUX_TOKEN_SECRET;
-    
-    if (!tokenId || !tokenSecret) {
-      throw new Error('MUX_TOKEN_ID and MUX_TOKEN_SECRET environment variables are required');
+    if (this.muxClient) {
+      return this.muxClient;
     }
-    
-    return new Mux({
+
+    const tokenId = process.env.MUX_TOKEN_ID || process.env.VIDEO_MUX_TOKEN_ID;
+    const tokenSecret = process.env.MUX_TOKEN_SECRET || process.env.VIDEO_MUX_TOKEN_SECRET;
+
+    if (!tokenId || !tokenSecret) {
+      throw new Error('Mux credentials not configured. Set MUX_TOKEN_ID/MUX_TOKEN_SECRET or VIDEO_MUX_TOKEN_ID/VIDEO_MUX_TOKEN_SECRET environment variables.');
+    }
+
+    this.muxClient = new Mux({
       tokenId,
       tokenSecret,
     });
-  }
 
+    return this.muxClient;
+  }
   /**
    * Create Mux asset with automatic subtitle generation
    */
