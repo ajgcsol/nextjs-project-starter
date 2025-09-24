@@ -811,25 +811,38 @@ export class MuxVideoProcessor {
         let speakerCount = 0;
         
         // Try to fetch transcript content if available
-        if (latestTextTrack.text_source) {
+        const playbackId = asset.playback_ids?.[0]?.id;
+        const languageCode = latestTextTrack.language_code || 'en';
+        let trackUrl = latestTextTrack.text_source;
+
+        if (trackUrl && !trackUrl.startsWith('http')) {
+          // Mux returns placeholders like "generated_vod". Build the public track URL instead.
+          if (playbackId) {
+            trackUrl = `https://stream.mux.com/${playbackId}/text/${languageCode}.vtt`;
+          } else {
+            trackUrl = undefined;
+          }
+        }
+
+        if (trackUrl) {
           try {
-            const transcriptResponse = await fetch(latestTextTrack.text_source);
+            const transcriptResponse = await fetch(trackUrl);
             if (transcriptResponse.ok) {
               const transcriptContent = await transcriptResponse.text();
               transcriptText = this.parseTranscriptForSpeakers(transcriptContent);
               speakerCount = this.countSpeakersInTranscript(transcriptContent);
+            } else {
+              console.warn('Transcript fetch failed with status:', transcriptResponse.status);
             }
           } catch (fetchError) {
             console.warn('Could not fetch transcript content:', fetchError);
           }
         }
 
-        // Generate caption URL
-        const playbackId = asset.playback_ids?.[0]?.id;
-        const captionUrl = playbackId ? 
-          `https://stream.mux.com/${playbackId}/subtitles/en.vtt` : 
+        // Generate caption URL using the playback-based endpoint
+        const captionUrl = playbackId ?
+          `https://stream.mux.com/${playbackId}/text/${languageCode}.vtt` :
           undefined;
-
         return {
           success: true,
           status: 'ready',
